@@ -16,6 +16,7 @@ const=const
 use=use
 super=super
 null=null
+asm=asm
 
 oparen=\(
 cparen=\)

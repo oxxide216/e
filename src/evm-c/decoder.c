@@ -177,8 +177,44 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         instr->as.copy_from_ref.src_target_kind = src_target_kind;
         decode_buffer(&decoder, &instr->as.copy_from_ref.src_target_size, sizeof(instr->as.copy_from_ref.src_target_size));
       } break;
+
+      case InstrKindInlineAsm: {
+        decode_buffer(&decoder, &instr->as.inline_asm.segments.len, sizeof(instr->as.inline_asm.segments.len));
+        instr->as.inline_asm.segments.cap = instr->as.inline_asm.segments.len;
+        instr->as.inline_asm.segments.items = arena_alloc(arena, instr->as.inline_asm.segments.cap * sizeof(AsmSegment));
+
+        for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
+          AsmSegment *segment = instr->as.inline_asm.segments.items + k;
+
+          u8 segment_kind;
+          decode_buffer(&decoder, &segment_kind, 1);
+          segment->kind = segment_kind;
+
+          if (segment->kind == AsmSegmentKindStr)
+            decode_str(&decoder, &segment->value);
+          else
+            decode_buffer(&decoder, &segment->index, sizeof(segment->index));
+        }
+      } break;
+
+      case InstrKindStoreData: {
+        decode_buffer(&decoder, &instr->as.store_data.index, sizeof(instr->as.store_data.index));
+        decode_buffer(&decoder, &instr->as.store_data.data_index, sizeof(instr->as.store_data.data_index));
+      } break;
       }
     }
+  }
+
+  decode_buffer(&decoder, &ir->data.len, sizeof(ir->data.len));
+  ir->data.cap = ir->data.len;
+  ir->data.items = arena_alloc(arena, ir->data.cap * sizeof(DataEntry));
+
+  for (u32 i = 0 ; i < ir->data.len; ++i) {
+    DataEntry *entry = ir->data.items + i;
+
+    decode_buffer(&decoder, &entry->len, sizeof(entry->len));
+    entry->data = arena_alloc(arena, entry->len);
+    decode_buffer(&decoder, entry->data, entry->len);
   }
 
   return true;

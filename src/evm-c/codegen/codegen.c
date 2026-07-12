@@ -138,6 +138,26 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         locs->items[instr->as.copy_from_ref.src_index].end = i;
       }
     } break;
+
+    case InstrKindInlineAsm: {
+      for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
+        AsmSegment *segment = instr->as.inline_asm.segments.items + k;
+
+        if (segment->kind == AsmSegmentKindVar) {
+          if (segment->index < locs->cap) {
+            ++locs->items[segment->index].uses;
+            locs->items[segment->index].end = i;
+          }
+        }
+      }
+    } break;
+
+    case InstrKindStoreData: {
+      if (instr->as.store_data.index < locs->cap) {
+        ++locs->items[instr->as.store_data.index].uses;
+        locs->items[instr->as.store_data.index].end = i;
+      }
+    } break;
     }
   }
 }

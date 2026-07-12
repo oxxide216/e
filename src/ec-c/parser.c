@@ -225,13 +225,13 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
   if (is_const)
     parser_expect_token(parser,
                         MASK(TT_INT) | MASK(TT_BOOL),
-                        "int, float, bool or string");
+                        "int, float or bool");
   else
     parser_expect_token(parser,
                         MASK(TT_INT) | MASK(TT_BOOL) |
-                        MASK(TT_OPAREN) | MASK(TT_IDENT) |
-                        MASK(TT_NULL),
-                        "int, bool, `(`, identifier or `null`");
+                        MASK(TT_STR) | MASK(TT_OPAREN) |
+                        MASK(TT_IDENT) | MASK(TT_NULL),
+                        "int, bool, string, `(`, identifier or `null`");
 
 
   if (is_const) {
@@ -280,6 +280,27 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             ETypeKindBool,
             { ._bool = str_eq(token.lexeme, STR_LIT("true")) },
           }
+        },
+      );
+    } break;
+
+    case TT_STR: {
+      u32 index = parser->ir->data.len;
+
+      u8 *data = malloc(token.lexeme.len - 1);
+      memcpy(data, token.lexeme.ptr + 1, token.lexeme.len - 2);
+      data[token.lexeme.len - 2] = 0;
+
+      emit_data(&parser->ir->data, data, token.lexeme.len - 1);
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindStoreData,
+        .store_data = {
+          dest_name,
+          dest_index,
+          index,
         },
       );
     } break;
@@ -451,6 +472,13 @@ static void backpatch_dest(EProc *proc, u32 index, Str new_dest_name, u32 new_de
   case EInstrKindStoreNull: {
     instr->as.store_null.name = new_dest_name;
     instr->as.store_null.index = new_dest_index;
+  } break;
+
+  case EInstrKindInlineAsm: break;
+
+  case EInstrKindStoreData: {
+    instr->as.store_data.name = new_dest_name;
+    instr->as.store_data.index = new_dest_index;
   } break;
   }
 }
@@ -720,8 +748,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
   parser_expect_token(parser,
                       MASK(TT_LET) | MASK(TT_IDENT) |
                       MASK(TT_RET) | MASK(TT_RETVAL) |
-                      MASK(TT_WHILE) | MASK(TT_IF),
-                      "`let`, identifier, `ret`, `retval`, `while` or `if`");
+                      MASK(TT_WHILE) | MASK(TT_IF) |
+                      MASK(TT_ASM),
+                      "`let`, identifier, `ret`, `retval`, `while`, `if` or `asm`");
 
   if (token.id == TT_LET) {
     Token name_token;
@@ -901,7 +930,47 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     for (u32 i = 0; i < jumps_to_end_indices.len; ++i)
       instrs->items[jumps_to_end_indices.items[i]].as.jump.target = instrs->len;
-  }
+    } else if (token.id == TT_ASM) {
+      EAsmSegments asm_segments = {0};
+
+      Token temp_token = {0};
+      do {
+        if (temp_token.id == TT_COMMA)
+          parser_next_token(parser, NULL);
+
+        parser_peek_token(parser, &temp_token);
+        parser_expect_token(parser,
+                            MASK(TT_STR) | MASK(TT_IDENT),
+                            "string literal or identifier");
+
+        if (temp_token.id == TT_STR) {
+          EAsmSegment asm_segment = {
+            EAsmSegmentKindStr,
+            {
+              temp_token.lexeme.ptr + 1,
+              temp_token.lexeme.len - 2,
+            },
+            0,
+          };
+          DA_APPEND(asm_segments, asm_segment);
+        } else {
+          EAsmSegment asm_segment = {
+            EAsmSegmentKindVar,
+            temp_token.lexeme,
+            get_var_index(parser->varss, temp_token.lexeme),
+          };
+          DA_APPEND(asm_segments, asm_segment);
+        }
+      } while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+               temp_token.id == TT_COMMA);
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindInlineAsm,
+        .inline_asm = { asm_segments },
+      );
+    }
 }
 
 static void parser_parse_proc_impl(Parser *parser) {

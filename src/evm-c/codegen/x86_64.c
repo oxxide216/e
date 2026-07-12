@@ -275,6 +275,7 @@ static void ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_index) {
 }
 
 void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
+  write_cstr(stream, "section '.text'\n");
   write_cstr(stream, "global _start\n");
   write_cstr(stream, "_start:\n");
   write_cstr(stream, "  lea rsi,[rsp+8]\n");
@@ -810,6 +811,35 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           write_cstr(stream, "\n");
         }
       } break;
+
+      case InstrKindInlineAsm: {
+        for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
+          AsmSegment *segment = instr->as.inline_asm.segments.items + k;
+
+          if (segment->kind == AsmSegmentKindStr)
+            write_str(stream, segment->value);
+          else
+            write_loc(stream, locs.items + segment->index);
+        }
+        fputc('\n', stream);
+      } break;
+
+      case InstrKindStoreData: {
+        locs.items[instr->as.store_data.index].kind = ValueKindUnsigned;
+        locs.items[instr->as.store_data.index].size = 8;
+
+        write_cstr(stream, "  lea ");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.store_data.index, 0);
+        fprintf(stream, ",[data_%u]\n", instr->as.store_data.data_index);
+
+        if (locs.items[instr->as.store_data.index].value < 0) {
+          write_cstr(stream, "  mov ");
+          write_loc(stream, locs.items + instr->as.store_data.index);
+          write_cstr(stream, ",");
+          write_str(stream, get_temp_regs(locs.items[instr->as.store_data.index].size)[0]);
+          write_cstr(stream, "\n");
+        }
+      } break;
       }
     }
 
@@ -832,4 +862,18 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
   if (locs.items)
     free(locs.items);
+
+  write_cstr(stream, "section '.data'\n");
+
+  for (u32 i = 0; i < ir->data.len; ++i) {
+    DataEntry *entry = ir->data.items + i;
+
+    fprintf(stream, "data_%u: db ", i);
+    for (u32 j = 0; j < entry->len; ++j) {
+      if (j > 0)
+        fputc(',', stream);
+      fprintf(stream, "%u", entry->data[j]);
+    }
+    fputc('\n', stream);
+  }
 }

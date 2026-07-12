@@ -144,6 +144,26 @@ void ir_print(Ir *ir) {
                  instr->as.copy_from_ref.src_index,
                  instr->as.copy_from_ref.src_offset);
       } break;
+
+      case InstrKindInlineAsm: {
+        printf("  asm ");
+        for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
+          AsmSegment *segment = instr->as.inline_asm.segments.items + k;
+          if (k > 0)
+            printf(", ");
+          if (segment->kind == AsmSegmentKindStr)
+            printf("\""STR_FMT"\"", STR_ARG(segment->value));
+          else
+            printf("$%u", segment->index);
+        }
+        printf("\n");
+      } break;
+
+      case InstrKindStoreData: {
+        printf("  $%u = data %u\n",
+               instr->as.store_data.index,
+               instr->as.store_data.data_index);
+      } break;
       }
     }
 

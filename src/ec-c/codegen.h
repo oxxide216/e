@@ -50,6 +50,12 @@
     DA_APPEND(*(consts), _const);       \
   } while (0)
 
+#define emit_data(data, entry_data, len)    \
+  do {                                      \
+    EDataEntry entry = { entry_data, len }; \
+    DA_APPEND(*(data), entry);              \
+  } while (0)
+
 #define emit_module_dep(module_deps, name) \
   do {                                     \
     EModuleDep dep = { name, {} };         \

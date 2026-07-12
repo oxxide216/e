@@ -62,6 +62,8 @@ typedef enum {
   EInstrKindCopyToRef,
   EInstrKindCopyFromRef,
   EInstrKindStoreNull,
+  EInstrKindInlineAsm,
+  EInstrKindStoreData,
 } EInstrKind;
 
 typedef struct {
@@ -164,6 +166,29 @@ typedef struct {
   u32 index;
 } EInstrStoreNull;
 
+typedef enum {
+  EAsmSegmentKindStr = 0,
+  EAsmSegmentKindVar,
+} EAsmSegmentKind;
+
+typedef struct {
+  EAsmSegmentKind kind;
+  Str             value;
+  u32             value_index;
+} EAsmSegment;
+
+typedef Da(EAsmSegment) EAsmSegments;
+
+typedef struct {
+  EAsmSegments segments;
+} EInstrInlineAsm;
+
+typedef struct {
+  Str name;
+  u32 index;
+  u32 data_index;
+} EInstrStoreData;
+
 typedef union {
   EInstrAlloc          alloc;
   EInstrStore          store;
@@ -178,6 +203,8 @@ typedef union {
   EInstrCopyToRef      copy_to_ref;
   EInstrCopyFromRef    copy_from_ref;
   EInstrStoreNull      store_null;
+  EInstrInlineAsm      inline_asm;
+  EInstrStoreData      store_data;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;
@@ -224,6 +251,13 @@ typedef struct {
 
 typedef Da(EConst) EConsts;
 
+typedef struct {
+  u8  *data;
+  u32  len;
+} EDataEntry;
+
+typedef Da(EDataEntry) EData;
+
 typedef Da(Str) EModulePath;
 
 typedef struct EModuleDep EModuleDep;
@@ -234,6 +268,7 @@ typedef struct {
   EProcs      procs;
   EStructs    structs;
   EConsts     consts;
+  EData       data;
   EModuleDeps module_deps;
 } EIr;
 

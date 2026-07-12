@@ -33,6 +33,8 @@ typedef enum {
   InstrKindRef,
   InstrKindCopyToRef,
   InstrKindCopyFromRef,
+  InstrKindInlineAsm,
+  InstrKindStoreData,
 } InstrKind;
 
 typedef struct {
@@ -121,6 +123,28 @@ typedef struct {
   u32       src_target_size;
 } InstrCopyFromRef;
 
+typedef enum {
+  AsmSegmentKindStr = 0,
+  AsmSegmentKindVar,
+} AsmSegmentKind;
+
+typedef struct {
+  AsmSegmentKind kind;
+  Str            value;
+  u32            index;
+} AsmSegment;
+
+typedef Da(AsmSegment) AsmSegments;
+
+typedef struct {
+  AsmSegments segments;
+} InstrInlineAsm;
+
+typedef struct {
+  u32 index;
+  u32 data_index;
+} InstrStoreData;
+
 typedef union {
   InstrAlloc       alloc;
   InstrStore       store;
@@ -134,6 +158,8 @@ typedef union {
   InstrRef         ref;
   InstrCopyToRef   copy_to_ref;
   InstrCopyFromRef copy_from_ref;
+  InstrInlineAsm   inline_asm;
+  InstrStoreData   store_data;
 } InstrAs;
 
 typedef struct {
@@ -161,7 +187,15 @@ typedef struct {
 typedef Da(Proc) Procs;
 
 typedef struct {
-  Procs      procs;
+  u8  *data;
+  u32  len;
+} DataEntry;
+
+typedef Da(DataEntry) Data;
+
+typedef struct {
+  Procs procs;
+  Data  data;
 } Ir;
 
 #endif // IR_H

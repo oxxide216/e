@@ -397,6 +397,8 @@ bool check_ir(EIr *ir, Varss *varss) {
           free_type_str(ptr_type_str, &ptr_type);
           type_free(ptr_type.ptr_target);
           return false;
+        } else {
+          type_free(ptr_type.ptr_target);
         }
       } break;
 
@@ -487,6 +489,50 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(var_type_str));
           free_type_str(var_type_str, &var->type);
           return false;
+        }
+      } break;
+
+      case EInstrKindInlineAsm: {
+        for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
+          EAsmSegment *segment = instr->as.inline_asm.segments.items + k;
+          if (segment->kind && EAsmSegmentKindVar && segment->value_index == (u32) -1) {
+            CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                    STR_ARG(segment->value));
+            return false;
+          }
+        }
+      } break;
+
+      case EInstrKindStoreData: {
+        if (instr->as.store_data.index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.store_data.name));
+          return false;
+        }
+
+        Var *var = varss->items[i].items + instr->as.store_data.index;
+
+        EType ptr_type = {
+          ETypeKindPtr,
+          {},
+          malloc(sizeof(EType)),
+          {},
+        };
+        *ptr_type.ptr_target = (EType) { ETypeKindU8, {}, NULL, {} };
+
+        if (var->type.kind == ETypeKindUnit) {
+          var->type = ptr_type;
+        } else if (!type_eq(&ptr_type, &var->type)) {
+          Str var_type_str = get_type_str(&var->type);
+          Str ptr_type_str = get_type_str(&ptr_type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(ptr_type_str), STR_ARG(var_type_str));
+          free_type_str(var_type_str, &var->type);
+          free_type_str(ptr_type_str, &ptr_type);
+          type_free(ptr_type.ptr_target);
+          return false;
+        } else {
+          type_free(ptr_type.ptr_target);
         }
       } break;
       }

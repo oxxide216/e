@@ -98,9 +98,31 @@ static BinOpKind e_bin_op_kind_to_evm_bin_op_kin(EBinOpKind kind, ETypeKind type
   return 0;
 }
 
+static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
+  switch (kind) {
+  case EInstrKindAlloc:       return InstrKindAlloc;
+  case EInstrKindStore:       return InstrKindStore;
+  case EInstrKindCopy:        return InstrKindCopy;
+  case EInstrKindBinOp:       return InstrKindBinOp;
+  case EInstrKindCall:        return InstrKindCall;
+  case EInstrKindCallAssign:  return InstrKindCallAssign;
+  case EInstrKindRet:         return InstrKindRet;
+  case EInstrKindRetVal:      return InstrKindRetVal;
+  case EInstrKindJump:        return InstrKindJump;
+  case EInstrKindJumpIfNot:   return InstrKindJumpIfNot;
+  case EInstrKindRef:         return InstrKindRef;
+  case EInstrKindCopyToRef:   return InstrKindCopyToRef;
+  case EInstrKindCopyFromRef: return InstrKindCopyFromRef;
+  case EInstrKindStoreNull:   return InstrKindStore;
+  case EInstrKindInlineAsm:   return InstrKindInlineAsm;
+  case EInstrKindStoreData:   return InstrKindStoreData;
+  }
+
+  return 0;
+}
+
 void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
   fwrite(&ir->procs.len, sizeof(ir->procs.len), 1, stream);
-
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
 
@@ -124,7 +146,8 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
 
-      fwrite(&instr->kind, 1, 1, stream);
+      InstrKind instr_kind = e_instr_kind_to_evm_instr_kind(instr->kind);
+      fwrite(&instr_kind, 1, 1, stream);
 
       switch (instr->kind) {
       case EInstrKindAlloc: {
@@ -231,7 +254,32 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
         fwrite(&value.kind, 1, 1, stream);
         fwrite(&value.as._unsigned, sizeof(value.as._unsigned), 1, stream);
       } break;
+
+      case EInstrKindInlineAsm: {
+        fwrite(&instr->as.inline_asm.segments.len, sizeof(instr->as.inline_asm.segments.len), 1, stream);
+        for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
+          EAsmSegment *segment = instr->as.inline_asm.segments.items + k;
+          fwrite(&segment->kind, 1, 1, stream);
+          if (segment->kind == EAsmSegmentKindStr)
+            encode_str(stream, segment->value);
+          else
+            fwrite(&segment->value_index, sizeof(segment->value_index), 1, stream);
+        }
+      } break;
+
+      case EInstrKindStoreData: {
+        fwrite(&instr->as.store_data.index, sizeof(instr->as.store_data.index), 1, stream);
+        fwrite(&instr->as.store_data.data_index, sizeof(instr->as.store_data.data_index), 1, stream);
+      } break;
       }
     }
+  }
+
+  fwrite(&ir->data.len, sizeof(ir->data.len), 1, stream);
+  for (u32 i = 0; i < ir->data.len; ++i) {
+    EDataEntry *entry = ir->data.items + i;
+
+    fwrite(&entry->len, sizeof(entry->len), 1, stream);
+    fwrite(entry->data, 1, entry->len, stream);
   }
 }

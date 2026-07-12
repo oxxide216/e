@@ -201,6 +201,15 @@ static void ir_destroy(EIr *ir) {
 
   if (ir->consts.items)
     free(ir->consts.items);
+
+  for (u32 i = 0; i < ir->data.len; ++i) {
+    EDataEntry *entry = ir->data.items + i;
+
+    if (entry->data)
+      free(entry->data);
+  }
+  if (ir->data.items)
+    free(ir->data.items);
 }
 
 i32 main(i32 argc, char **argv) {
