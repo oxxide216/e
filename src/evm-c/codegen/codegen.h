@@ -1,0 +1,44 @@
+#ifndef CODEGEN_H
+#define CODEGEN_H
+
+#include "ir.h"
+
+typedef struct {
+  // value >= means register, < 0 means stack
+  i32       value;
+  ValueKind kind;
+  u32       size;
+  u32       uses;
+  // Lifetime af a variable
+  u32       begin;
+  u32       end;
+  bool      stack_only;
+  bool      is_arg;
+} VarLoc;
+
+typedef struct {
+  VarLoc *items;
+  u32     cap;
+} VarLocs;
+
+typedef Da(VarLoc *) VarLocRefs;
+
+typedef struct {
+  u32 regs;
+  u32 stack_size;
+} SpaceUsed;
+
+typedef struct {
+  SpaceUsed  space_used;
+  VarLocRefs refs;
+} Allocator;
+
+void      add_var_locs(VarLocs *locs, Proc *proc);
+SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs,
+                              u32 scratch_regs_len,
+                              u32 default_stack_size);
+void      promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs);
+
+void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir);
+
+#endif // CODEGEN_H

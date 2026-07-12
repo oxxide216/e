@@ -1,0 +1,30 @@
+cflags = -Wall -Wextra -Ilibs -Ilibs/lexgen/include -Isrc/evm-c -Isrc/common-c -ggdb
+build_dir = build
+
+[ec-c]
+src = src/ec-c/**.c src/common-c/**.c
+deps = lexgen
+ghost_deps = src/ec-c/grammar.h
+cflags = $cflags
+incpath = $build_dir
+
+[evm-c]
+src = src/evm-c/**.c src/common-c/**.c
+cflags = $cflags
+incpath = $build_dir
+
+[lexgen]
+type = static_lib
+src = libs/lexgen/src/common/wstr.c libs/lexgen/src/runtime/runtime.c
+cflags = $cflags
+incpath = $build_dir
+
+[src/ec-c/grammar.h]
+type = custom
+cmd = libs/lexgen/lexgen src/ec-c/grammar.h grammar.lg
+deps = libs/lexgen/lexgen grammar.lg
+
+[libs/lexgen/lexgen]
+type = custom
+cmd = cd libs/lexgen && ./build.sh
+src = libs/lexgen/src/**.c
