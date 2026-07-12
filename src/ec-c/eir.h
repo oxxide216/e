@@ -64,6 +64,7 @@ typedef enum {
   EInstrKindStoreNull,
   EInstrKindInlineAsm,
   EInstrKindStoreData,
+  EInstrKindCast,
 } EInstrKind;
 
 typedef struct {
@@ -189,6 +190,14 @@ typedef struct {
   u32 data_index;
 } EInstrStoreData;
 
+typedef struct {
+  Str   dest_name;
+  u32   dest_index;
+  EType dest_type;
+  Str   src_name;
+  u32   src_index;
+} EInstrCast;
+
 typedef union {
   EInstrAlloc          alloc;
   EInstrStore          store;
@@ -205,6 +214,7 @@ typedef union {
   EInstrStoreNull      store_null;
   EInstrInlineAsm      inline_asm;
   EInstrStoreData      store_data;
+  EInstrCast           cast;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;

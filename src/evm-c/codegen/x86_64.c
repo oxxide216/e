@@ -718,9 +718,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
       case InstrKindRetVal: {
         write_cstr(stream, "  mov ");
-        write_str(stream, get_return_reg(locs.items + instr->as.copy.src_index));
+        write_str(stream, get_return_reg(locs.items + instr->as.ret_val.index));
         write_cstr(stream, ",");
-        write_loc(stream, locs.items + instr->as.copy.src_index);
+        write_loc(stream, locs.items + instr->as.ret_val.index);
         write_cstr(stream, "\n");
         if (j + 1 < proc->instrs.len)
           write_cstr(stream, "  jmp .end\n");
@@ -747,8 +747,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
             "jb",
           };
 
-          u32 index = (jump_optimization_bin_op_kind - BinOpKindEqInt) *
-                      ((jump_optimization_value_kind == ValueKindUnsigned) + 1);
+          u32 index = jump_optimization_bin_op_kind - BinOpKindEqInt +
+                      6 * (jump_optimization_value_kind == ValueKindUnsigned);
 
           write_cstr(stream, "  ");
           write_cstr(stream, cmp_mnemonics[index]);
@@ -839,6 +839,72 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           write_str(stream, get_temp_regs(locs.items[instr->as.store_data.index].size)[0]);
           write_cstr(stream, "\n");
         }
+      } break;
+
+      case InstrKindConvert: {
+        ValueKind dest_kind = instr->as.convert.dest_kind;
+        u32 dest_size = instr->as.convert.dest_size;
+        ValueKind src_kind = locs.items[instr->as.convert.src_index].kind;
+        u32 src_size = locs.items[instr->as.convert.src_index].size;
+
+        bool needs_convertation = dest_size != src_size && dest_size <= 8 &&
+                                  src_size <= 8 && dest_size > src_size;
+
+        if (needs_convertation) {
+          if (src_kind == ValueKindSigned) {
+            if (dest_size == 2 && src_size == 1)
+              write_cstr(stream, "  movsx ");
+            else if (dest_size == 4 && src_size == 1)
+              write_cstr(stream, "  movsx ");
+            else if (dest_size == 8 && src_size == 1)
+              write_cstr(stream, "  movsx ");
+            else if (dest_size == 4 && src_size == 2)
+              write_cstr(stream, "  movsx ");
+            else if (dest_size == 8 && src_size == 2)
+              write_cstr(stream, "  movsx ");
+            else if (dest_size == 8 && src_size == 4)
+              write_cstr(stream, "  mov ");
+          } else {
+            if (dest_size == 2 && src_size == 1)
+              write_cstr(stream, "  movzx ");
+            else if (dest_size == 4 && src_size == 1)
+              write_cstr(stream, "  movzx ");
+            else if (dest_size == 8 && src_size == 1)
+              write_cstr(stream, "  movzx ");
+            else if (dest_size == 4 && src_size == 2)
+              write_cstr(stream, "  movzx ");
+            else if (dest_size == 8 && src_size == 2)
+              write_cstr(stream, "  movzx ");
+            else if (dest_size == 8 && src_size == 4)
+              write_cstr(stream, "  mov ");
+          }
+        } else if (locs.items[instr->as.convert.dest_index].value !=
+                   locs.items[instr->as.convert.src_index].value) {
+          write_cstr(stream, "  mov ");
+        }
+
+        if (needs_convertation ||
+            locs.items[instr->as.convert.dest_index].value !=
+            locs.items[instr->as.convert.src_index].value) {
+          if (needs_convertation)
+            write_loc_ensure_in_reg(stream, locs.items + instr->as.convert.dest_index, 0);
+          else
+            write_loc_of_size_ensure_in_reg(stream, locs.items + instr->as.convert.dest_index, src_size, 0);
+          write_cstr(stream, ",");
+          write_loc(stream, locs.items + instr->as.convert.src_index);
+          write_cstr(stream, "\n");
+
+          if (locs.items[instr->as.convert.dest_index].value < 0) {
+            write_cstr(stream, "  mov ");
+            write_loc(stream, locs.items + instr->as.convert.dest_index);
+            write_cstr(stream, ",");
+            write_str(stream, get_temp_regs(locs.items[instr->as.convert.dest_index].size)[0]);
+            write_cstr(stream, "\n");
+          }
+        }
+
+        locs.items[instr->as.convert.dest_index].kind = dest_kind;
+        locs.items[instr->as.convert.dest_index].size = dest_size;
       } break;
       }
     }

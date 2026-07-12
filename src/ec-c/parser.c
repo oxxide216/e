@@ -26,6 +26,13 @@
       return;                                                    \
   } while (0)
 
+#define parser_parse_cast(parser, dest_name, dest_index)   \
+  do {                                                     \
+    parser_parse_cast_impl(parser, dest_name, dest_index); \
+    if ((parser)->has_error)                               \
+      return;                                              \
+  } while (0)
+
 #define parser_parse_mul(parser, dest_name, dest_index)   \
   do {                                                    \
     parser_parse_mul_impl(parser, dest_name, dest_index); \
@@ -480,13 +487,53 @@ static void backpatch_dest(EProc *proc, u32 index, Str new_dest_name, u32 new_de
     instr->as.store_data.name = new_dest_name;
     instr->as.store_data.index = new_dest_index;
   } break;
+
+  case EInstrKindCast: {
+    instr->as.cast.dest_name = new_dest_name;
+    instr->as.cast.dest_index = new_dest_index;
+  } break;
+  }
+}
+
+static void parser_parse_cast_impl(Parser *parser, Str dest_name, u32 dest_index) {
+  u32 alloc_index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len;
+  u32 temp_index = alloc_var(parser, (Str) {0}, (Token) {});
+  parser_parse_unary_expr(parser, (Str) {0}, temp_index);
+  u32 index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len - 2;
+
+  Token token;
+  if (parser_peek_token(parser, &token) != TokenStatusEOF &&
+      token.id == TT_AS) {
+    parser_next_token(parser, NULL);
+
+    index = (u32) -1;
+
+    parser_parse_type(parser);
+
+    emit_instr(
+      &parser->ir->procs,
+      token,
+      EInstrKindCast,
+      .cast = {
+        dest_name,
+        dest_index,
+        parser->last_type,
+        {},
+        temp_index,
+      },
+    );
+  }
+
+  if (index != (u32) -1) {
+    DA_REMOVE_AT(parser->ir->procs.items[parser->ir->procs.len - 1].instrs, alloc_index);
+    backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1, index, dest_name, dest_index);
   }
 }
 
 static void parser_parse_mul_impl(Parser *parser, Str dest_name, u32 dest_index) {
   u32 alloc_index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len;
   u32 temp0_index = alloc_var(parser, (Str) {0}, (Token) {});
-  parser_parse_unary_expr(parser, (Str) {0}, temp0_index);
+  parser_parse_cast(parser, (Str) {0}, temp0_index);
   u32 index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len - 2;
 
   Token token;
@@ -499,7 +546,7 @@ static void parser_parse_mul_impl(Parser *parser, Str dest_name, u32 dest_index)
     if (temp1_index == (u32) -1)
       temp1_index = alloc_var(parser, (Str) {0}, token);
 
-    parser_parse_unary_expr(parser, (Str) {0}, temp1_index);
+    parser_parse_cast(parser, (Str) {0}, temp1_index);
 
     emit_instr(
       &parser->ir->procs,

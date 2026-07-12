@@ -201,6 +201,17 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         decode_buffer(&decoder, &instr->as.store_data.index, sizeof(instr->as.store_data.index));
         decode_buffer(&decoder, &instr->as.store_data.data_index, sizeof(instr->as.store_data.data_index));
       } break;
+
+      case InstrKindConvert: {
+        decode_buffer(&decoder, &instr->as.convert.dest_index, sizeof(instr->as.convert.dest_index));
+
+        u8 dest_kind;
+        decode_buffer(&decoder, &dest_kind, 1);
+        instr->as.convert.dest_kind = dest_kind;
+        decode_buffer(&decoder, &instr->as.convert.dest_size, sizeof(instr->as.convert.dest_size));
+
+        decode_buffer(&decoder, &instr->as.convert.src_index, sizeof(instr->as.convert.src_index));
+      } break;
       }
     }
   }

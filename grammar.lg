@@ -17,6 +17,7 @@ use=use
 super=super
 null=null
 asm=asm
+as=as
 
 oparen=\(
 cparen=\)

@@ -116,6 +116,7 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   case EInstrKindStoreNull:   return InstrKindStore;
   case EInstrKindInlineAsm:   return InstrKindInlineAsm;
   case EInstrKindStoreData:   return InstrKindStoreData;
+  case EInstrKindCast:        return InstrKindConvert;
   }
 
   return 0;
@@ -270,6 +271,17 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
       case EInstrKindStoreData: {
         fwrite(&instr->as.store_data.index, sizeof(instr->as.store_data.index), 1, stream);
         fwrite(&instr->as.store_data.data_index, sizeof(instr->as.store_data.data_index), 1, stream);
+      } break;
+
+      case EInstrKindCast: {
+        fwrite(&instr->as.cast.dest_index, sizeof(instr->as.cast.dest_index), 1, stream);
+
+        ValueKind dest__kind = e_type_kind_to_evm_value_kind(instr->as.cast.dest_type.kind);
+        u32 dest_size = get_type_size(&ir->structs, &instr->as.cast.dest_type);
+        fwrite(&dest__kind, 1, 1, stream);
+        fwrite(&dest_size, sizeof(dest_size), 1, stream);
+
+        fwrite(&instr->as.cast.src_index, sizeof(instr->as.cast.src_index), 1, stream);
       } break;
       }
     }

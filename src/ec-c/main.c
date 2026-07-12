@@ -181,6 +181,12 @@ static void ir_destroy(EIr *ir) {
     if (proc->return_type.kind == ETypeKindPtr)
       type_free(proc->return_type.ptr_target);
 
+    for (u32 j = 0; j < proc->instrs.len; ++j) {
+      EInstr *instr = proc->instrs.items + j;
+
+      if (instr->kind == EInstrKindCast && instr->as.cast.dest_type.ptr_target)
+        type_free(instr->as.cast.dest_type.ptr_target);
+    }
     if (proc->instrs.items)
       free(proc->instrs.items);
   }

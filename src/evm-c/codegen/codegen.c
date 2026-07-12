@@ -158,6 +158,17 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         locs->items[instr->as.store_data.index].end = i;
       }
     } break;
+
+    case InstrKindConvert: {
+      if (instr->as.convert.dest_index < locs->cap) {
+        ++locs->items[instr->as.convert.dest_index].uses;
+        locs->items[instr->as.convert.dest_index].end = i;
+      }
+      if (instr->as.convert.src_index < locs->cap) {
+        ++locs->items[instr->as.convert.src_index].uses;
+        locs->items[instr->as.convert.src_index].end = i;
+      }
+    } break;
     }
   }
 }

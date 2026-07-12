@@ -69,7 +69,7 @@ static Str get_type_str(EType *type) {
       result.len = target_str.len + 1;
       result.ptr = malloc(result.len);
       result.ptr[0] = '&';
-      memcpy(result.ptr, target_str.ptr, target_str.len);
+      memcpy(result.ptr + 1, target_str.ptr, target_str.len);
       return result;
     }
     }
@@ -141,6 +141,32 @@ static void fprintf_proc_signature(FILE *stream, Str name, ETypeRefs *arg_types)
     free_type_str(arg_type_str, arg_types->items[i]);
   }
   putc(')', stream);
+}
+
+static bool is_int(EType *type) {
+  return type->kind >= ETypeKindS8 && type->kind <= ETypeKindU64;
+}
+
+static bool can_do_bin_op(EBinOpKind kind, EType *a, EType *b) {
+  if (kind == EBinOpKindAdd || kind == EBinOpKindSub) {
+    if (a->kind == ETypeKindPtr && is_int(b))
+      return true;
+    if (is_int(a) && is_int(b) && a->kind == b->kind)
+      return true;
+  } else {
+    if (is_int(a) && is_int(b) && a->kind == b->kind)
+      return true;
+  }
+  return false;
+}
+
+static bool can_cast(EType *src, EType *dest) {
+  return (src->kind == dest->kind && src->kind != ETypeKindStruct) ||
+         (is_int(src) && is_int(dest)) ||
+         (is_int(src) && dest->kind == ETypeKindBool) ||
+         (is_int(src) && dest->kind == ETypeKindPtr) ||
+         (dest->kind == ETypeKindBool && is_int(src)) ||
+         (dest->kind == ETypeKindPtr && is_int(src));
 }
 
 bool check_ir(EIr *ir, Varss *varss) {
@@ -238,9 +264,7 @@ bool check_ir(EIr *ir, Varss *varss) {
         Var *src0 = varss->items[i].items + instr->as.bin_op.src0_index;
         Var *src1 = varss->items[i].items + instr->as.bin_op.src1_index;
 
-        if (src0->type.kind < ETypeKindS8 || src0->type.kind > ETypeKindU64 ||
-            src1->type.kind < ETypeKindS8 || src1->type.kind > ETypeKindU64 ||
-            !type_eq(&src0->type, &src1->type)) {
+        if (!can_do_bin_op(instr->as.bin_op.kind, &src0->type, &src1->type)) {
           Str src0_type_str = get_type_str(&src0->type);
           Str src1_type_str = get_type_str(&src1->type);
           char *bin_op_cstr = get_bin_op_kind_cstr(instr->as.bin_op.kind);
@@ -533,6 +557,42 @@ bool check_ir(EIr *ir, Varss *varss) {
           return false;
         } else {
           type_free(ptr_type.ptr_target);
+        }
+      } break;
+
+      case EInstrKindCast: {
+        if (instr->as.cast.dest_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.cast.dest_name));
+          return false;
+        }
+        if (instr->as.cast.src_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.cast.src_name));
+          return false;
+        }
+
+        Var *dest = varss->items[i].items + instr->as.cast.dest_index;
+        Var *src = varss->items[i].items + instr->as.cast.src_index;
+
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = type_clone(&instr->as.cast.dest_type);
+        } else if (!type_eq(&instr->as.cast.dest_type, &dest->type)) {
+          Str dest_type_str = get_type_str(&dest->type);
+          Str new_type_str = get_type_str(&instr->as.cast.dest_type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(new_type_str), STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          free_type_str(new_type_str, &instr->as.cast.dest_type);
+          return false;
+        } else if (!can_cast(&src->type, &instr->as.cast.dest_type)) {
+          Str src_type_str = get_type_str(&src->type);
+          Str new_type_str = get_type_str(&instr->as.cast.dest_type);
+          CERRORF("Cannot perform a "STR_FMT" -> "STR_FMT" cast\n",
+                  STR_ARG(src_type_str), STR_ARG(new_type_str));
+          free_type_str(src_type_str, &src->type);
+          free_type_str(new_type_str, &instr->as.cast.dest_type);
+          return false;
         }
       } break;
       }

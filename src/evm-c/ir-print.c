@@ -164,6 +164,15 @@ void ir_print(Ir *ir) {
                instr->as.store_data.index,
                instr->as.store_data.data_index);
       } break;
+
+      case InstrKindConvert: {
+        printf("  $%u = cast $%u -> ",
+               instr->as.convert.dest_index,
+               instr->as.convert.src_index);
+        print_value_params(instr->as.convert.dest_kind,
+                           instr->as.convert.dest_size);
+        putc('\n', stdout);
+      } break;
       }
     }
 

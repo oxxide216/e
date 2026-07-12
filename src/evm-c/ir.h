@@ -35,6 +35,7 @@ typedef enum {
   InstrKindCopyFromRef,
   InstrKindInlineAsm,
   InstrKindStoreData,
+  InstrKindConvert,
 } InstrKind;
 
 typedef struct {
@@ -145,6 +146,13 @@ typedef struct {
   u32 data_index;
 } InstrStoreData;
 
+typedef struct {
+  u32       dest_index;
+  ValueKind dest_kind;
+  u32       dest_size;
+  u32       src_index;
+} InstrConvert;
+
 typedef union {
   InstrAlloc       alloc;
   InstrStore       store;
@@ -160,6 +168,7 @@ typedef union {
   InstrCopyFromRef copy_from_ref;
   InstrInlineAsm   inline_asm;
   InstrStoreData   store_data;
+  InstrConvert     convert;
 } InstrAs;
 
 typedef struct {
