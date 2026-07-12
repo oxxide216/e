@@ -104,6 +104,40 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
           locs->items[instr->as.jump_if_not.cond_index].end = i;
       }
     } break;
+
+    case InstrKindRef: {
+      if (instr->as.ref.dest_index < locs->cap) {
+        ++locs->items[instr->as.ref.dest_index].uses;
+        locs->items[instr->as.ref.dest_index].end = i;
+      }
+      if (instr->as.ref.src_index < locs->cap) {
+        ++locs->items[instr->as.ref.src_index].uses;
+        locs->items[instr->as.ref.src_index].end = i;
+        locs->items[instr->as.ref.src_index].is_stack_only = true;
+      }
+    } break;
+
+    case InstrKindCopyToRef: {
+      if (instr->as.copy_to_ref.dest_index < locs->cap) {
+        ++locs->items[instr->as.copy_to_ref.dest_index].uses;
+        locs->items[instr->as.copy_to_ref.dest_index].end = i;
+      }
+      if (instr->as.copy_to_ref.src_index < locs->cap) {
+        ++locs->items[instr->as.copy_to_ref.src_index].uses;
+        locs->items[instr->as.copy_to_ref.src_index].end = i;
+      }
+    } break;
+
+    case InstrKindCopyFromRef: {
+      if (instr->as.copy_from_ref.dest_index < locs->cap) {
+        ++locs->items[instr->as.copy_from_ref.dest_index].uses;
+        locs->items[instr->as.copy_from_ref.dest_index].end = i;
+      }
+      if (instr->as.copy_from_ref.src_index < locs->cap) {
+        ++locs->items[instr->as.copy_from_ref.src_index].uses;
+        locs->items[instr->as.copy_from_ref.src_index].end = i;
+      }
+    } break;
     }
   }
 }
@@ -112,12 +146,8 @@ static bool var_loc_collides_at_reg_index(VarLocRefs *refs, VarLoc *loc, i32 reg
   for (u32 i = 0; i < max; ++i) {
     VarLoc *temp_loc = refs->items[i];
     if (temp_loc->value == reg_index &&
-        ((temp_loc->end > loc->begin &&
-          temp_loc->end < loc->end) ||
-         (temp_loc->begin >= loc->begin &&
-          temp_loc->begin < loc->end) ||
-         (temp_loc->begin < loc->begin &&
-          temp_loc->end >= loc->end)))
+        temp_loc->end > loc->begin &&
+        temp_loc->begin < loc->end)
       return true;
   }
 
@@ -163,7 +193,7 @@ SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs,
   for (u32 i = 0; i < allocator.refs.len; ++i) {
     VarLoc *loc = allocator.refs.items[i];
 
-    if (loc->stack_only) {
+    if (loc->is_stack_only) {
       allocator.space_used.stack_size += loc->size;
       loc->value = -allocator.space_used.stack_size;
       continue;

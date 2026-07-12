@@ -362,6 +362,133 @@ bool check_ir(EIr *ir, Varss *varss) {
           return false;
         }
       } break;
+
+      case EInstrKindRef: {
+        if (instr->as.ref.dest_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.ref.dest_name));
+          return false;
+        }
+        if (instr->as.ref.src_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.ref.src_name));
+          return false;
+        }
+
+        Var *dest = varss->items[i].items + instr->as.ref.dest_index;
+        Var *src = varss->items[i].items + instr->as.ref.src_index;
+
+        EType ptr_type = {
+          ETypeKindPtr,
+          {},
+          malloc(sizeof(EType)),
+          {},
+        };
+        *ptr_type.ptr_target = type_clone(&src->type);
+
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = ptr_type;
+        } else if (!type_eq(&ptr_type, &dest->type)) {
+          Str dest_type_str = get_type_str(&dest->type);
+          Str ptr_type_str = get_type_str(&ptr_type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(ptr_type_str), STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          free_type_str(ptr_type_str, &ptr_type);
+          type_free(ptr_type.ptr_target);
+          return false;
+        }
+      } break;
+
+      case EInstrKindCopyToRef: {
+        if (instr->as.copy_to_ref.dest_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.copy_to_ref.dest_name));
+          return false;
+        }
+        if (instr->as.copy_to_ref.src_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.copy_to_ref.src_name));
+          return false;
+        }
+
+        Var *dest = varss->items[i].items + instr->as.copy_to_ref.dest_index;
+        Var *src = varss->items[i].items + instr->as.copy_to_ref.src_index;
+
+        if (dest->type.kind != ETypeKindPtr) {
+          Str dest_type_str = get_type_str(&dest->type);
+          CERRORF("Trying to dereference "STR_FMT"\n", STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          return false;
+        } else if (!dest->type.ptr_target) {
+          dest->type.ptr_target = malloc(sizeof(EType));
+          *dest->type.ptr_target = type_clone(&src->type);
+        } else if (!type_eq(&src->type, dest->type.ptr_target)) {
+          Str ptr_target_type_str = get_type_str(dest->type.ptr_target);
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a pointer target of type "STR_FMT"\n",
+                  STR_ARG(src_type_str), STR_ARG(ptr_target_type_str));
+          free_type_str(ptr_target_type_str, dest->type.ptr_target);
+          free_type_str(src_type_str, &src->type);
+          return false;
+        }
+      } break;
+
+      case EInstrKindCopyFromRef: {
+        if (instr->as.copy_from_ref.dest_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.copy_from_ref.dest_name));
+          return false;
+        }
+        if (instr->as.copy_from_ref.src_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.copy_from_ref.src_name));
+          return false;
+        }
+
+        Var *dest = varss->items[i].items + instr->as.copy_from_ref.dest_index;
+        Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
+
+        if (src->type.kind != ETypeKindPtr) {
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Trying to dereference "STR_FMT"\n", STR_ARG(src_type_str));
+          free_type_str(src_type_str, &src->type);
+          return false;
+        } else if (!src->type.ptr_target) {
+          CERROR("Trying to dereference a generic pointer\n");
+          return false;
+        } else if (dest->type.kind == ETypeKindUnit) {
+          dest->type = type_clone(src->type.ptr_target);
+        } else if (!type_eq(src->type.ptr_target, &dest->type)) {
+          Str dest_type_str = get_type_str(&dest->type);
+          Str ptr_target_type_str = get_type_str(src->type.ptr_target);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(ptr_target_type_str), STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          free_type_str(ptr_target_type_str, src->type.ptr_target);
+          return false;
+        }
+      } break;
+
+      case EInstrKindStoreNull: {
+        if (instr->as.store_null.index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.store_null.name));
+          return false;
+        }
+
+        Var *var = varss->items[i].items + instr->as.store_null.index;
+
+        if (var->type.kind == ETypeKindUnit) {
+          var->type.kind = ETypeKindPtr;
+        } else if (var->type.kind != ETypeKindPtr) {
+          Str var_type_str = get_type_str(&var->type);
+          CERRORF("Cannot assign value of type pointer to a variable of type "STR_FMT"\n",
+                  STR_ARG(var_type_str));
+          free_type_str(var_type_str, &var->type);
+          return false;
+        }
+      } break;
       }
     }
 

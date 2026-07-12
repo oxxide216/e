@@ -198,6 +198,39 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
         fwrite(&instr->as.jump_if_not.cond_index, sizeof(instr->as.jump_if_not.cond_index), 1, stream);
         fwrite(&instr->as.jump_if_not.target, sizeof(instr->as.jump_if_not.target), 1, stream);
       } break;
+
+      case EInstrKindRef: {
+        fwrite(&instr->as.ref.dest_index, sizeof(instr->as.ref.dest_index), 1, stream);
+        fwrite(&instr->as.ref.src_index, sizeof(instr->as.ref.src_index), 1, stream);
+      } break;
+
+      case EInstrKindCopyToRef: {
+        fwrite(&instr->as.copy_to_ref.dest_index, sizeof(instr->as.copy_to_ref.dest_index), 1, stream);
+        fwrite(&instr->as.copy_to_ref.dest_offset, sizeof(instr->as.copy_to_ref.dest_offset), 1, stream);
+        fwrite(&instr->as.copy_to_ref.src_index, sizeof(instr->as.copy_to_ref.src_index), 1, stream);
+      } break;
+
+      case EInstrKindCopyFromRef: {
+        fwrite(&instr->as.copy_from_ref.dest_index, sizeof(instr->as.copy_from_ref.dest_index), 1, stream);
+        fwrite(&instr->as.copy_from_ref.src_index, sizeof(instr->as.copy_from_ref.src_index), 1, stream);
+        fwrite(&instr->as.copy_from_ref.src_offset, sizeof(instr->as.copy_from_ref.src_offset), 1, stream);
+
+        Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
+        ValueKind src_target_kind = e_type_kind_to_evm_value_kind(src->type.ptr_target->kind);
+        u32 src_target_size = get_type_size(&ir->structs, src->type.ptr_target);
+        fwrite(&src_target_kind, 1, 1, stream);
+        fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
+      } break;
+
+      case EInstrKindStoreNull: {
+        fwrite(&instr->as.store_null.index, sizeof(instr->as.store_null.index), 1, stream);
+        Value value = {
+          ValueKindUnsigned,
+          { ._unsigned = 0 },
+        };
+        fwrite(&value.kind, 1, 1, stream);
+        fwrite(&value.as._unsigned, sizeof(value.as._unsigned), 1, stream);
+      } break;
       }
     }
   }

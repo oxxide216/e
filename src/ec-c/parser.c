@@ -19,6 +19,13 @@
       return;                                                                \
   } while (0)
 
+#define parser_parse_unary_expr(parser, dest_name, dest_index)   \
+  do {                                                           \
+    parser_parse_unary_expr_impl(parser, dest_name, dest_index); \
+    if ((parser)->has_error)                                     \
+      return;                                                    \
+  } while (0)
+
 #define parser_parse_mul(parser, dest_name, dest_index)   \
   do {                                                    \
     parser_parse_mul_impl(parser, dest_name, dest_index); \
@@ -222,8 +229,9 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
   else
     parser_expect_token(parser,
                         MASK(TT_INT) | MASK(TT_BOOL) |
-                        MASK(TT_OPAREN) | MASK(TT_IDENT),
-                        "int, bool, `(` or identifier");
+                        MASK(TT_OPAREN) | MASK(TT_IDENT) |
+                        MASK(TT_NULL),
+                        "int, bool, `(`, identifier or `null`");
 
 
   if (is_const) {
@@ -326,7 +334,66 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
         );
       }
     } break;
+
+    case TT_NULL: {
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindStoreNull,
+        .store_null = { dest_name, dest_index },
+      );
+    } break;
     }
+  }
+}
+
+static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest_index) {
+  Token token;
+  parser_peek_token(parser, &token);
+
+  bool has_unary_op = token.id == TT_AND || token.id == TT_STAR;
+  if (has_unary_op) {
+    parser_next_token(parser, NULL);
+
+    switch (token.id) {
+    case TT_AND: {
+      Token name_token;
+      parser_peek_token(parser, &name_token);
+      parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindRef,
+        .ref = {
+          dest_name,
+          dest_index,
+          name_token.lexeme,
+          get_var_index(parser->varss, name_token.lexeme),
+        },
+      );
+    } break;
+
+    case TT_STAR: {
+      u32 temp_index = alloc_var(parser, (Str) {0}, (Token) {});
+      parser_parse_primary_expr(parser, (Str) {0}, temp_index, false);
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindCopyFromRef,
+        .copy_from_ref = {
+          dest_name,
+          dest_index,
+          {},
+          temp_index,
+          0,
+        },
+      );
+    } break;
+    }
+  } else {
+    parser_parse_primary_expr(parser, dest_name, dest_index, false);
   }
 }
 
@@ -365,13 +432,33 @@ static void backpatch_dest(EProc *proc, u32 index, Str new_dest_name, u32 new_de
   case EInstrKindRetVal:    break;
   case EInstrKindJump:      break;
   case EInstrKindJumpIfNot: break;
+
+  case EInstrKindRef: {
+    instr->as.ref.dest_name = new_dest_name;
+    instr->as.ref.dest_index = new_dest_index;
+  } break;
+
+  case EInstrKindCopyToRef: {
+    instr->as.copy_to_ref.dest_name = new_dest_name;
+    instr->as.copy_to_ref.dest_index = new_dest_index;
+  } break;
+
+  case EInstrKindCopyFromRef: {
+    instr->as.copy_from_ref.dest_name = new_dest_name;
+    instr->as.copy_from_ref.dest_index = new_dest_index;
+  } break;
+
+  case EInstrKindStoreNull: {
+    instr->as.store_null.name = new_dest_name;
+    instr->as.store_null.index = new_dest_index;
+  } break;
   }
 }
 
 static void parser_parse_mul_impl(Parser *parser, Str dest_name, u32 dest_index) {
   u32 alloc_index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len;
   u32 temp0_index = alloc_var(parser, (Str) {0}, (Token) {});
-  parser_parse_primary_expr(parser, (Str) {0}, temp0_index, false);
+  parser_parse_unary_expr(parser, (Str) {0}, temp0_index);
   u32 index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len - 2;
 
   Token token;
@@ -384,7 +471,7 @@ static void parser_parse_mul_impl(Parser *parser, Str dest_name, u32 dest_index)
     if (temp1_index == (u32) -1)
       temp1_index = alloc_var(parser, (Str) {0}, token);
 
-    parser_parse_primary_expr(parser, (Str) {0}, temp1_index, false);
+    parser_parse_unary_expr(parser, (Str) {0}, temp1_index);
 
     emit_instr(
       &parser->ir->procs,
@@ -650,12 +737,29 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     parser_peek_token(parser, &token);
     parser_expect_token(parser,
-                        MASK(TT_SET) | MASK(TT_OPAREN),
-                        "`=` or `(`");
+                        MASK(TT_SET) | MASK(TT_COLONSET) | MASK(TT_OPAREN),
+                        "`=`, `:=` or `(`");
 
     if (token.id == TT_SET) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
       parser_parse_expr(parser, name_token.lexeme, index);
+    } else if (token.id == TT_COLONSET) {
+      u32 index = get_var_index(parser->varss, name_token.lexeme);
+      u32 temp_index = alloc_var(parser, (Str) {0}, token);
+      parser_parse_expr(parser, (Str) {0}, temp_index);
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindCopyToRef,
+        .copy_to_ref = {
+          name_token.lexeme,
+          index,
+          0,
+          {},
+          temp_index,
+        },
+      );
     } else if (token.id == TT_OPAREN) {
       Indices arg_indices = {0};
 

@@ -114,6 +114,36 @@ void ir_print(Ir *ir) {
                instr->as.jump_if_not.target,
                instr->as.jump_if_not.cond_index);
       } break;
+
+      case InstrKindRef: {
+        printf("  $%u = &$%u\n",
+               instr->as.ref.dest_index,
+               instr->as.ref.src_index);
+      } break;
+
+      case InstrKindCopyToRef: {
+        if (instr->as.copy_to_ref.dest_offset == 0)
+          printf("  $%u := $%u\n",
+                 instr->as.copy_to_ref.dest_index,
+                 instr->as.copy_to_ref.src_index);
+        else
+          printf("  $%u[%u] := $%u\n",
+                 instr->as.copy_to_ref.dest_index,
+                 instr->as.copy_to_ref.dest_offset,
+                 instr->as.copy_to_ref.src_index);
+      } break;
+
+      case InstrKindCopyFromRef: {
+        if (instr->as.copy_from_ref.src_offset == 0)
+          printf("  $%u = $%u\n",
+                 instr->as.copy_from_ref.dest_index,
+                 instr->as.copy_from_ref.src_index);
+        else
+          printf("  $%u = $%u[%u]\n",
+                 instr->as.copy_from_ref.dest_index,
+                 instr->as.copy_from_ref.src_index,
+                 instr->as.copy_from_ref.src_offset);
+      } break;
       }
     }
 

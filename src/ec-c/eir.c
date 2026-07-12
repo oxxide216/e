@@ -12,7 +12,8 @@ EType type_clone(EType *type) {
 bool type_eq(EType *a, EType *b) {
   if (a->kind == ETypeKindPtr)
     return a->kind == b->kind &&
-           type_eq(a->ptr_target, b->ptr_target);
+           (!a->ptr_target || !b->ptr_target ||
+            type_eq(a->ptr_target, b->ptr_target));
   else
     return a->kind == b->kind &&
            (a->kind != ETypeKindStruct ||

@@ -263,9 +263,11 @@ static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
 }
 
 static void ensure_in_reg_of_size(FILE *stream, VarLoc *loc, u32 size, u32 temp_reg_index) {
-  fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(size)[temp_reg_index]));
-  write_loc(stream, loc);
-  write_cstr(stream, "\n");
+  if (loc->value < 0) {
+    fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(size)[temp_reg_index]));
+    write_loc(stream, loc);
+    write_cstr(stream, "\n");
+  }
 }
 
 static void ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_index) {
@@ -754,6 +756,58 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           write_cstr(stream, "  cmp ");
           write_loc(stream, locs.items + instr->as.jump_if_not.cond_index);
           fprintf(stream, ",0\n  je .l%u\n", instr->as.jump_if_not.target);
+        }
+      } break;
+
+      case InstrKindRef: {
+        locs.items[instr->as.ref.dest_index].kind = ValueKindUnsigned;
+        locs.items[instr->as.ref.dest_index].size = 8;
+
+        write_cstr(stream, "  lea ");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.ref.dest_index, 0);
+        write_cstr(stream, ",");
+        write_loc(stream, locs.items + instr->as.ref.src_index);
+        write_cstr(stream, "\n");
+
+        if (locs.items[instr->as.ref.dest_index].value < 0) {
+          write_cstr(stream, "  mov ");
+          write_loc(stream, locs.items + instr->as.ref.dest_index);
+          write_cstr(stream, ",");
+          write_str(stream, get_temp_regs(locs.items[instr->as.ref.dest_index].size)[0]);
+          write_cstr(stream, "\n");
+        }
+      } break;
+
+      case InstrKindCopyToRef: {
+        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0);
+        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.src_index, 1);
+
+        write_cstr(stream, "  mov [");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0);
+        if (instr->as.copy_to_ref.dest_offset > 0)
+          fprintf(stream, "+%u", instr->as.copy_to_ref.dest_offset);
+        write_cstr(stream, "],");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.src_index, 1);
+        write_cstr(stream, "\n");
+      } break;
+
+      case InstrKindCopyFromRef: {
+        ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_index, 0);
+
+        write_cstr(stream, "  mov ");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.dest_index, 0);
+        write_cstr(stream, ",[");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_index, 0);
+        if (instr->as.copy_from_ref.src_offset > 0)
+          fprintf(stream, "+%u", instr->as.copy_from_ref.src_offset);
+        write_cstr(stream, "]\n");
+
+        if (locs.items[instr->as.copy_from_ref.dest_index].value < 0) {
+          write_cstr(stream, "  mov ");
+          write_loc(stream, locs.items + instr->as.copy_from_ref.dest_index);
+          write_cstr(stream, ",");
+          write_str(stream, get_temp_regs(locs.items[instr->as.copy_from_ref.dest_index].size)[0]);
+          write_cstr(stream, "\n");
         }
       } break;
       }

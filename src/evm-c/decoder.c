@@ -155,6 +155,28 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         decode_buffer(&decoder, &instr->as.jump_if_not.cond_index, sizeof(instr->as.jump_if_not.cond_index));
         decode_buffer(&decoder, &instr->as.jump_if_not.target, sizeof(instr->as.jump_if_not.target));
       } break;
+
+      case InstrKindRef: {
+        decode_buffer(&decoder, &instr->as.ref.dest_index, sizeof(instr->as.ref.dest_index));
+        decode_buffer(&decoder, &instr->as.ref.src_index, sizeof(instr->as.ref.src_index));
+      } break;
+
+      case InstrKindCopyToRef: {
+        decode_buffer(&decoder, &instr->as.copy_to_ref.dest_index, sizeof(instr->as.copy_to_ref.dest_index));
+        decode_buffer(&decoder, &instr->as.copy_to_ref.dest_offset, sizeof(instr->as.copy_to_ref.dest_offset));
+        decode_buffer(&decoder, &instr->as.copy_to_ref.src_index, sizeof(instr->as.copy_to_ref.src_index));
+      } break;
+
+      case InstrKindCopyFromRef: {
+        decode_buffer(&decoder, &instr->as.copy_from_ref.dest_index, sizeof(instr->as.copy_from_ref.dest_index));
+        decode_buffer(&decoder, &instr->as.copy_from_ref.src_index, sizeof(instr->as.copy_from_ref.src_index));
+        decode_buffer(&decoder, &instr->as.copy_from_ref.src_offset, sizeof(instr->as.copy_from_ref.src_offset));
+
+        u8 src_target_kind;
+        decode_buffer(&decoder, &src_target_kind, 1);
+        instr->as.copy_from_ref.src_target_kind = src_target_kind;
+        decode_buffer(&decoder, &instr->as.copy_from_ref.src_target_size, sizeof(instr->as.copy_from_ref.src_target_size));
+      } break;
       }
     }
   }

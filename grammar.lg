@@ -15,6 +15,7 @@ else=else
 const=const
 use=use
 super=super
+null=null
 
 oparen=\(
 cparen=\)
@@ -40,6 +41,7 @@ ge=>=
 arrow=\->
 colon=:
 coloncolon=::
+colonset=:=
 
 int=\-?0-9+
 ident=(a-z|A-Z|_)(a-z|A-Z|_|0-9)*

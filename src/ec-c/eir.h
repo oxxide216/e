@@ -58,6 +58,10 @@ typedef enum {
   EInstrKindRetVal,
   EInstrKindJump,
   EInstrKindJumpIfNot,
+  EInstrKindRef,
+  EInstrKindCopyToRef,
+  EInstrKindCopyFromRef,
+  EInstrKindStoreNull,
 } EInstrKind;
 
 typedef struct {
@@ -132,16 +136,48 @@ typedef struct {
   u32 target;
 } EInstrJumpIfNot;
 
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  Str src_name;
+  u32 src_index;
+} EInstrRef;
+
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  u32 dest_offset;
+  Str src_name;
+  u32 src_index;
+} EInstrCopyToRef;
+
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  Str src_name;
+  u32 src_index;
+  u32 src_offset;
+} EInstrCopyFromRef;
+
+typedef struct {
+  Str name;
+  u32 index;
+} EInstrStoreNull;
+
 typedef union {
-  EInstrAlloc      alloc;
-  EInstrStore      store;
-  EInstrCopy       copy;
-  EInstrBinOp      bin_op;
-  EInstrCall       call;
-  EInstrCallAssign call_assign;
-  EInstrRetVal     ret_val;
-  EInstrJump       jump;
-  EInstrJumpIfNot  jump_if_not;
+  EInstrAlloc          alloc;
+  EInstrStore          store;
+  EInstrCopy           copy;
+  EInstrBinOp          bin_op;
+  EInstrCall           call;
+  EInstrCallAssign     call_assign;
+  EInstrRetVal         ret_val;
+  EInstrJump           jump;
+  EInstrJumpIfNot      jump_if_not;
+  EInstrRef            ref;
+  EInstrCopyToRef      copy_to_ref;
+  EInstrCopyFromRef    copy_from_ref;
+  EInstrStoreNull      store_null;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;

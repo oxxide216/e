@@ -30,6 +30,9 @@ typedef enum {
   InstrKindRetVal,
   InstrKindJump,
   InstrKindJumpIfNot,
+  InstrKindRef,
+  InstrKindCopyToRef,
+  InstrKindCopyFromRef,
 } InstrKind;
 
 typedef struct {
@@ -99,16 +102,38 @@ typedef struct {
   u32 target;
 } InstrJumpIfNot;
 
+typedef struct {
+  u32 dest_index;
+  u32 src_index;
+} InstrRef;
+
+typedef struct {
+  u32 dest_index;
+  u32 dest_offset;
+  u32 src_index;
+} InstrCopyToRef;
+
+typedef struct {
+  u32       dest_index;
+  u32       src_index;
+  u32       src_offset;
+  ValueKind src_target_kind;
+  u32       src_target_size;
+} InstrCopyFromRef;
+
 typedef union {
-  InstrAlloc      alloc;
-  InstrStore      store;
-  InstrCopy       copy;
-  InstrBinOp      bin_op;
-  InstrCall       call;
-  InstrCallAssign call_assign;
-  InstrRetVal     ret_val;
-  InstrJump       jump;
-  InstrJumpIfNot  jump_if_not;
+  InstrAlloc       alloc;
+  InstrStore       store;
+  InstrCopy        copy;
+  InstrBinOp       bin_op;
+  InstrCall        call;
+  InstrCallAssign  call_assign;
+  InstrRetVal      ret_val;
+  InstrJump        jump;
+  InstrJumpIfNot   jump_if_not;
+  InstrRef         ref;
+  InstrCopyToRef   copy_to_ref;
+  InstrCopyFromRef copy_from_ref;
 } InstrAs;
 
 typedef struct {

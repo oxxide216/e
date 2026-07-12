@@ -12,7 +12,7 @@ typedef struct {
   // Lifetime af a variable
   u32       begin;
   u32       end;
-  bool      stack_only;
+  bool      is_stack_only;
   bool      is_arg;
 } VarLoc;
 
