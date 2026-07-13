@@ -1,7 +1,6 @@
 proc str_len(str: &u8) -> s64
   let len = 0
-  while *str != 0 as u8
-    str = str + 1
+  while str[len] != 0 as u8
     len = len + 1
   end
   retval len

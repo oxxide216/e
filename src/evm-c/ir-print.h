@@ -2,7 +2,8 @@
 #define IR_PRINT_H
 
 #include "ir.h"
+#include "codegen/codegen.h"
 
-void ir_print(Ir *ir);
+void proc_print(Proc *proc, VarLocs *locs);
 
 #endif // IR_PRINT_H

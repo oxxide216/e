@@ -24,7 +24,7 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       VarLoc loc = {
         ValueKindSigned,
         0, instr->as.alloc.size,
-        0, i, 0, false, false,
+        0, i, 0, instr->as.alloc.size > 8, false,
       };
       locs->items[instr->as.alloc.index] = loc;
     } break;
@@ -122,6 +122,10 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         ++locs->items[instr->as.copy_to_ref.dest_index].uses;
         locs->items[instr->as.copy_to_ref.dest_index].end = i;
       }
+      if (instr->as.copy_to_ref.dest_offset_index < locs->cap) {
+        ++locs->items[instr->as.copy_to_ref.dest_offset_index].uses;
+        locs->items[instr->as.copy_to_ref.dest_offset_index].end = i;
+      }
       if (instr->as.copy_to_ref.src_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref.src_index].uses;
         locs->items[instr->as.copy_to_ref.src_index].end = i;
@@ -136,6 +140,10 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       if (instr->as.copy_from_ref.src_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref.src_index].uses;
         locs->items[instr->as.copy_from_ref.src_index].end = i;
+      }
+      if (instr->as.copy_from_ref.src_offset_index < locs->cap) {
+        ++locs->items[instr->as.copy_from_ref.src_offset_index].uses;
+        locs->items[instr->as.copy_from_ref.src_offset_index].end = i;
       }
     } break;
 
@@ -199,11 +207,8 @@ static i32 get_var_loc_reg_index(Allocator *allocator, VarLoc *loc,
   return -1;
 }
 
-SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs,
-                              u32 scratch_regs_len,
-                              u32 default_stack_size) {
+SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs, u32 scratch_regs_len) {
   Allocator allocator = {0};
-  allocator.space_used.stack_size = default_stack_size;
   for (u32 i = proc->args.len; i < locs->cap; ++i)
     if (locs->items[i].uses > 0)
       DA_APPEND(allocator.refs, locs->items + i);

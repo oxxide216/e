@@ -6,35 +6,6 @@ static void encode_str(FILE *stream, Str str) {
   fwrite(str.ptr, 1, str.len, stream);
 }
 
-static u32 get_type_size(EStructs *structs, EType *type) {
-  switch (type->kind) {
-  case ETypeKindUnit: return 0;
-  case ETypeKindS8:   return 1;
-  case ETypeKindS16:  return 2;
-  case ETypeKindS32:  return 4;
-  case ETypeKindS64:  return 8;
-  case ETypeKindU8:   return 1;
-  case ETypeKindU16:  return 2;
-  case ETypeKindU32:  return 4;
-  case ETypeKindU64:  return 8;
-  case ETypeKindBool: return 4;
-
-  case ETypeKindStruct: {
-    u32 size = 0;
-
-    EStruct *_struct = get_struct(structs, type->name);
-    for (u32 i = 0; i < _struct->fields.len; ++i)
-      size += get_type_size(structs, &_struct->fields.items[i].type);
-
-    return size == 0 ? 1 : size;
-  }
-
-  case ETypeKindPtr: return 8;
-  }
-
-  return 0;
-}
-
 static ValueKind e_type_kind_to_evm_value_kind(ETypeKind kind) {
   switch (kind) {
   case ETypeKindUnit:   return 0;
@@ -48,6 +19,7 @@ static ValueKind e_type_kind_to_evm_value_kind(ETypeKind kind) {
   case ETypeKindU64:    return ValueKindUnsigned;
   case ETypeKindBool:   return ValueKindUnsigned;
   case ETypeKindStruct: return ValueKindUnsigned;
+  case ETypeKindArray:  return ValueKindUnsigned;
   case ETypeKindPtr:    return ValueKindUnsigned;
   }
 
@@ -67,6 +39,7 @@ static Value e_value_to_evm_value(EValue *value) {
   case ETypeKindU64:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindBool:   return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindStruct: return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
+  case ETypeKindArray:  return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindPtr:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   }
 
@@ -117,6 +90,7 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   case EInstrKindInlineAsm:   return InstrKindInlineAsm;
   case EInstrKindStoreData:   return InstrKindStoreData;
   case EInstrKindCast:        return InstrKindConvert;
+  case EInstrKindLenOf:       return InstrKindStore;
   }
 
   return 0;
@@ -230,14 +204,18 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
 
       case EInstrKindCopyToRef: {
         fwrite(&instr->as.copy_to_ref.dest_index, sizeof(instr->as.copy_to_ref.dest_index), 1, stream);
-        fwrite(&instr->as.copy_to_ref.dest_offset, sizeof(instr->as.copy_to_ref.dest_offset), 1, stream);
+        fwrite(&instr->as.copy_to_ref.has_offset, 1, 1, stream);
+        if (instr->as.copy_to_ref.has_offset)
+          fwrite(&instr->as.copy_to_ref.dest_offset_index, sizeof(instr->as.copy_to_ref.dest_offset_index), 1, stream);
         fwrite(&instr->as.copy_to_ref.src_index, sizeof(instr->as.copy_to_ref.src_index), 1, stream);
       } break;
 
       case EInstrKindCopyFromRef: {
         fwrite(&instr->as.copy_from_ref.dest_index, sizeof(instr->as.copy_from_ref.dest_index), 1, stream);
         fwrite(&instr->as.copy_from_ref.src_index, sizeof(instr->as.copy_from_ref.src_index), 1, stream);
-        fwrite(&instr->as.copy_from_ref.src_offset, sizeof(instr->as.copy_from_ref.src_offset), 1, stream);
+        fwrite(&instr->as.copy_from_ref.has_offset, 1, 1, stream);
+        if (instr->as.copy_from_ref.has_offset)
+          fwrite(&instr->as.copy_from_ref.src_offset_index, sizeof(instr->as.copy_from_ref.src_offset_index), 1, stream);
 
         Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(src->type.ptr_target->kind);
@@ -282,6 +260,18 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
         fwrite(&dest_size, sizeof(dest_size), 1, stream);
 
         fwrite(&instr->as.cast.src_index, sizeof(instr->as.cast.src_index), 1, stream);
+      } break;
+
+      case EInstrKindLenOf: {
+        fwrite(&instr->as.len_of.dest_index, sizeof(instr->as.len_of.dest_index), 1, stream);
+
+        Var *src = varss->items[i].items + instr->as.len_of.src_index;
+        Value value = {
+          ValueKindUnsigned,
+          { ._unsigned = src->type.array_len },
+        };
+        fwrite(&value.kind, 1, 1, stream);
+        fwrite(&value.as._unsigned, sizeof(value.as._unsigned), 1, stream);
       } break;
       }
     }

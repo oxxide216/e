@@ -17,6 +17,7 @@ typedef enum {
   ETypeKindU64,
   ETypeKindBool,
   ETypeKindStruct,
+  ETypeKindArray,
   ETypeKindPtr,
 } ETypeKind;
 
@@ -29,8 +30,14 @@ typedef struct EType EType;
 
 struct EType {
   ETypeKind  kind;
-  Str        name;
-  EType     *ptr_target;
+  union {
+    Str      name;
+    EType   *ptr_target;
+    struct {
+      EType *array_element;
+      u32    array_len;
+    };
+  };
   ETypeLoc   loc;
 };
 
@@ -65,6 +72,7 @@ typedef enum {
   EInstrKindInlineAsm,
   EInstrKindStoreData,
   EInstrKindCast,
+  EInstrKindLenOf,
 } EInstrKind;
 
 typedef struct {
@@ -79,10 +87,11 @@ typedef struct {
 } EInstrStore;
 
 typedef struct {
-  Str dest_name;
-  u32 dest_index;
-  Str src_name;
-  u32 src_index;
+  Str  dest_name;
+  u32  dest_index;
+  Str  src_name;
+  u32  src_index;
+  bool is_explicit;
 } EInstrCopy;
 
 typedef enum {
@@ -147,19 +156,23 @@ typedef struct {
 } EInstrRef;
 
 typedef struct {
-  Str dest_name;
-  u32 dest_index;
-  u32 dest_offset;
-  Str src_name;
-  u32 src_index;
+  Str  dest_name;
+  u32  dest_index;
+  bool has_offset;
+  Str  dest_offset_name;
+  u32  dest_offset_index;
+  Str  src_name;
+  u32  src_index;
 } EInstrCopyToRef;
 
 typedef struct {
-  Str dest_name;
-  u32 dest_index;
-  Str src_name;
-  u32 src_index;
-  u32 src_offset;
+  Str  dest_name;
+  u32  dest_index;
+  Str  src_name;
+  u32  src_index;
+  bool has_offset;
+  Str  src_offset_name;
+  u32  src_offset_index;
 } EInstrCopyFromRef;
 
 typedef struct {
@@ -198,23 +211,31 @@ typedef struct {
   u32   src_index;
 } EInstrCast;
 
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  Str src_name;
+  u32 src_index;
+} EInstrLenOf;
+
 typedef union {
-  EInstrAlloc          alloc;
-  EInstrStore          store;
-  EInstrCopy           copy;
-  EInstrBinOp          bin_op;
-  EInstrCall           call;
-  EInstrCallAssign     call_assign;
-  EInstrRetVal         ret_val;
-  EInstrJump           jump;
-  EInstrJumpIfNot      jump_if_not;
-  EInstrRef            ref;
-  EInstrCopyToRef      copy_to_ref;
-  EInstrCopyFromRef    copy_from_ref;
-  EInstrStoreNull      store_null;
-  EInstrInlineAsm      inline_asm;
-  EInstrStoreData      store_data;
-  EInstrCast           cast;
+  EInstrAlloc       alloc;
+  EInstrStore       store;
+  EInstrCopy        copy;
+  EInstrBinOp       bin_op;
+  EInstrCall        call;
+  EInstrCallAssign  call_assign;
+  EInstrRetVal      ret_val;
+  EInstrJump        jump;
+  EInstrJumpIfNot   jump_if_not;
+  EInstrRef         ref;
+  EInstrCopyToRef   copy_to_ref;
+  EInstrCopyFromRef copy_from_ref;
+  EInstrStoreNull   store_null;
+  EInstrInlineAsm   inline_asm;
+  EInstrStoreData   store_data;
+  EInstrCast        cast;
+  EInstrLenOf       len_of;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;
@@ -290,6 +311,8 @@ struct EModuleDep {
 EType type_clone(EType *type);
 bool type_eq(EType *a, EType *b);
 void type_free(EType *type);
+
+u32 get_type_size(EStructs *structs, EType *type);
 
 EStruct *get_struct(EStructs *structs, Str name);
 

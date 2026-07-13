@@ -3,9 +3,6 @@
 #include "io.h"
 #include "decoder.h"
 #include "codegen/codegen.h"
-#ifndef NDEBUG
-#include "ir-print.h"
-#endif
 #define SHL_STR_IMPLEMENTATION
 #include "shl/shl-str.h"
 
@@ -105,10 +102,6 @@ i32 main(i32 argc, char **argv) {
   }
 
   free(content.ptr);
-
-#ifndef NDEBUG
-  ir_print(&ir);
-#endif
 
   remove(config.output_path);
   FILE *output_file = fopen(config.output_path, "wb");

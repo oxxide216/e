@@ -14,6 +14,11 @@ bool type_eq(EType *a, EType *b) {
     return a->kind == b->kind &&
            (!a->ptr_target || !b->ptr_target ||
             type_eq(a->ptr_target, b->ptr_target));
+  else if (a->kind == ETypeKindArray)
+    return a->kind == b->kind &&
+           a->array_element && b->array_element &&
+           type_eq(a->array_element, b->array_element) &&
+           a->array_len == b->array_len;
   else
     return a->kind == b->kind &&
            (a->kind != ETypeKindStruct ||
@@ -24,6 +29,39 @@ void type_free(EType *type) {
   if (type->ptr_target)
     type_free(type->ptr_target);
   free(type);
+}
+
+u32 get_type_size(EStructs *structs, EType *type) {
+  switch (type->kind) {
+  case ETypeKindUnit: return 0;
+  case ETypeKindS8:   return 1;
+  case ETypeKindS16:  return 2;
+  case ETypeKindS32:  return 4;
+  case ETypeKindS64:  return 8;
+  case ETypeKindU8:   return 1;
+  case ETypeKindU16:  return 2;
+  case ETypeKindU32:  return 4;
+  case ETypeKindU64:  return 8;
+  case ETypeKindBool: return 4;
+
+  case ETypeKindStruct: {
+    u32 size = 0;
+
+    EStruct *_struct = get_struct(structs, type->name);
+    for (u32 i = 0; i < _struct->fields.len; ++i)
+      size += get_type_size(structs, &_struct->fields.items[i].type);
+
+    return size == 0 ? 1 : size;
+  }
+
+  case ETypeKindArray: {
+    return get_type_size(structs, type->array_element) * type->array_len;
+  }
+
+  case ETypeKindPtr: return 8;
+  }
+
+  return 0;
 }
 
 EStruct *get_struct(EStructs *structs, Str name) {

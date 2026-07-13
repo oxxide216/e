@@ -34,9 +34,7 @@ typedef struct {
 } Allocator;
 
 void      add_var_locs(VarLocs *locs, Proc *proc);
-SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs,
-                              u32 scratch_regs_len,
-                              u32 default_stack_size);
+SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs, u32 scratch_regs_len);
 void      promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs);
 
 void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir);

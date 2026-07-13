@@ -43,7 +43,12 @@ static bool check_struct_existence(EStructs *structs, EType *type) {
 }
 
 static EType make_type_from_kind(ETypeKind kind) {
-  return (EType) { kind, {}, NULL, {} };
+  return (EType) { kind, {}, {} };
+}
+
+static void free_type_str(Str str, EType *type) {
+  if (type->kind == ETypeKindPtr || type->kind == ETypeKindArray)
+    free(str.ptr);
 }
 
 static Str get_type_str(EType *type) {
@@ -63,6 +68,18 @@ static Str get_type_str(EType *type) {
     case ETypeKindBool:   return STR_LIT("bool");
     case ETypeKindStruct: return STR_LIT("struct"); // unreachable
 
+    case ETypeKindArray: {
+      Str target_str = get_type_str(type->array_element);
+      StringBuilder sb = {0};
+      sb_push_char(&sb, '[');
+      sb_push_str(&sb, target_str);
+      sb_push(&sb, "; ");
+      sb_push_u32(&sb, type->array_len);
+      sb_push_char(&sb, ']');
+      free_type_str(target_str, type->array_element);
+      return sb_to_str(sb);
+    }
+
     case ETypeKindPtr: {
       Str target_str = get_type_str(type->ptr_target);
       Str result;
@@ -70,6 +87,7 @@ static Str get_type_str(EType *type) {
       result.ptr = malloc(result.len);
       result.ptr[0] = '&';
       memcpy(result.ptr + 1, target_str.ptr, target_str.len);
+      free_type_str(target_str, type->ptr_target);
       return result;
     }
     }
@@ -77,11 +95,6 @@ static Str get_type_str(EType *type) {
 
   ERROR("Unreachable\n");
   return (Str) {0};
-}
-
-static void free_type_str(Str str, EType *type) {
-  if (type->kind == ETypeKindPtr)
-    free(str.ptr);
 }
 
 static char *get_bin_op_kind_cstr(EBinOpKind kind) {
@@ -149,7 +162,7 @@ static bool is_int(EType *type) {
 
 static bool can_do_bin_op(EBinOpKind kind, EType *a, EType *b) {
   if (kind == EBinOpKindAdd || kind == EBinOpKindSub) {
-    if (a->kind == ETypeKindPtr && is_int(b))
+    if ((a->kind == ETypeKindPtr || a->kind == ETypeKindArray) && is_int(b))
       return true;
     if (is_int(a) && is_int(b) && a->kind == b->kind)
       return true;
@@ -167,6 +180,122 @@ static bool can_cast(EType *src, EType *dest) {
          (is_int(src) && dest->kind == ETypeKindPtr) ||
          (dest->kind == ETypeKindBool && is_int(src)) ||
          (dest->kind == ETypeKindPtr && is_int(src));
+}
+
+static void substitute_var_uses_with_its_src(EProc *proc, u32 start,
+                                             u32 var_index, u32 src_index) {
+  for (u32 i = start; i < proc->instrs.len; ++i) {
+    EInstr *instr = proc->instrs.items + i;
+
+    switch (instr->kind) {
+    case EInstrKindAlloc: break;
+
+    case EInstrKindStore: {
+      if (instr->as.store.index == var_index)
+        return;
+    } break;
+
+    case EInstrKindCopy: {
+      if (instr->as.copy.src_index == var_index)
+        instr->as.copy.src_index = src_index;
+      if (instr->as.copy.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindBinOp: {
+      if (instr->as.bin_op.src0_index == var_index)
+        instr->as.bin_op.src0_index = src_index;
+      if (instr->as.bin_op.src1_index == var_index)
+        instr->as.bin_op.src1_index = src_index;
+      if (instr->as.bin_op.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindCall: {
+      for (u32 j = 0; j < instr->as.call.arg_indices.len; ++j)
+        if (instr->as.call.arg_indices.items[j] == var_index)
+          instr->as.call.arg_indices.items[j] = src_index;
+    } break;
+
+    case EInstrKindCallAssign: {
+      for (u32 j = 0; j < instr->as.call_assign.arg_indices.len; ++j)
+        if (instr->as.call_assign.arg_indices.items[j] == var_index)
+          instr->as.call_assign.arg_indices.items[j] = src_index;
+      if (instr->as.call_assign.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindRet: break;
+
+    case EInstrKindRetVal: {
+      if (instr->as.ret_val.index == var_index)
+        instr->as.ret_val.index = src_index;
+    } break;
+
+    case EInstrKindJump: break;
+
+    case EInstrKindJumpIfNot: {
+      if (instr->as.jump_if_not.cond_index == var_index)
+        instr->as.jump_if_not.cond_index = src_index;
+    } break;
+
+    case EInstrKindRef: {
+      if (instr->as.ref.src_index == var_index)
+        instr->as.ref.src_index = src_index;
+      if (instr->as.ref.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindCopyToRef: {
+      if (instr->as.copy_to_ref.src_index == var_index)
+        instr->as.copy_to_ref.src_index = src_index;
+      if (instr->as.copy_to_ref.dest_offset_index == var_index)
+        instr->as.copy_to_ref.dest_offset_index = src_index;
+      if (instr->as.copy_to_ref.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindCopyFromRef: {
+      if (instr->as.copy_from_ref.src_index == var_index)
+        instr->as.copy_from_ref.src_index = src_index;
+      if (instr->as.copy_from_ref.src_offset_index == var_index)
+        instr->as.copy_from_ref.src_offset_index = src_index;
+      if (instr->as.copy_from_ref.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindStoreNull: {
+      if (instr->as.store_null.index == var_index)
+        return;
+    } break;
+
+    case EInstrKindInlineAsm: {
+      for (u32 j = 0; j < instr->as.inline_asm.segments.len; ++j)
+        if (instr->as.inline_asm.segments.items[j].kind == EAsmSegmentKindVar &&
+            instr->as.inline_asm.segments.items[j].value_index == var_index)
+          instr->as.inline_asm.segments.items[j].value_index = src_index;
+    } break;
+
+    case EInstrKindStoreData: {
+      if (instr->as.store_data.index == var_index)
+        return;
+    } break;
+
+    case EInstrKindCast: {
+      if (instr->as.cast.src_index == var_index)
+        instr->as.cast.src_index = src_index;
+      if (instr->as.cast.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindLenOf: {
+      if (instr->as.len_of.src_index == var_index)
+        instr->as.len_of.src_index = src_index;
+      if (instr->as.len_of.dest_index == var_index)
+        return;
+    } break;
+    }
+  }
 }
 
 bool check_ir(EIr *ir, Varss *varss) {
@@ -213,6 +342,7 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(value_type_str), STR_ARG(var_type_str));
           free_type_str(value_type_str, &value_type);
           free_type_str(var_type_str, &var->type);
+          return false;
         }
       } break;
 
@@ -240,6 +370,15 @@ bool check_ir(EIr *ir, Varss *varss) {
           free_type_str(src_type_str, &src->type);
           free_type_str(dest_type_str, &dest->type);
           return false;
+        }
+
+        if (dest->type.kind == ETypeKindStruct ||
+            dest->type.kind == ETypeKindArray) {
+          substitute_var_uses_with_its_src(proc, j + 1,
+                                           instr->as.copy.dest_index,
+                                           instr->as.copy.src_index);
+          DA_REMOVE_AT(proc->instrs, j);
+          --j;
         }
       } break;
 
@@ -277,12 +416,15 @@ bool check_ir(EIr *ir, Varss *varss) {
           return false;
         }
 
+        EType dest_type;
+        if (instr->as.bin_op.kind >= EBinOpKindEq &&
+            instr->as.bin_op.kind <= EBinOpKindGe)
+          dest_type = (EType) { ETypeKindBool, {}, {} };
+        else
+          dest_type = type_clone(&src0->type);
+
         if (dest->type.kind == ETypeKindUnit) {
-          if (instr->as.bin_op.kind >= EBinOpKindEq &&
-              instr->as.bin_op.kind <= EBinOpKindGe)
-            dest->type = (EType) { ETypeKindBool, {}, NULL, {} };
-          else
-            dest->type = type_clone(&src0->type);
+          dest->type = dest_type;
         } else if (!type_eq(&src0->type, &dest->type)) {
           Str src0_type_str = get_type_str(&src0->type);
           Str dest_type_str = get_type_str(&dest->type);
@@ -290,7 +432,76 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(src0_type_str), STR_ARG(dest_type_str));
           free_type_str(src0_type_str, &src0->type);
           free_type_str(dest_type_str, &dest->type);
+          if (dest_type.kind == ETypeKindPtr)
+            type_free(dest_type.ptr_target);
+          else if (dest_type.kind == ETypeKindArray)
+            type_free(dest_type.array_element);
           return false;
+        }
+
+        if (dest_type.kind == ETypeKindPtr)
+          type_free(dest_type.ptr_target);
+        else if (dest_type.kind == ETypeKindArray)
+          type_free(dest_type.array_element);
+
+        if ((src0->type.kind == ETypeKindPtr || src0->type.kind == ETypeKindArray) &&
+            (instr->as.bin_op.kind == EBinOpKindAdd || instr->as.bin_op.kind == EBinOpKindSub)) {
+          EType *sub_type;
+          if (src0->type.kind == ETypeKindPtr)
+            sub_type = src0->type.ptr_target;
+          else
+            sub_type = src0->type.array_element;
+
+          Var new_var = {
+            {},
+            { ETypeKindU64, {}, {} },
+          };
+          DA_APPEND(varss->items[i], new_var);
+          EInstr new_instr0 = {
+            EInstrKindAlloc,
+            {
+              .alloc = {
+                {},
+                varss->items[i].len - 1,
+              },
+            },
+            {},
+          };
+          EInstr new_instr1 = {
+            EInstrKindStore,
+            {
+              .store = {
+                {},
+                varss->items[i].len - 1,
+                {
+                  ETypeKindU64,
+                  {
+                    ._unsigned = get_type_size(&ir->structs, sub_type),
+                  },
+                },
+              },
+            },
+            {},
+          };
+          EInstr new_instr2 = {
+            EInstrKindBinOp,
+            {
+              .bin_op = {
+                {},
+                instr->as.bin_op.src1_index,
+                {},
+                instr->as.bin_op.src1_index,
+                {},
+                varss->items[i].len - 1,
+                EBinOpKindMul,
+              },
+            },
+            {},
+          };
+          DA_INSERT(proc->instrs, j, new_instr2);
+          DA_INSERT(proc->instrs, j, new_instr1);
+          DA_INSERT(proc->instrs, j, new_instr0);
+          j += 3;
         }
       } break;
 
@@ -404,8 +615,9 @@ bool check_ir(EIr *ir, Varss *varss) {
 
         EType ptr_type = {
           ETypeKindPtr,
-          {},
-          malloc(sizeof(EType)),
+          {
+            .ptr_target = malloc(sizeof(EType)),
+          },
           {},
         };
         *ptr_type.ptr_target = type_clone(&src->type);
@@ -432,6 +644,11 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(instr->as.copy_to_ref.dest_name));
           return false;
         }
+        if (instr->as.copy_to_ref.dest_offset_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.copy_to_ref.dest_offset_name));
+          return false;
+        }
         if (instr->as.copy_to_ref.src_index == (u32) -1) {
           CERRORF("Variable "STR_FMT" was not defined before usage\n",
                   STR_ARG(instr->as.copy_to_ref.src_name));
@@ -439,14 +656,24 @@ bool check_ir(EIr *ir, Varss *varss) {
         }
 
         Var *dest = varss->items[i].items + instr->as.copy_to_ref.dest_index;
+        Var *index = NULL;
+        if (instr->as.copy_to_ref.has_offset)
+          index = varss->items[i].items + instr->as.copy_to_ref.dest_offset_index;
         Var *src = varss->items[i].items + instr->as.copy_to_ref.src_index;
 
-        if (dest->type.kind != ETypeKindPtr) {
+        if (index && !is_int(&index->type)) {
+          Str index_type_str = get_type_str(&index->type);
+          CERRORF("Trying to index using "STR_FMT"\n", STR_ARG(index_type_str));
+          free_type_str(index_type_str, &index->type);
+          return false;
+        }
+
+        if (dest->type.kind != ETypeKindPtr && dest->type.kind != ETypeKindArray) {
           Str dest_type_str = get_type_str(&dest->type);
           CERRORF("Trying to dereference "STR_FMT"\n", STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           return false;
-        } else if (!dest->type.ptr_target) {
+        } else if (dest->type.kind == ETypeKindPtr && !dest->type.ptr_target) {
           dest->type.ptr_target = malloc(sizeof(EType));
           *dest->type.ptr_target = type_clone(&src->type);
         } else if (!type_eq(&src->type, dest->type.ptr_target)) {
@@ -466,6 +693,11 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(instr->as.copy_from_ref.dest_name));
           return false;
         }
+        if (instr->as.copy_from_ref.src_offset_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.copy_from_ref.src_offset_name));
+          return false;
+        }
         if (instr->as.copy_from_ref.src_index == (u32) -1) {
           CERRORF("Variable "STR_FMT" was not defined before usage\n",
                   STR_ARG(instr->as.copy_from_ref.src_name));
@@ -474,13 +706,23 @@ bool check_ir(EIr *ir, Varss *varss) {
 
         Var *dest = varss->items[i].items + instr->as.copy_from_ref.dest_index;
         Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
+        Var *index = NULL;
+        if (instr->as.copy_from_ref.has_offset)
+          index = varss->items[i].items + instr->as.copy_from_ref.src_offset_index;
 
-        if (src->type.kind != ETypeKindPtr) {
+        if (index && !is_int(&index->type)) {
+          Str index_type_str = get_type_str(&index->type);
+          CERRORF("Trying to index using "STR_FMT"\n", STR_ARG(index_type_str));
+          free_type_str(index_type_str, &index->type);
+          return false;
+        }
+
+        if (src->type.kind != ETypeKindPtr && src->type.kind != ETypeKindArray) {
           Str src_type_str = get_type_str(&src->type);
           CERRORF("Trying to dereference "STR_FMT"\n", STR_ARG(src_type_str));
           free_type_str(src_type_str, &src->type);
           return false;
-        } else if (!src->type.ptr_target) {
+        } else if (src->type.kind == ETypeKindPtr && !src->type.ptr_target) {
           CERROR("Trying to dereference a generic pointer\n");
           return false;
         } else if (dest->type.kind == ETypeKindUnit) {
@@ -538,11 +780,12 @@ bool check_ir(EIr *ir, Varss *varss) {
 
         EType ptr_type = {
           ETypeKindPtr,
-          {},
-          malloc(sizeof(EType)),
+          {
+            .ptr_target = malloc(sizeof(EType)),
+          },
           {},
         };
-        *ptr_type.ptr_target = (EType) { ETypeKindU8, {}, NULL, {} };
+        *ptr_type.ptr_target = (EType) { ETypeKindU8, {}, {} };
 
         if (var->type.kind == ETypeKindUnit) {
           var->type = ptr_type;
@@ -592,6 +835,42 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(src_type_str), STR_ARG(new_type_str));
           free_type_str(src_type_str, &src->type);
           free_type_str(new_type_str, &instr->as.cast.dest_type);
+          return false;
+        }
+      } break;
+
+      case EInstrKindLenOf: {
+        if (instr->as.len_of.dest_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.len_of.dest_name));
+          return false;
+        }
+        if (instr->as.len_of.src_index == (u32) -1) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.len_of.src_name));
+          return false;
+        }
+
+        Var *dest = varss->items[i].items + instr->as.cast.dest_index;
+        Var *src = varss->items[i].items + instr->as.cast.src_index;
+
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = (EType) {
+            ETypeKindU64,
+            {},
+            {},
+          };
+        } else if (src->type.kind != ETypeKindArray) {
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Cannot take length of a value of type "STR_FMT"\n",
+                  STR_ARG(src_type_str));
+          free_type_str(src_type_str, &src->type);
+          return false;
+        } else if (dest->type.kind != ETypeKindU64) {
+          Str dest_type_str = get_type_str(&dest->type);
+          CERRORF("Cannot assign value of type u64 to a variable of type "STR_FMT"\n",
+                  STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
           return false;
         }
       } break;

@@ -112,14 +112,14 @@ typedef struct {
 
 typedef struct {
   u32 dest_index;
-  u32 dest_offset;
+  u32 dest_offset_index;
   u32 src_index;
 } InstrCopyToRef;
 
 typedef struct {
   u32       dest_index;
   u32       src_index;
-  u32       src_offset;
+  u32       src_offset_index;
   ValueKind src_target_kind;
   u32       src_target_size;
 } InstrCopyFromRef;
