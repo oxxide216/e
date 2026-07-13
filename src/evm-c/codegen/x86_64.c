@@ -413,21 +413,41 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopy: {
-        locs.items[instr->as.copy.dest_index].kind = locs.items[instr->as.copy.src_index].kind;
-        locs.items[instr->as.copy.dest_index].size = locs.items[instr->as.copy.src_index].size;
+        VarLoc *dest_loc = locs.items + instr->as.copy.dest_index;
+        VarLoc *src_loc = locs.items + instr->as.copy.src_index;
 
-        if (locs.items[instr->as.copy.dest_index].value !=
-            locs.items[instr->as.copy.src_index].value) {
-          if (locs.items[instr->as.copy.dest_index].value < 0)
-            ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0);
-          write_cstr(stream, "  mov ");
-          write_loc(stream, locs.items + instr->as.copy.dest_index);
-          write_cstr(stream, ",");
-          if (locs.items[instr->as.copy.dest_index].value < 0)
-            write_loc_ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0);
-          else
-            write_loc(stream, locs.items + instr->as.copy.src_index);
-          write_cstr(stream, "\n");
+        dest_loc->kind = src_loc->kind;
+        dest_loc->size = src_loc->size;
+
+        if (dest_loc->value != src_loc->value) {
+          if (dest_loc->size <= 8) {
+            if (dest_loc->value < 0)
+              ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0);
+            write_cstr(stream, "  mov ");
+            write_loc(stream, locs.items + instr->as.copy.dest_index);
+            write_cstr(stream, ",");
+            if (dest_loc->value < 0)
+              write_loc_ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0);
+            else
+              write_loc(stream, locs.items + instr->as.copy.src_index);
+            write_cstr(stream, "\n");
+          } else {
+            u32 size = 0;
+            while (size < dest_loc->size) {
+              u32 part_size = 8;
+              if (size + part_size > dest_loc->size)
+                part_size = dest_loc->size - size;
+
+              fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
+              write_loc_part_of_size(stream, src_loc, size, part_size);
+              write_cstr(stream, "\n");
+              write_loc_part_of_size(stream, dest_loc, size, part_size);
+              write_str(stream, get_temp_regs(8)[0]);
+              write_cstr(stream, "\n");
+
+              size += part_size;
+            }
+          }
         }
       } break;
 
@@ -684,7 +704,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               write_loc_part_of_size(stream, loc, 0, 8);
               write_cstr(stream, "\n");
               fprintf(stream, "  mov [rsp+%u],", aligned - args_space.stack_size);
-              fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
+              write_str(stream, get_temp_regs(8)[0]);
               write_cstr(stream, "\n");
               args_space.stack_size -= 8;
 
@@ -692,7 +712,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               write_loc_part_of_size(stream, loc, 8, 8);
               write_cstr(stream, "\n");
               fprintf(stream, "  mov [rsp+%u],", aligned - args_space.stack_size);
-              fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
+              write_str(stream, get_temp_regs(8)[0]);
               write_cstr(stream, "\n");
               args_space.stack_size -= 8;
             }
@@ -708,7 +728,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               write_cstr(stream, "\n");
               args_space.stack_size += part_size;
               fprintf(stream, "  mov [rsp+%u],", aligned - args_space.stack_size);
-              fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
+              write_str(stream, get_temp_regs(8)[0]);
               write_cstr(stream, "\n");
 
               args_space.stack_size -= part_size;
