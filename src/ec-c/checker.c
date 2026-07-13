@@ -27,7 +27,34 @@
          type->loc.col + 1,            \
          __VA_ARGS__)
 
+#define CHECK_VAR(index, _name, local_index, check_move)           \
+  do {                                                             \
+    if (index == (u32) -1) {                                       \
+      CERRORF("Variable "STR_FMT" was not defined before usage\n", \
+              STR_ARG(_name));                                     \
+      goto fail;                                                   \
+    }                                                              \
+    Var *var##local_index = varss->items[i].items + index;         \
+    if (check_move && var##local_index->moved) {                   \
+      CERRORF("Trying to access variable "STR_FMT" after move\n",  \
+              STR_ARG(var##local_index->name));                    \
+      PINFO(STR_FMT":%u:%u: ", "Moved here\n",                     \
+            STR_ARG(var##local_index->moved_loc.file_path),        \
+            var##local_index->moved_loc.row + 1,                   \
+            var##local_index->moved_loc.col + 1);                  \
+      goto fail;                                                   \
+    }                                                              \
+  } while (0)
+
 typedef Da(EType *) ETypeRefs;
+
+typedef struct {
+  u32 beginning;
+  u32 from;
+  u32 to;
+} VarSubstitution;
+
+typedef Da(VarSubstitution) VarSubstitutions;
 
 static bool check_struct_existence(EStructs *structs, EType *type) {
   if (type->kind == ETypeKindStruct) {
@@ -182,9 +209,11 @@ static bool can_cast(EType *src, EType *dest) {
          (dest->kind == ETypeKindPtr && is_int(src));
 }
 
-static void substitute_var_uses_with_its_src(EProc *proc, u32 start,
-                                             u32 var_index, u32 src_index) {
-  for (u32 i = start; i < proc->instrs.len; ++i) {
+static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_subst) {
+  u32 var_index = var_subst->from;
+  u32 src_index = var_subst->to;
+
+  for (u32 i = var_subst->beginning; i < proc->instrs.len; ++i) {
     EInstr *instr = proc->instrs.items + i;
 
     switch (instr->kind) {
@@ -300,6 +329,7 @@ static void substitute_var_uses_with_its_src(EProc *proc, u32 start,
 
 bool check_ir(EIr *ir, Varss *varss) {
   bool found_main = false;
+  VarSubstitutions var_substs = {0};
 
   for (u32 i = 0; i < ir->structs.len; ++i) {
     EStruct *_struct = ir->structs.items + i;
@@ -325,13 +355,10 @@ bool check_ir(EIr *ir, Varss *varss) {
       case EInstrKindAlloc: break;
 
       case EInstrKindStore: {
-        if (instr->as.store.index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.store.name));
-          return false;
-        }
+        CHECK_VAR(instr->as.store.index, instr->as.store.name, 0, false);
 
         Var *var = varss->items[i].items + instr->as.store.index;
+        var->moved = false;
         EType value_type = make_type_from_kind(instr->as.store.value.kind);
         if (var->type.kind == ETypeKindUnit) {
           var->type = value_type;
@@ -342,23 +369,16 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(value_type_str), STR_ARG(var_type_str));
           free_type_str(value_type_str, &value_type);
           free_type_str(var_type_str, &var->type);
-          return false;
+          goto fail;
         }
       } break;
 
       case EInstrKindCopy: {
-        if (instr->as.copy.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy.dest_name));
-          return false;
-        }
-        if (instr->as.copy.src_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy.src_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.copy.dest_index, instr->as.copy.dest_name, 0, false);
+        CHECK_VAR(instr->as.copy.src_index, instr->as.copy.src_name, 1, true);
 
         Var *dest = varss->items[i].items + instr->as.copy.dest_index;
+        dest->moved = false;
         Var *src = varss->items[i].items + instr->as.copy.src_index;
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(&src->type);
@@ -369,37 +389,33 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(src_type_str), STR_ARG(dest_type_str));
           free_type_str(src_type_str, &src->type);
           free_type_str(dest_type_str, &dest->type);
-          return false;
+          goto fail;
         }
 
         if (dest->type.kind == ETypeKindStruct ||
             dest->type.kind == ETypeKindArray) {
-          substitute_var_uses_with_its_src(proc, j + 1,
-                                           instr->as.copy.dest_index,
-                                           instr->as.copy.src_index);
+          if (instr->as.copy.is_explicit) {
+            src->moved = true;
+            src->moved_loc = instr->loc;
+          }
+          VarSubstitution var_subst = {
+            j,
+            instr->as.copy.dest_index,
+            instr->as.copy.src_index,
+          };
+          DA_APPEND(var_substs, var_subst);
           DA_REMOVE_AT(proc->instrs, j);
           --j;
         }
       } break;
 
       case EInstrKindBinOp: {
-        if (instr->as.bin_op.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.bin_op.dest_name));
-          return false;
-        }
-        if (instr->as.bin_op.src0_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.bin_op.src0_name));
-          return false;
-        }
-        if (instr->as.bin_op.src1_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.bin_op.src1_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.bin_op.dest_index, instr->as.bin_op.dest_name, 0, false);
+        CHECK_VAR(instr->as.bin_op.src0_index, instr->as.bin_op.src0_name, 1, true);
+        CHECK_VAR(instr->as.bin_op.src1_index, instr->as.bin_op.src1_name, 2, true);
 
         Var *dest = varss->items[i].items + instr->as.bin_op.dest_index;
+        dest->moved = false;
         Var *src0 = varss->items[i].items + instr->as.bin_op.src0_index;
         Var *src1 = varss->items[i].items + instr->as.bin_op.src1_index;
 
@@ -413,7 +429,7 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(src1_type_str));
           free_type_str(src0_type_str, &src0->type);
           free_type_str(src1_type_str, &src1->type);
-          return false;
+          goto fail;
         }
 
         EType dest_type;
@@ -436,7 +452,7 @@ bool check_ir(EIr *ir, Varss *varss) {
             type_free(dest_type.ptr_target);
           else if (dest_type.kind == ETypeKindArray)
             type_free(dest_type.array_element);
-          return false;
+          goto fail;
         }
 
         if (dest_type.kind == ETypeKindPtr)
@@ -455,6 +471,8 @@ bool check_ir(EIr *ir, Varss *varss) {
           Var new_var = {
             {},
             { ETypeKindU64, {}, {} },
+            false,
+            {},
           };
           DA_APPEND(varss->items[i], new_var);
           EInstr new_instr0 = {
@@ -508,6 +526,7 @@ bool check_ir(EIr *ir, Varss *varss) {
       case EInstrKindCall: {
         ETypeRefs arg_types = {0};
         for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k)
+
           DA_APPEND(arg_types, &varss->items[i].items[instr->as.call.arg_indices.items[k]].type);
 
         EType *return_type = get_proc_return_type(&ir->procs, instr->as.call.name, &arg_types);
@@ -517,7 +536,7 @@ bool check_ir(EIr *ir, Varss *varss) {
           fprintf(stderr, " was not declared or defined\n");
           if (arg_types.items)
             free(arg_types.items);
-          return false;
+          goto fail;
         }
 
         if (arg_types.items)
@@ -525,11 +544,7 @@ bool check_ir(EIr *ir, Varss *varss) {
       } break;
 
       case EInstrKindCallAssign: {
-        if (instr->as.call_assign.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.call_assign.dest_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.call_assign.dest_index, instr->as.call_assign.dest_name, 0, false);
 
         ETypeRefs arg_types = {0};
         for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k)
@@ -542,10 +557,12 @@ bool check_ir(EIr *ir, Varss *varss) {
           fprintf(stderr, " was not declared or defined\n");
           if (arg_types.items)
             free(arg_types.items);
-          return false;
+          goto fail;
         }
 
         Var *dest = varss->items[i].items + instr->as.call_assign.dest_index;
+        dest->moved = false;
+
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(return_type);
         } else if (!type_eq(return_type, &dest->type)) {
@@ -555,7 +572,7 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(return_type_str), STR_ARG(dest_type_str));
           free_type_str(return_type_str, return_type);
           free_type_str(dest_type_str, &dest->type);
-          return false;
+          goto fail;
         }
 
         if (arg_types.items)
@@ -568,7 +585,7 @@ bool check_ir(EIr *ir, Varss *varss) {
           CERRORF("Unexpected return type: unit, expected "STR_FMT"\n",
                   STR_ARG(return_type_str));
           free_type_str(return_type_str, &proc->return_type);
-          return false;
+          goto fail;
         }
       } break;
 
@@ -581,7 +598,7 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(var_type_str), STR_ARG(return_type_str));
           free_type_str(var_type_str, &var->type);
           free_type_str(return_type_str, &proc->return_type);
-          return false;
+          goto fail;
         }
       } break;
 
@@ -594,23 +611,16 @@ bool check_ir(EIr *ir, Varss *varss) {
           CERRORF("Unexpected condition type: "STR_FMT", expected integer or boolean\n",
                   STR_ARG(cond_type_str));
           free_type_str(cond_type_str, &cond->type);
-          return false;
+          goto fail;
         }
       } break;
 
       case EInstrKindRef: {
-        if (instr->as.ref.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.ref.dest_name));
-          return false;
-        }
-        if (instr->as.ref.src_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.ref.src_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.ref.dest_index, instr->as.ref.dest_name, 0, false);
+        CHECK_VAR(instr->as.ref.src_index, instr->as.ref.src_name, 1, true);
 
         Var *dest = varss->items[i].items + instr->as.ref.dest_index;
+        dest->moved = false;
         Var *src = varss->items[i].items + instr->as.ref.src_index;
 
         EType ptr_type = {
@@ -632,28 +642,17 @@ bool check_ir(EIr *ir, Varss *varss) {
           free_type_str(dest_type_str, &dest->type);
           free_type_str(ptr_type_str, &ptr_type);
           type_free(ptr_type.ptr_target);
-          return false;
+          goto fail;
         } else {
           type_free(ptr_type.ptr_target);
         }
       } break;
 
       case EInstrKindCopyToRef: {
-        if (instr->as.copy_to_ref.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy_to_ref.dest_name));
-          return false;
-        }
-        if (instr->as.copy_to_ref.dest_offset_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy_to_ref.dest_offset_name));
-          return false;
-        }
-        if (instr->as.copy_to_ref.src_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy_to_ref.src_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.copy_to_ref.dest_index, instr->as.copy_to_ref.dest_name, 0, true);
+        if (instr->as.copy_to_ref.has_offset)
+          CHECK_VAR(instr->as.copy_to_ref.dest_offset_index, instr->as.copy_to_ref.dest_offset_name, 1, true);
+        CHECK_VAR(instr->as.copy_to_ref.src_index, instr->as.copy_to_ref.src_name, 2, true);
 
         Var *dest = varss->items[i].items + instr->as.copy_to_ref.dest_index;
         Var *index = NULL;
@@ -665,14 +664,14 @@ bool check_ir(EIr *ir, Varss *varss) {
           Str index_type_str = get_type_str(&index->type);
           CERRORF("Trying to index using "STR_FMT"\n", STR_ARG(index_type_str));
           free_type_str(index_type_str, &index->type);
-          return false;
+          goto fail;
         }
 
         if (dest->type.kind != ETypeKindPtr && dest->type.kind != ETypeKindArray) {
           Str dest_type_str = get_type_str(&dest->type);
           CERRORF("Trying to dereference "STR_FMT"\n", STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
-          return false;
+          goto fail;
         } else if (dest->type.kind == ETypeKindPtr && !dest->type.ptr_target) {
           dest->type.ptr_target = malloc(sizeof(EType));
           *dest->type.ptr_target = type_clone(&src->type);
@@ -683,28 +682,18 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(src_type_str), STR_ARG(ptr_target_type_str));
           free_type_str(ptr_target_type_str, dest->type.ptr_target);
           free_type_str(src_type_str, &src->type);
-          return false;
+          goto fail;
         }
       } break;
 
       case EInstrKindCopyFromRef: {
-        if (instr->as.copy_from_ref.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy_from_ref.dest_name));
-          return false;
-        }
-        if (instr->as.copy_from_ref.src_offset_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy_from_ref.src_offset_name));
-          return false;
-        }
-        if (instr->as.copy_from_ref.src_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.copy_from_ref.src_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.copy_from_ref.dest_index, instr->as.copy_from_ref.dest_name, 0, false);
+        CHECK_VAR(instr->as.copy_from_ref.src_index, instr->as.copy_from_ref.src_name, 1, true);
+        if (instr->as.copy_from_ref.has_offset)
+          CHECK_VAR(instr->as.copy_from_ref.src_offset_index, instr->as.copy_from_ref.src_offset_name, 2, true);
 
         Var *dest = varss->items[i].items + instr->as.copy_from_ref.dest_index;
+        dest->moved = false;
         Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
         Var *index = NULL;
         if (instr->as.copy_from_ref.has_offset)
@@ -714,17 +703,17 @@ bool check_ir(EIr *ir, Varss *varss) {
           Str index_type_str = get_type_str(&index->type);
           CERRORF("Trying to index using "STR_FMT"\n", STR_ARG(index_type_str));
           free_type_str(index_type_str, &index->type);
-          return false;
+          goto fail;
         }
 
         if (src->type.kind != ETypeKindPtr && src->type.kind != ETypeKindArray) {
           Str src_type_str = get_type_str(&src->type);
           CERRORF("Trying to dereference "STR_FMT"\n", STR_ARG(src_type_str));
           free_type_str(src_type_str, &src->type);
-          return false;
+          goto fail;
         } else if (src->type.kind == ETypeKindPtr && !src->type.ptr_target) {
           CERROR("Trying to dereference a generic pointer\n");
-          return false;
+          goto fail;
         } else if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(src->type.ptr_target);
         } else if (!type_eq(src->type.ptr_target, &dest->type)) {
@@ -734,18 +723,15 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(ptr_target_type_str), STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           free_type_str(ptr_target_type_str, src->type.ptr_target);
-          return false;
+          goto fail;
         }
       } break;
 
       case EInstrKindStoreNull: {
-        if (instr->as.store_null.index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.store_null.name));
-          return false;
-        }
+        CHECK_VAR(instr->as.store_null.index, instr->as.store_null.name, 0, false);
 
         Var *var = varss->items[i].items + instr->as.store_null.index;
+        var->moved = false;
 
         if (var->type.kind == ETypeKindUnit) {
           var->type.kind = ETypeKindPtr;
@@ -754,29 +740,23 @@ bool check_ir(EIr *ir, Varss *varss) {
           CERRORF("Cannot assign value of type pointer to a variable of type "STR_FMT"\n",
                   STR_ARG(var_type_str));
           free_type_str(var_type_str, &var->type);
-          return false;
+          goto fail;
         }
       } break;
 
       case EInstrKindInlineAsm: {
         for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
           EAsmSegment *segment = instr->as.inline_asm.segments.items + k;
-          if (segment->kind && EAsmSegmentKindVar && segment->value_index == (u32) -1) {
-            CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                    STR_ARG(segment->value));
-            return false;
-          }
+          if (segment->kind && EAsmSegmentKindVar)
+            CHECK_VAR(segment->value_index, segment->value, 0, true);
         }
       } break;
 
       case EInstrKindStoreData: {
-        if (instr->as.store_data.index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.store_data.name));
-          return false;
-        }
+        CHECK_VAR(instr->as.store_data.index, instr->as.store_data.name, 0, false);
 
         Var *var = varss->items[i].items + instr->as.store_data.index;
+        var->moved = false;
 
         EType ptr_type = {
           ETypeKindPtr,
@@ -797,25 +777,18 @@ bool check_ir(EIr *ir, Varss *varss) {
           free_type_str(var_type_str, &var->type);
           free_type_str(ptr_type_str, &ptr_type);
           type_free(ptr_type.ptr_target);
-          return false;
+          goto fail;
         } else {
           type_free(ptr_type.ptr_target);
         }
       } break;
 
       case EInstrKindCast: {
-        if (instr->as.cast.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.cast.dest_name));
-          return false;
-        }
-        if (instr->as.cast.src_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.cast.src_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.cast.dest_index, instr->as.cast.dest_name, 0, false);
+        CHECK_VAR(instr->as.cast.src_index, instr->as.cast.src_name, 1, true);
 
         Var *dest = varss->items[i].items + instr->as.cast.dest_index;
+        dest->moved = false;
         Var *src = varss->items[i].items + instr->as.cast.src_index;
 
         if (dest->type.kind == ETypeKindUnit) {
@@ -827,7 +800,7 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(new_type_str), STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           free_type_str(new_type_str, &instr->as.cast.dest_type);
-          return false;
+          goto fail;
         } else if (!can_cast(&src->type, &instr->as.cast.dest_type)) {
           Str src_type_str = get_type_str(&src->type);
           Str new_type_str = get_type_str(&instr->as.cast.dest_type);
@@ -835,23 +808,16 @@ bool check_ir(EIr *ir, Varss *varss) {
                   STR_ARG(src_type_str), STR_ARG(new_type_str));
           free_type_str(src_type_str, &src->type);
           free_type_str(new_type_str, &instr->as.cast.dest_type);
-          return false;
+          goto fail;
         }
       } break;
 
       case EInstrKindLenOf: {
-        if (instr->as.len_of.dest_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.len_of.dest_name));
-          return false;
-        }
-        if (instr->as.len_of.src_index == (u32) -1) {
-          CERRORF("Variable "STR_FMT" was not defined before usage\n",
-                  STR_ARG(instr->as.len_of.src_name));
-          return false;
-        }
+        CHECK_VAR(instr->as.len_of.dest_index, instr->as.len_of.dest_name, 0, false);
+        CHECK_VAR(instr->as.len_of.src_index, instr->as.len_of.src_name, 1, false);
 
         Var *dest = varss->items[i].items + instr->as.cast.dest_index;
+        dest->moved = false;
         Var *src = varss->items[i].items + instr->as.cast.src_index;
 
         if (dest->type.kind == ETypeKindUnit) {
@@ -865,13 +831,13 @@ bool check_ir(EIr *ir, Varss *varss) {
           CERRORF("Cannot take length of a value of type "STR_FMT"\n",
                   STR_ARG(src_type_str));
           free_type_str(src_type_str, &src->type);
-          return false;
+          goto fail;
         } else if (dest->type.kind != ETypeKindU64) {
           Str dest_type_str = get_type_str(&dest->type);
           CERRORF("Cannot assign value of type u64 to a variable of type "STR_FMT"\n",
                   STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
-          return false;
+          goto fail;
         }
       } break;
       }
@@ -881,14 +847,24 @@ bool check_ir(EIr *ir, Varss *varss) {
         (proc->instrs.len == 0 ||
          proc->instrs.items[proc->instrs.len - 1].kind != EInstrKindRetVal)) {
       ERROR("`"STR_FMT"` has no trailing return with a value\n", STR_ARG(proc->name));
-      return false;
+      goto fail;
     }
+
+    for (u32 j = 0; j < var_substs.len; ++j)
+      substitute_var_uses_with_its_src(proc, var_substs.items + j);
+    var_substs.len = 0;
   }
 
   if (!found_main) {
     ERROR("`main` procedure was not found\n");
-    return false;
+    goto fail;
   }
 
+  if (var_substs.items)
+    free(var_substs.items);
   return true;
+fail:
+  if (var_substs.items)
+    free(var_substs.items);
+  return false;
 }

@@ -5,8 +5,10 @@
 #include "lexer.h"
 
 typedef struct {
-  Str   name;
-  EType type;
+  Str       name;
+  EType     type;
+  bool      moved;
+  EInstrLoc moved_loc;
 } Var;
 
 typedef Da(Var) Vars;

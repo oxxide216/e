@@ -220,10 +220,7 @@ static void parser_parse_type_impl(Parser *parser) {
 static u32 alloc_var(Parser *parser, Str name, Token token) {
   Vars *vars = parser->varss->items + parser->varss->len - 1;
 
-  Var var = {
-    name,
-    {},
-  };
+  Var var = {name, {}, false, {}, };
   DA_APPEND(*vars, var);
 
   emit_instr(
@@ -1022,8 +1019,12 @@ static void parser_parse_stmt_impl(Parser *parser) {
     parser_expect_token(parser, MASK(TT_SET), "`=`");
 
     u32 index = alloc_var(parser, name_token.lexeme, token);
-
     parser_parse_expr(parser, name_token.lexeme, index);
+
+    EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
+    EInstr *instr = proc->instrs.items + proc->instrs.len - 1;
+    if (instr->kind == EInstrKindCopy)
+      instr->as.copy.is_explicit = true;
   } else if (token.id == TT_IDENT) {
     Token name_token = token;
 
@@ -1035,21 +1036,12 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     if (token.id == TT_SET) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
-      u32 temp_index = alloc_var(parser, (Str) {0}, token);
-      parser_parse_expr(parser, (Str) {0}, temp_index);
+      parser_parse_expr(parser, name_token.lexeme, index);
 
-      emit_instr(
-        &parser->ir->procs,
-        token,
-        EInstrKindCopy,
-        .copy = {
-          name_token.lexeme,
-          index,
-          {},
-          temp_index,
-          true,
-        },
-      );
+      EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
+      EInstr *instr = proc->instrs.items + proc->instrs.len - 1;
+      if (instr->kind == EInstrKindCopy)
+        instr->as.copy.is_explicit = true;
     } else if (token.id == TT_COLONSET) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
       u32 temp_index = alloc_var(parser, (Str) {0}, token);
@@ -1315,6 +1307,8 @@ static void parser_parse_proc_impl(Parser *parser) {
     Var var = {
       proc->args.items[i].name,
       type_clone(&proc->args.items[i].type),
+      false,
+      {},
     };
     DA_APPEND(*vars, var);
   }
