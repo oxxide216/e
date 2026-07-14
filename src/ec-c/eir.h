@@ -303,9 +303,20 @@ typedef struct {
   EModuleDeps module_deps;
 } EIr;
 
+typedef struct {
+  Str       name;
+  EType     type;
+  bool      moved;
+  EInstrLoc moved_loc;
+} Var;
+
+typedef Da(Var) Vars;
+typedef Da(Vars) Varss;
+
 struct EModuleDep {
   EModulePath  path;
   EIr          ir;
+  Varss        varss;
 };
 
 EType type_clone(EType *type);

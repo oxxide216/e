@@ -96,22 +96,59 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   return 0;
 }
 
-void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
-  fwrite(&ir->procs.len, sizeof(ir->procs.len), 1, stream);
-  for (u32 i = 0; i < ir->procs.len; ++i) {
-    EProc *proc = ir->procs.items + i;
+static void sb_push_type_hash(StringBuilder *sb, EType *type) {
+  sb_push_u32(sb, type->kind);
+  if (type->kind == ETypeKindPtr)
+    sb_push_type_hash(sb, type->ptr_target);
+  else if (type->kind == ETypeKindArray)
+    sb_push_type_hash(sb, type->array_element);
+  else if (type->kind == ETypeKindStruct)
+    sb_push_u64(sb, str_hash(type->name));
+}
 
-    encode_str(stream, proc->name);
+static Str mangle_proc_name(EProc *proc) {
+  StringBuilder sb = {0};
+  sb_push_str(&sb, proc->name);
+  sb_push_u32(&sb, proc->args.len);
+  for (u32 i = 0; i < proc->args.len; ++i)
+    sb_push_type_hash(&sb, &proc->args.items[i].type);
+  return sb_to_str(sb);
+}
+
+static Str mangle_callee_name(Str name, Indices *arg_indices, Vars *vars) {
+  StringBuilder sb = {0};
+  sb_push_str(&sb, name);
+  sb_push_u32(&sb, arg_indices->len);
+  for (u32 i = 0; i < arg_indices->len; ++i) {
+    Var *var = vars->items + arg_indices->items[i];
+    sb_push_type_hash(&sb, &var->type);
+  }
+  return sb_to_str(sb);
+}
+
+static void encode_procs_no_len(FILE *stream, EProcs *procs,
+                                EStructs *structs, Varss *varss,
+                                u32 data_base) {
+  for (u32 i = 0; i < procs->len; ++i) {
+    EProc *proc = procs->items + i;
+
+    if (str_eq(proc->name, STR_LIT("main"))) {
+      encode_str(stream, proc->name);
+    } else {
+      Str mangled_name = mangle_proc_name(proc);
+      encode_str(stream, mangled_name);
+      free(mangled_name.ptr);
+    }
 
     fwrite(&proc->args.len, sizeof(proc->args.len), 1, stream);
     for (u32 j = 0; j < proc->args.len; ++j) {
-      u32 arg_size = get_type_size(&ir->structs, &proc->args.items[j].type);
+      u32 arg_size = get_type_size(structs, &proc->args.items[j].type);
       ValueKind arg_kind = e_type_kind_to_evm_value_kind(proc->args.items[j].type.kind);
       fwrite(&arg_size, sizeof(arg_size), 1, stream);
       fwrite(&arg_kind, 1, 1, stream);
     }
 
-    u32 return_size = get_type_size(&ir->structs, &proc->return_type);
+    u32 return_size = get_type_size(structs, &proc->return_type);
     ValueKind return_kind = e_type_kind_to_evm_value_kind(proc->return_type.kind);
     fwrite(&return_size, sizeof(return_size), 1, stream);
     fwrite(&return_kind, 1, 1, stream);
@@ -127,7 +164,7 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
       switch (instr->kind) {
       case EInstrKindAlloc: {
         fwrite(&instr->as.alloc.index, sizeof(instr->as.alloc.index), 1, stream);
-        u32 size = get_type_size(&ir->structs, &varss->items[i].items[instr->as.alloc.index].type);
+        u32 size = get_type_size(structs, &varss->items[i].items[instr->as.alloc.index].type);
         fwrite(&size, sizeof(size), 1, stream);
       } break;
 
@@ -161,7 +198,9 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
       } break;
 
       case EInstrKindCall: {
-        encode_str(stream, instr->as.call.name);
+        Str mangled_name = mangle_callee_name(instr->as.call.name, &instr->as.call.arg_indices, varss->items + i);
+        encode_str(stream, mangled_name);
+        free(mangled_name.ptr);
 
         fwrite(&instr->as.call.arg_indices.len, sizeof(instr->as.call.arg_indices.len), 1, stream);
         for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k) {
@@ -173,7 +212,9 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
       case EInstrKindCallAssign: {
         fwrite(&instr->as.call_assign.dest_index, sizeof(instr->as.call_assign.dest_index), 1, stream);
 
-        encode_str(stream, instr->as.call_assign.name);
+        Str mangled_name = mangle_callee_name(instr->as.call_assign.name, &instr->as.call_assign.arg_indices, varss->items + i);
+        encode_str(stream, mangled_name);
+        free(mangled_name.ptr);
 
         fwrite(&instr->as.call_assign.arg_indices.len, sizeof(instr->as.call_assign.arg_indices.len), 1, stream);
         for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k) {
@@ -219,7 +260,7 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
 
         Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(src->type.ptr_target->kind);
-        u32 src_target_size = get_type_size(&ir->structs, src->type.ptr_target);
+        u32 src_target_size = get_type_size(structs, src->type.ptr_target);
         fwrite(&src_target_kind, 1, 1, stream);
         fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
       } break;
@@ -247,15 +288,16 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
       } break;
 
       case EInstrKindStoreData: {
+        u32 data_index = instr->as.store_data.data_index + data_base;
         fwrite(&instr->as.store_data.index, sizeof(instr->as.store_data.index), 1, stream);
-        fwrite(&instr->as.store_data.data_index, sizeof(instr->as.store_data.data_index), 1, stream);
+        fwrite(&data_index, sizeof(data_index), 1, stream);
       } break;
 
       case EInstrKindCast: {
         fwrite(&instr->as.cast.dest_index, sizeof(instr->as.cast.dest_index), 1, stream);
 
         ValueKind dest__kind = e_type_kind_to_evm_value_kind(instr->as.cast.dest_type.kind);
-        u32 dest_size = get_type_size(&ir->structs, &instr->as.cast.dest_type);
+        u32 dest_size = get_type_size(structs, &instr->as.cast.dest_type);
         fwrite(&dest__kind, 1, 1, stream);
         fwrite(&dest_size, sizeof(dest_size), 1, stream);
 
@@ -276,12 +318,57 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss) {
       }
     }
   }
+}
 
-  fwrite(&ir->data.len, sizeof(ir->data.len), 1, stream);
-  for (u32 i = 0; i < ir->data.len; ++i) {
-    EDataEntry *entry = ir->data.items + i;
+static void encode_data_no_len(FILE *stream, EData *data) {
+  for (u32 i = 0; i < data->len; ++i) {
+    EDataEntry *entry = data->items + i;
 
     fwrite(&entry->len, sizeof(entry->len), 1, stream);
     fwrite(entry->data, 1, entry->len, stream);
   }
+}
+
+static void traverse_deps(EIr *ir, u32 *procs_len, u32 *data_len) {
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    *procs_len += ir->module_deps.items[i].ir.procs.len;
+    *data_len += ir->module_deps.items[i].ir.data.len;
+    traverse_deps(&ir->module_deps.items[i].ir, procs_len, data_len);
+  }
+}
+
+static void encode_deps_procs(FILE *stream, EIr *ir, u32 *data_base) {
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+    encode_procs_no_len(stream, &dep->ir.procs, &dep->ir.structs, &dep->varss, *data_base);
+    *data_base += dep->ir.data.len;
+    encode_deps_procs(stream, &dep->ir, data_base);
+  }
+}
+
+static void encode_deps_data(FILE *stream, EIr *ir) {
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+    encode_data_no_len(stream, &dep->ir.data);
+    encode_deps_data(stream, &dep->ir);
+  }
+}
+
+void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps) {
+  u32 procs_len = ir->procs.len;
+  u32 data_len = ir->data.len;
+  if (include_deps)
+    traverse_deps(ir, &procs_len, &data_len);
+
+  fwrite(&procs_len, sizeof(procs_len), 1, stream);
+  encode_procs_no_len(stream, &ir->procs, &ir->structs, varss, 0);
+  if (include_deps) {
+    u32 data_base = ir->data.len;
+    encode_deps_procs(stream, ir, &data_base);
+  }
+
+  fwrite(&data_len, sizeof(data_len), 1, stream);
+  encode_data_no_len(stream, &ir->data);
+  if (include_deps)
+    encode_deps_data(stream, ir);
 }

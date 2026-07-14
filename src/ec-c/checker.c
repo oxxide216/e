@@ -148,9 +148,9 @@ static char *get_bin_op_kind_cstr(EBinOpKind kind) {
   return NULL;
 }
 
-static EType *get_proc_return_type(EProcs *procs, Str name, ETypeRefs *arg_types) {
-  for (u32 i = 0; i < procs->len; ++i) {
-    EProc *proc = procs->items + i;
+static EType *get_proc_return_type(EIr *ir, Str name, ETypeRefs *arg_types) {
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    EProc *proc = ir->procs.items + i;
 
     if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
       continue;
@@ -166,6 +166,29 @@ static EType *get_proc_return_type(EProcs *procs, Str name, ETypeRefs *arg_types
 
     if (all)
       return &proc->return_type;
+  }
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    for (u32 j = 0; j < dep->ir.procs.len; ++j) {
+      EProc *proc = dep->ir.procs.items + j;
+
+      if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
+        continue;
+
+      bool all = true;
+
+      for (u32 j = 0; j < proc->args.len; ++j) {
+        if (!type_eq(&proc->args.items[j].type, arg_types->items[j])) {
+          all = false;
+          break;
+        }
+      }
+
+      if (all)
+        return &proc->return_type;
+    }
   }
 
   return NULL;
@@ -327,7 +350,7 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
   }
 }
 
-bool check_ir(EIr *ir, Varss *varss) {
+bool check_ir(EIr *ir, Varss *varss, bool require_main) {
   bool found_main = false;
   VarSubstitutions var_substs = {0};
 
@@ -341,8 +364,14 @@ bool check_ir(EIr *ir, Varss *varss) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
 
-    if (str_eq(proc->name, STR_LIT("main")))
-      found_main = true;
+    if (str_eq(proc->name, STR_LIT("main"))) {
+      if (found_main) {
+        ERROR("`main` procedure cannot be overloaded\n");
+        goto fail;
+      } else {
+        found_main = true;
+      }
+    }
 
     for (u32 j = 0; j < proc->args.len; ++j)
       check_struct_existence(&ir->structs, &proc->args.items[j].type);
@@ -529,7 +558,7 @@ bool check_ir(EIr *ir, Varss *varss) {
 
           DA_APPEND(arg_types, &varss->items[i].items[instr->as.call.arg_indices.items[k]].type);
 
-        EType *return_type = get_proc_return_type(&ir->procs, instr->as.call.name, &arg_types);
+        EType *return_type = get_proc_return_type(ir, instr->as.call.name, &arg_types);
         if (!return_type) {
           CERROR("Procedure ");
           fprintf_proc_signature(stderr, instr->as.call.name, &arg_types);
@@ -550,7 +579,7 @@ bool check_ir(EIr *ir, Varss *varss) {
         for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k)
           DA_APPEND(arg_types, &varss->items[i].items[instr->as.call_assign.arg_indices.items[k]].type);
 
-        EType *return_type = get_proc_return_type(&ir->procs, instr->as.call_assign.name, &arg_types);
+        EType *return_type = get_proc_return_type(ir, instr->as.call_assign.name, &arg_types);
         if (!return_type) {
           CERROR("Procedure ");
           fprintf_proc_signature(stderr, instr->as.call_assign.name, &arg_types);
@@ -855,7 +884,7 @@ bool check_ir(EIr *ir, Varss *varss) {
     var_substs.len = 0;
   }
 
-  if (!found_main) {
+  if (require_main && !found_main) {
     ERROR("`main` procedure was not found\n");
     goto fail;
   }

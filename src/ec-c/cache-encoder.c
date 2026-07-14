@@ -60,7 +60,8 @@ static void encode_module_deps(FILE *stream, EModuleDeps *deps) {
   }
 }
 
-void encode_cache(FILE *stream, EIr *ir) {
+void encode_cache(FILE *stream, EIr *ir, u64 code_hash) {
+  fwrite(&code_hash, sizeof(code_hash), 1, stream);
   encode_procs(stream, &ir->procs);
   encode_structs(stream, &ir->structs);
   encode_module_deps(stream, &ir->module_deps);

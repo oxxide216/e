@@ -6,6 +6,6 @@
 #include "eir.h"
 #include "parser.h"
 
-void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss);
+void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps);
 
 #endif // EVM_ENCODER_H

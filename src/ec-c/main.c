@@ -23,13 +23,16 @@ typedef struct {
   bool  is_output_path_malloced;
   bool  is_obj_path_malloced;
   bool  link_only;
+  Strs  include_paths;
 } Config;
 
 static void print_usage(char *program_name) {
   fprintf(stderr, "Usage: %s <options...> <input file>\n\n", program_name);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "       -o <output file>          Specify output file\n");
-  fprintf(stderr, "       -c <cache path>           Specify IR cache path\n");}
+  fprintf(stderr, "       -c <cache path>           Specify IR cache path\n");
+  fprintf(stderr, "       -I <search paths>         Specify included module search path\n");
+}
 
 
 static char *make_ir_path(char *input_path) {
@@ -118,6 +121,15 @@ static Config config_create(i32 argc, char **argv) {
       }
 
       config.cache_path = argv[++i];
+    } else if (strcmp(argv[i], "-I") == 0) {
+      if (i + 1 == (u32) argc) {
+        print_usage(argv[0]);
+        ERROR("Option %s requires an argument\n", argv[i]);
+        exit(1);
+      }
+
+      Str include_path = str_new(argv[++i]);
+      DA_APPEND(config.include_paths, include_path);
     } else if (argv[i][0] == '-') {
       print_usage(argv[0]);
       ERROR("Unknown option: %s\n", argv[i]);
@@ -156,6 +168,10 @@ static Config config_create(i32 argc, char **argv) {
     config.is_obj_path_malloced = true;
   }
 
+#ifndef _WIN32
+  DA_APPEND(config.include_paths, STR_LIT("/usr/include"));
+#endif
+
   return config;
 }
 
@@ -166,6 +182,8 @@ static void config_destroy(Config *config) {
   free(config->asm_path);
   if (config->is_obj_path_malloced)
     free(config->obj_path);
+  if (config->include_paths.items)
+    free(config->include_paths.items);
 }
 
 static void ir_destroy(EIr *ir) {
@@ -216,6 +234,17 @@ static void ir_destroy(EIr *ir) {
   }
   if (ir->data.items)
     free(ir->data.items);
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    if (dep->path.items)
+      free(dep->path.items);
+    ir_destroy(&dep->ir);
+    varss_destroy(&dep->varss);
+  }
+  if (ir->module_deps.items)
+    free(ir->module_deps.items);
 }
 
 i32 main(i32 argc, char **argv) {
@@ -244,7 +273,12 @@ i32 main(i32 argc, char **argv) {
   if (config.cache_path)
     cache_path_str = str_new(config.cache_path);
 
-  if (!load_module_deps(&ir, &arena, input_path_str, cache_path_str)) {
+  Hashes included_hashes = {0};
+  if (!load_module_deps(&ir, &arena, input_path_str,
+                        cache_path_str, &config.include_paths,
+                        &included_hashes)) {
+    if (included_hashes.items)
+      free(included_hashes.items);
     arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
@@ -253,7 +287,9 @@ i32 main(i32 argc, char **argv) {
     return 1;
   }
 
-  if (!check_ir(&ir, &varss)) {
+  if (!check_ir(&ir, &varss, !config.link_only)) {
+    if (included_hashes.items)
+      free(included_hashes.items);
     arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
@@ -274,7 +310,7 @@ i32 main(i32 argc, char **argv) {
     return 1;
   }
 
-  encode_ir_as_evm_ir(ir_file, &ir, &varss);
+  encode_ir_as_evm_ir(ir_file, &ir, &varss, !config.link_only);
 
   fclose(ir_file);
 
@@ -322,6 +358,8 @@ i32 main(i32 argc, char **argv) {
 
 end:
   free(sb.buffer);
+  if (included_hashes.items)
+    free(included_hashes.items);
   arena_free(&arena);
   varss_destroy(&varss);
   ir_destroy(&ir);

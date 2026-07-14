@@ -58,7 +58,7 @@
 
 #define emit_module_dep(module_deps, name) \
   do {                                     \
-    EModuleDep dep = { name, {} };         \
+    EModuleDep dep = { name, {}, {} };     \
     DA_APPEND(*(module_deps), dep);        \
   } while (0)
 

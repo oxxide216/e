@@ -190,9 +190,10 @@ static bool decode_module_deps_impl(Decoder *decoder) {
   return true;
 }
 
-bool decode_cache(EIr *ir, Arena *arena, u8 *cache, u32 len) {
+bool decode_cache(EIr *ir, Arena *arena, u8 *cache, u32 len, u64 *code_hash) {
   Decoder decoder = { ir, arena, cache, len, 0 };
 
+  decode_buffer(&decoder, code_hash, sizeof(*code_hash));
   decode_procs(&decoder);
   decode_structs(&decoder);
   decode_module_deps(&decoder);

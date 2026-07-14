@@ -4,6 +4,6 @@
 #include "eir.h"
 #include "parser.h"
 
-bool check_ir(EIr *ir, Varss *varss);
+bool check_ir(EIr *ir, Varss *varss, bool require_main);
 
 #endif // CHECKER_H

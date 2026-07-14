@@ -5,6 +5,6 @@
 
 #include "eir.h"
 
-void encode_cache(FILE *stream, EIr *ir);
+void encode_cache(FILE *stream, EIr *ir, u64 code_hash);
 
 #endif // CACHE_ENCODER_H

@@ -69,7 +69,17 @@ void varss_destroy(Varss *varss) {
     free(varss->items);
 }
 
-bool load_module_deps(EIr *ir, Arena *arena, Str input_path, Str cache_path) {
+static bool contains_hash(Hashes *hashes, u64 hash) {
+  for (u32 i = 0; i < hashes->len; ++i)
+    if (hashes->items[i] == hash)
+      return true;
+
+  return false;
+}
+
+bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
+                      Str cache_path, Strs *include_paths,
+                      Hashes *included_hashes) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     Str path = merge_module_path(ir->module_deps.items[i].path);
     Str full_module_path = prefix_module_path_with_other_path_zero_term(input_path, path, STR_LIT(".e"));
@@ -82,53 +92,83 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path, Str cache_path) {
       if (!needs_recompilation(full_module_path.ptr, full_cache_path.ptr)) {
         Str content = read_file_arena(full_cache_path.ptr, arena);
         if (content.len != (u32) -1) {
-          if (decode_cache(&ir->module_deps.items[i].ir, arena, (u8 *) content.ptr, content.len)) {
+          u64 hash;
+          if (decode_cache(&ir->module_deps.items[i].ir, arena, (u8 *) content.ptr, content.len, &hash)) {
             loaded_cache = true;
           } else {
             ERROR("Invalid cache in %s\n", full_cache_path.ptr);
             ir->module_deps.items[i].ir = (EIr) {0};
           }
+
+          if (contains_hash(included_hashes, hash))
+            ir->module_deps.items[i].ir = (EIr) {0};
         }
       }
     }
 
     if (!loaded_cache) {
-      Str code = read_file(full_module_path.ptr);
+      Str found_path = full_module_path;
+      Str code = read_file(found_path.ptr);
+      for (u32 j = 0; j < include_paths->len && code.len == (u32) -1; ++j) {
+        free(found_path.ptr);
+        found_path = prefix_module_path_with_other_path_zero_term(include_paths->items[j], path, STR_LIT(".e"));
+        code = read_file(found_path.ptr);
+      }
       if (code.len == (u32) -1) {
-        ERROR("Could not read %s\n", full_module_path.ptr);
+        ERROR("Could not find module ");
+        for (u32 j = 0; j < ir->module_deps.items[i].path.len; ++j) {
+          if (j > 0)
+            fprintf(stderr, "::");
+          fprintf(stderr, STR_FMT, STR_ARG(ir->module_deps.items[i].path.items[j]));
+        }
+        fprintf(stderr, "\n");
         free(full_cache_path.ptr);
-        free(full_module_path.ptr);
+        free(found_path.ptr);
         free(path.ptr);
         return false;
       }
 
-      Varss varss = {0};
+      u64 hash = str_hash(code);
+
+      if (contains_hash(included_hashes, hash)) {
+        free(code.ptr);
+        free(full_cache_path.ptr);
+        free(found_path.ptr);
+        free(path.ptr);
+        return true;
+      }
+
+      DA_APPEND(*included_hashes, hash);
+
       if (!parse(&ir->module_deps.items[i].ir,
-                 &varss, code, full_module_path)) {
+                 &ir->module_deps.items[i].varss,
+                 code, found_path)) {
         free(code.ptr);
         free(full_cache_path.ptr);
-        free(full_module_path.ptr);
+        free(found_path.ptr);
         free(path.ptr);
         return false;
       }
 
-      if (!load_module_deps(&ir->module_deps.items[i].ir, arena, full_module_path, cache_path)) {
+      if (!load_module_deps(&ir->module_deps.items[i].ir, arena,
+                            found_path, cache_path,
+                            include_paths, included_hashes)) {
         free(code.ptr);
         free(full_cache_path.ptr);
-        free(full_module_path.ptr);
+        free(found_path.ptr);
         free(path.ptr);
         return false;
       }
 
-      if (!check_ir(&ir->module_deps.items[i].ir, &varss)) {
+      if (!check_ir(&ir->module_deps.items[i].ir,
+                    &ir->module_deps.items[i].varss,
+                    false)) {
         free(code.ptr);
         free(full_cache_path.ptr);
-        free(full_module_path.ptr);
+        free(found_path.ptr);
         free(path.ptr);
         return false;
       }
-
-      varss_destroy(&varss);
 
       if (cache_path.len != (u32) -1) {
         remove(full_cache_path.ptr);
@@ -137,12 +177,12 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path, Str cache_path) {
           ERROR("Could not write %s\n", full_cache_path.ptr);
           free(code.ptr);
           free(full_cache_path.ptr);
-          free(full_module_path.ptr);
+          free(found_path.ptr);
           free(path.ptr);
           return false;
         }
 
-        encode_cache(output_file, &ir->module_deps.items[i].ir);
+        encode_cache(output_file, &ir->module_deps.items[i].ir, hash);
 
         fclose(output_file);
       }
