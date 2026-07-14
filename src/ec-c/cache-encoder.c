@@ -7,11 +7,14 @@ static void encode_str(FILE *stream, Str str) {
 
 static void encode_type(FILE *stream, EType *type) {
   fwrite(&type->kind, 1, 1, stream);
-  if (type->kind == ETypeKindStruct)
+  if (type->kind == ETypeKindStruct) {
     encode_str(stream, type->name);
-
-  if (type->kind == ETypeKindPtr)
+  } else if (type->kind == ETypeKindPtr) {
     encode_type(stream, type->ptr_target);
+  } else if (type->kind == ETypeKindArray) {
+    encode_type(stream, type->array_element);
+    fwrite(&type->array_len, sizeof(type->array_len), 1, stream);
+  }
 }
 
 static void encode_procs(FILE *stream, EProcs *procs) {

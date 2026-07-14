@@ -74,6 +74,10 @@ static bool decode_type_impl(Decoder *decoder, EType *type) {
   } else if (type->kind == ETypeKindPtr) {
     type->ptr_target = arena_alloc(decoder->arena, sizeof(EType));
     decode_type(decoder, type->ptr_target);
+  } else if (type->kind == ETypeKindArray) {
+    type->array_element = arena_alloc(decoder->arena, sizeof(EType));
+    decode_type(decoder, type->array_element);
+    decode_buffer(decoder, &type->array_len, sizeof(type->array_len));
   }
 
   return true;
