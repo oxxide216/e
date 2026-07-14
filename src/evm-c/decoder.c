@@ -238,5 +238,12 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
     decode_buffer(&decoder, entry->data, entry->len);
   }
 
+  decode_buffer(&decoder, &ir->imports.len, sizeof(ir->imports.len));
+  ir->imports.cap = ir->imports.len;
+  ir->imports.items = arena_alloc(arena, ir->imports.cap * sizeof(Str));
+
+  for (u32 i = 0 ; i < ir->imports.len; ++i)
+    decode_str(&decoder, ir->imports.items + i);
+
   return true;
 }

@@ -329,10 +329,20 @@ static void encode_data_no_len(FILE *stream, EData *data) {
   }
 }
 
+static void encode_imports_no_len(FILE *stream, EProcs *imports) {
+  for (u32 i = 0; i < imports->len; ++i) {
+    Str mangled_name = mangle_proc_name(imports->items + i);
+    encode_str(stream, mangled_name);
+    free(mangled_name.ptr);
+  }
+}
+
 static void traverse_deps(EIr *ir, u32 *procs_len, u32 *data_len) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
-    *procs_len += ir->module_deps.items[i].ir.procs.len;
-    *data_len += ir->module_deps.items[i].ir.data.len;
+    if (procs_len)
+      *procs_len += ir->module_deps.items[i].ir.procs.len;
+    if (data_len)
+      *data_len += ir->module_deps.items[i].ir.data.len;
     traverse_deps(&ir->module_deps.items[i].ir, procs_len, data_len);
   }
 }
@@ -354,6 +364,14 @@ static void encode_deps_data(FILE *stream, EIr *ir) {
   }
 }
 
+static void encode_deps_imports(FILE *stream, EIr *ir) {
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+    encode_imports_no_len(stream, &dep->ir.procs);
+    encode_deps_imports(stream, &dep->ir);
+  }
+}
+
 void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps) {
   u32 procs_len = ir->procs.len;
   u32 data_len = ir->data.len;
@@ -371,4 +389,12 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps)
   encode_data_no_len(stream, &ir->data);
   if (include_deps)
     encode_deps_data(stream, ir);
+
+  if (!include_deps)
+    traverse_deps(ir, &procs_len, NULL);
+
+  u32 imports_len = procs_len - ir->procs.len;
+  fwrite(&imports_len, sizeof(imports_len), 1, stream);
+  if (!include_deps)
+    encode_deps_imports(stream, ir);
 }

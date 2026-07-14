@@ -24,16 +24,21 @@ static Str merge_module_path(EModulePath path) {
   return sb_to_str(sb);
 }
 
-static Str prefix_module_path_with_other_path_zero_term(Str prefix_path, Str module_path, Str ext) {
-  while (prefix_path.len > 0 && prefix_path.ptr[prefix_path.len - 1] != '/')
-    --prefix_path.len;
+static Str prefix_module_path_with_other_path_zero_term(Str prefix_path, Str module_path, Str ext, bool truncate_prefix_path) {
+  if (truncate_prefix_path)
+    while (prefix_path.len > 0 && prefix_path.ptr[prefix_path.len - 1] != '/')
+      --prefix_path.len;
+
+  bool has_trailing_slash = prefix_path.len > 0;
 
   Str result;
-  result.len = prefix_path.len + module_path.len + ext.len;
+  result.len = prefix_path.len + has_trailing_slash + module_path.len + ext.len;
   result.ptr = malloc(result.len + 1);
   memcpy(result.ptr, prefix_path.ptr, prefix_path.len);
-  memcpy(result.ptr + prefix_path.len, module_path.ptr, module_path.len);
-  memcpy(result.ptr + prefix_path.len + module_path.len, ext.ptr, ext.len);
+  if (has_trailing_slash)
+    result.ptr[prefix_path.len] = '/';
+  memcpy(result.ptr + prefix_path.len + has_trailing_slash, module_path.ptr, module_path.len);
+  memcpy(result.ptr + prefix_path.len + has_trailing_slash + module_path.len, ext.ptr, ext.len);
   result.ptr[result.len] = '\0';
   return result;
 }
@@ -82,12 +87,12 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
                       Hashes *included_hashes) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     Str path = merge_module_path(ir->module_deps.items[i].path);
-    Str full_module_path = prefix_module_path_with_other_path_zero_term(input_path, path, STR_LIT(".e"));
+    Str full_module_path = prefix_module_path_with_other_path_zero_term(input_path, path, STR_LIT(".e"), true);
     Str full_cache_path = {0};
 
     bool loaded_cache = false;
     if (cache_path.len != (u32) -1) {
-      full_cache_path = prefix_module_path_with_other_path_zero_term(cache_path, path, STR_LIT(".eir"));
+      full_cache_path = prefix_module_path_with_other_path_zero_term(cache_path, path, STR_LIT(".eir"), false);
 
       if (!needs_recompilation(full_module_path.ptr, full_cache_path.ptr)) {
         Str content = read_file_arena(full_cache_path.ptr, arena);
@@ -111,7 +116,7 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
       Str code = read_file(found_path.ptr);
       for (u32 j = 0; j < include_paths->len && code.len == (u32) -1; ++j) {
         free(found_path.ptr);
-        found_path = prefix_module_path_with_other_path_zero_term(include_paths->items[j], path, STR_LIT(".e"));
+        found_path = prefix_module_path_with_other_path_zero_term(include_paths->items[j], path, STR_LIT(".e"), false);
         code = read_file(found_path.ptr);
       }
       if (code.len == (u32) -1) {
@@ -172,6 +177,7 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
 
       if (cache_path.len != (u32) -1) {
         remove(full_cache_path.ptr);
+        make_directory(full_cache_path, true);
         FILE *output_file = fopen(full_cache_path.ptr, "wb");
         if (!output_file) {
           ERROR("Could not write %s\n", full_cache_path.ptr);
@@ -186,10 +192,11 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
 
         fclose(output_file);
       }
+    } else {
+      free(full_module_path.ptr);
     }
 
     free(full_cache_path.ptr);
-    free(full_module_path.ptr);
     free(path.ptr);
   }
 

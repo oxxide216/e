@@ -987,6 +987,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
   if (locs.items)
     free(locs.items);
 
+  for (u32 i = 0; i < ir->imports.len; ++i)
+    fprintf(stream, "extern $"STR_FMT"\n", STR_ARG(ir->imports.items[i]));
+
   if (ir->data.len > 0)
     write_cstr(stream, "section '.data'\n");
 

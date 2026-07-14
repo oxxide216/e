@@ -240,7 +240,6 @@ static void ir_destroy(EIr *ir) {
 
     if (dep->path.items)
       free(dep->path.items);
-    ir_destroy(&dep->ir);
     varss_destroy(&dep->varss);
   }
   if (ir->module_deps.items)
@@ -270,7 +269,7 @@ i32 main(i32 argc, char **argv) {
 
   Arena arena = {0};
   Str cache_path_str = { NULL, (u32) -1 };
-  if (config.cache_path)
+  if (config.cache_path && config.link_only)
     cache_path_str = str_new(config.cache_path);
 
   Hashes included_hashes = {0};

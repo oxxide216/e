@@ -202,9 +202,12 @@ typedef struct {
 
 typedef Da(DataEntry) Data;
 
+typedef Da(Str) Imports;
+
 typedef struct {
-  Procs procs;
-  Data  data;
+  Procs   procs;
+  Data    data;
+  Imports imports;
 } Ir;
 
 #endif // IR_H
