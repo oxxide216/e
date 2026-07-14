@@ -22,7 +22,8 @@ incpath = $build_dir
 [src/ec-c/grammar.h]
 type = custom
 cmd = libs/lexgen/lexgen src/ec-c/grammar.h grammar.lg
-deps = libs/lexgen/lexgen grammar.lg
+src = grammar.lg
+deps = libs/lexgen/lexgen
 
 [libs/lexgen/lexgen]
 type = custom
