@@ -664,7 +664,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           }
         }
 
-        u32 aligned = align(args_space.stack_size + total_space_used, 16) - total_space_used;
+        u32 aligned = 0;
+        if (args_space.stack_size > 0)
+          aligned = align(args_space.stack_size + total_space_used, 16) - total_space_used;
+
         if (aligned > 0)
           fprintf(stream, "  sub rsp,%u\n", aligned);
 
@@ -867,6 +870,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindInlineAsm: {
+        write_cstr(stream, "  ");
         for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
           AsmSegment *segment = instr->as.inline_asm.segments.items + k;
 
