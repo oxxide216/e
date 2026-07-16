@@ -20,6 +20,7 @@ static ValueKind e_type_kind_to_evm_value_kind(ETypeKind kind) {
   case ETypeKindBool:   return ValueKindUnsigned;
   case ETypeKindStruct: return ValueKindUnsigned;
   case ETypeKindArray:  return ValueKindUnsigned;
+  case ETypeKindTuple:  return ValueKindUnsigned;
   case ETypeKindPtr:    return ValueKindUnsigned;
   }
 
@@ -40,6 +41,7 @@ static Value e_value_to_evm_value(EValue *value) {
   case ETypeKindBool:   return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindStruct: return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindArray:  return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
+  case ETypeKindTuple:  return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindPtr:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   }
 
@@ -73,24 +75,29 @@ static BinOpKind e_bin_op_kind_to_evm_bin_op_kin(EBinOpKind kind, ETypeKind type
 
 static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   switch (kind) {
-  case EInstrKindAlloc:       return InstrKindAlloc;
-  case EInstrKindStore:       return InstrKindStore;
-  case EInstrKindCopy:        return InstrKindCopy;
-  case EInstrKindBinOp:       return InstrKindBinOp;
-  case EInstrKindCall:        return InstrKindCall;
-  case EInstrKindCallAssign:  return InstrKindCallAssign;
-  case EInstrKindRet:         return InstrKindRet;
-  case EInstrKindRetVal:      return InstrKindRetVal;
-  case EInstrKindJump:        return InstrKindJump;
-  case EInstrKindJumpIfNot:   return InstrKindJumpIfNot;
-  case EInstrKindRef:         return InstrKindRef;
-  case EInstrKindCopyToRef:   return InstrKindCopyToRef;
-  case EInstrKindCopyFromRef: return InstrKindCopyFromRef;
-  case EInstrKindStoreNull:   return InstrKindStore;
-  case EInstrKindInlineAsm:   return InstrKindInlineAsm;
-  case EInstrKindStoreData:   return InstrKindStoreData;
-  case EInstrKindCast:        return InstrKindConvert;
-  case EInstrKindLenOf:       return InstrKindStore;
+  case EInstrKindAlloc:          return InstrKindAlloc;
+  case EInstrKindStore:          return InstrKindStore;
+  case EInstrKindCopy:           return InstrKindCopy;
+  case EInstrKindBinOp:          return InstrKindBinOp;
+  case EInstrKindCall:           return InstrKindCall;
+  case EInstrKindCallAssign:     return InstrKindCallAssign;
+  case EInstrKindRet:            return InstrKindRet;
+  case EInstrKindRetVal:         return InstrKindRetVal;
+  case EInstrKindJump:           return InstrKindJump;
+  case EInstrKindJumpIfNot:      return InstrKindJumpIfNot;
+  case EInstrKindRef:            return InstrKindRef;
+  case EInstrKindCopyToRef:      return InstrKindCopyToRef;
+  case EInstrKindCopyFromRef:    return InstrKindCopyFromRef;
+  case EInstrKindStoreNull:      return InstrKindStore;
+  case EInstrKindInlineAsm:      return InstrKindInlineAsm;
+  case EInstrKindStoreData:      return InstrKindStoreData;
+  case EInstrKindCast:           return InstrKindConvert;
+  case EInstrKindLenOf:          return InstrKindStore;
+  case EInstrKindCopyToField:    return InstrKindCopyToRefFixed;
+  case EInstrKindCopyFromField:  return InstrKindCopyFromRefFixed;
+  case EInstrKindTuple:          return 0;
+  case EInstrKindCopyToOffset:   return InstrKindCopyToRefFixed;
+  case EInstrKindCopyFromOffset: return InstrKindCopyFromRefFixed;
   }
 
   return 0;
@@ -126,6 +133,99 @@ static Str mangle_callee_name(Str name, Indices *arg_indices, Vars *vars) {
   return sb_to_str(sb);
 }
 
+static void get_type_fields_len_rec(EType *type, EStructs *structs, u32 *result);
+
+static void get_type_fields_len_until_rec(EType *type, u32 end,
+                                          EStructs *structs, u32 *result) {
+  if (type->kind == ETypeKindStruct) {
+    EStruct *_struct = get_struct(structs, type->name);
+    for (u32 i = 0; i < end; ++i) {
+      EField *field = _struct->fields.items + i;
+      get_type_fields_len_rec(&field->type, structs, result);
+    }
+  } else if (type->kind == ETypeKindTuple) {
+    for (u32 i = 0; i < end; ++i) {
+      EType *field_type = type->tuple_types.items + i;
+      get_type_fields_len_rec(field_type, structs, result);
+    }
+  } else {
+    ++*result;
+  }
+}
+
+static void get_type_fields_len_rec(EType *type, EStructs *structs, u32 *result) {
+  u32 end = 0;
+  if (type->kind == ETypeKindStruct) {
+    EStruct *_struct = get_struct(structs, type->name);
+    end = _struct->fields.len;
+  } else if (type->kind == ETypeKindTuple) {
+    end = type->tuple_types.len;
+  }
+
+  get_type_fields_len_until_rec(type, end, structs, result);
+}
+
+static void encode_type_fields_as_aligned_segments_rec(FILE *stream, EType *type,
+                                                       EStructs *structs, u32 *offset);
+
+static void encode_type_fields_as_aligned_segments_until_rec(FILE *stream, EType *type,
+                                                             u32 end, EStructs *structs,
+                                                             u32 *offset) {
+  if (type->kind == ETypeKindStruct) {
+    EStruct *_struct = get_struct(structs, type->name);
+    for (u32 i = 0; i < end; ++i) {
+      EField *field = _struct->fields.items + i;
+      encode_type_fields_as_aligned_segments_rec(stream, &field->type, structs, offset);
+    }
+  } else if (type->kind == ETypeKindTuple) {
+    for (u32 i = 0; i < end; ++i) {
+      EType *field_type = type->tuple_types.items + i;
+      encode_type_fields_as_aligned_segments_rec(stream, field_type, structs, offset);
+    }
+  } else {
+    u32 size = get_type_size(structs, type);
+    fwrite(offset, sizeof(*offset), 1, stream);
+    fwrite(&size, sizeof(size), 1, stream);
+    *offset += size;
+  }
+}
+
+static void encode_type_fields_as_aligned_segments_rec(FILE *stream, EType *type,
+                                                       EStructs *structs, u32 *offset) {
+  u32 end = 0;
+  if (type->kind == ETypeKindStruct) {
+    EStruct *_struct = get_struct(structs, type->name);
+    end = _struct->fields.len;
+  } else if (type->kind == ETypeKindTuple) {
+    end = type->tuple_types.len;
+  }
+
+  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, structs, offset);
+}
+
+static void encode_type_fields_as_aligned_segments_until(FILE *stream, EType *type,
+                                                         u32 end, EStructs *structs) {
+  u32 len = 0;
+  get_type_fields_len_until_rec(type, end, structs, &len);
+
+  fwrite(&len, sizeof(len), 1, stream);
+  u32 offset = 0;
+  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, structs, &offset);
+}
+
+static void encode_type_fields_as_aligned_segments(FILE *stream, EType *type,
+                                                   EStructs *structs) {
+  u32 end = 0;
+  if (type->kind == ETypeKindStruct) {
+    EStruct *_struct = get_struct(structs, type->name);
+    end = _struct->fields.len;
+  } else if (type->kind == ETypeKindTuple) {
+    end = type->tuple_types.len;
+  }
+
+  encode_type_fields_as_aligned_segments_until(stream, type, end, structs);
+}
+
 static void encode_procs_no_len(FILE *stream, EProcs *procs,
                                 EStructs *structs, Varss *varss,
                                 u32 data_base) {
@@ -153,10 +253,18 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
     fwrite(&return_size, sizeof(return_size), 1, stream);
     fwrite(&return_kind, 1, 1, stream);
 
-    fwrite(&proc->instrs.len, sizeof(proc->instrs.len), 1, stream);
+    u32 len_without_tuples = 0;
+    for (u32 j = 0; j < proc->instrs.len; ++j)
+      if (proc->instrs.items[j].kind != EInstrKindTuple)
+        ++len_without_tuples;
+
+    fwrite(&len_without_tuples, sizeof(len_without_tuples), 1, stream);
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
+
+      if (instr->kind == EInstrKindTuple)
+        continue;
 
       InstrKind instr_kind = e_instr_kind_to_evm_instr_kind(instr->kind);
       fwrite(&instr_kind, 1, 1, stream);
@@ -164,8 +272,18 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
       switch (instr->kind) {
       case EInstrKindAlloc: {
         fwrite(&instr->as.alloc.index, sizeof(instr->as.alloc.index), 1, stream);
-        u32 size = get_type_size(structs, &varss->items[i].items[instr->as.alloc.index].type);
-        fwrite(&size, sizeof(size), 1, stream);
+
+        Var *var = varss->items[i].items + instr->as.alloc.index;
+        if (var->type.kind == ETypeKindStruct || var->type.kind == ETypeKindTuple) {
+          encode_type_fields_as_aligned_segments(stream, &var->type, structs);
+        } else {
+          u32 len = 1;
+          u32 offset = 0;
+          u32 size = get_type_size(structs, &var->type);
+          fwrite(&len, sizeof(len), 1, stream);
+          fwrite(&offset, sizeof(offset), 1, stream);
+          fwrite(&size, sizeof(size), 1, stream);
+        }
       } break;
 
       case EInstrKindStore: {
@@ -314,6 +432,62 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         };
         fwrite(&value.kind, 1, 1, stream);
         fwrite(&value.as._unsigned, sizeof(value.as._unsigned), 1, stream);
+      } break;
+
+      case EInstrKindCopyToField: {
+        fwrite(&instr->as.copy_to_field.dest_index, sizeof(instr->as.copy_to_field.dest_index), 1, stream);
+
+        Var *dest = varss->items[i].items + instr->as.copy_to_field.dest_index;
+        EStruct *_struct = get_struct(structs, dest->type.name);
+        u32 index = 0;
+
+        while (!str_eq(_struct->fields.items[index].name, instr->as.copy_to_field.dest_field_name))
+          ++index;
+        ++index;
+
+
+        encode_type_fields_as_aligned_segments_until(stream, &dest->type, index, structs);
+
+        fwrite(&instr->as.copy_to_field.src_index, sizeof(instr->as.copy_to_field.src_index), 1, stream);
+      } break;
+
+      case EInstrKindCopyFromField: {
+        fwrite(&instr->as.copy_from_field.dest_index, sizeof(instr->as.copy_from_field.dest_index), 1, stream);
+        fwrite(&instr->as.copy_from_field.src_index, sizeof(instr->as.copy_from_field.src_index), 1, stream);
+
+        Var *src = varss->items[i].items + instr->as.copy_from_field.src_index;
+        EStruct *_struct = get_struct(structs, src->type.name);
+        u32 index = 0;
+
+        while (!str_eq(_struct->fields.items[index].name, instr->as.copy_from_field.src_field_name))
+          ++index;
+        ++index;
+
+        encode_type_fields_as_aligned_segments_until(stream, &src->type, index, structs);
+      } break;
+
+      // Unreachable, skipped above
+      case EInstrKindTuple: break;
+
+      case EInstrKindCopyToOffset: {
+        fwrite(&instr->as.copy_to_offset.dest_index, sizeof(instr->as.copy_to_offset.dest_index), 1, stream);
+
+        Var *dest = varss->items[i].items + instr->as.copy_to_offset.dest_index;
+        encode_type_fields_as_aligned_segments_until(stream, &dest->type,
+                                                     instr->as.copy_to_offset.dest_offset + 1,
+                                                     structs);
+
+        fwrite(&instr->as.copy_to_offset.src_index, sizeof(instr->as.copy_to_offset.src_index), 1, stream);
+      } break;
+
+      case EInstrKindCopyFromOffset: {
+        fwrite(&instr->as.copy_from_offset.dest_index, sizeof(instr->as.copy_from_offset.dest_index), 1, stream);
+        fwrite(&instr->as.copy_from_offset.src_index, sizeof(instr->as.copy_from_offset.src_index), 1, stream);
+
+        Var *src = varss->items[i].items + instr->as.copy_from_offset.src_index;
+        encode_type_fields_as_aligned_segments_until(stream, &src->type,
+                                                     instr->as.copy_from_offset.src_offset + 1,
+                                                     structs);
       } break;
       }
     }

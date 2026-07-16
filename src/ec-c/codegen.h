@@ -27,7 +27,7 @@
     EInstr instr = {                                           \
       kind,                                                    \
       { __VA_ARGS__ },                                         \
-      { token.file_path, token.row, token.col },               \
+      { (token).file_path, (token).row, (token).col },         \
     };                                                         \
     DA_APPEND((procs)->items[(procs)->len - 1].instrs, instr); \
   } while (0)

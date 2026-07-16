@@ -18,6 +18,7 @@ typedef enum {
   ETypeKindBool,
   ETypeKindStruct,
   ETypeKindArray,
+  ETypeKindTuple,
   ETypeKindPtr,
 } ETypeKind;
 
@@ -28,6 +29,8 @@ typedef struct {
 
 typedef struct EType EType;
 
+typedef Da(EType) ETypes;
+
 struct EType {
   ETypeKind  kind;
   union {
@@ -37,11 +40,10 @@ struct EType {
       EType *array_element;
       u32    array_len;
     };
+    ETypes   tuple_types;
   };
   ETypeLoc   loc;
 };
-
-typedef Da(EType) ETypes;
 
 typedef union {
   i64  _signed;
@@ -73,6 +75,11 @@ typedef enum {
   EInstrKindStoreData,
   EInstrKindCast,
   EInstrKindLenOf,
+  EInstrKindCopyToField,
+  EInstrKindCopyFromField,
+  EInstrKindTuple,
+  EInstrKindCopyToOffset,
+  EInstrKindCopyFromOffset,
 } EInstrKind;
 
 typedef struct {
@@ -218,24 +225,67 @@ typedef struct {
   u32 src_index;
 } EInstrLenOf;
 
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  Str dest_field_name;
+  Str src_name;
+  u32 src_index;
+} EInstrCopyToField;
+
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  Str src_name;
+  u32 src_index;
+  Str src_field_name;
+} EInstrCopyFromField;
+
+typedef struct {
+  Str     dest_name;
+  u32     dest_index;
+  Indices field_indices;
+} EInstrTuple;
+
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  u32 dest_offset;
+  Str src_name;
+  u32 src_index;
+} EInstrCopyToOffset;
+
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  Str src_name;
+  u32 src_index;
+  u32 src_offset;
+} EInstrCopyFromOffset;
+
 typedef union {
-  EInstrAlloc       alloc;
-  EInstrStore       store;
-  EInstrCopy        copy;
-  EInstrBinOp       bin_op;
-  EInstrCall        call;
-  EInstrCallAssign  call_assign;
-  EInstrRetVal      ret_val;
-  EInstrJump        jump;
-  EInstrJumpIfNot   jump_if_not;
-  EInstrRef         ref;
-  EInstrCopyToRef   copy_to_ref;
-  EInstrCopyFromRef copy_from_ref;
-  EInstrStoreNull   store_null;
-  EInstrInlineAsm   inline_asm;
-  EInstrStoreData   store_data;
-  EInstrCast        cast;
-  EInstrLenOf       len_of;
+  EInstrAlloc          alloc;
+  EInstrStore          store;
+  EInstrCopy           copy;
+  EInstrBinOp          bin_op;
+  EInstrCall           call;
+  EInstrCallAssign     call_assign;
+  EInstrRetVal         ret_val;
+  EInstrJump           jump;
+  EInstrJumpIfNot      jump_if_not;
+  EInstrRef            ref;
+  EInstrCopyToRef      copy_to_ref;
+  EInstrCopyFromRef    copy_from_ref;
+  EInstrStoreNull      store_null;
+  EInstrInlineAsm      inline_asm;
+  EInstrStoreData      store_data;
+  EInstrCast           cast;
+  EInstrLenOf          len_of;
+  EInstrCopyToField    copy_to_field;
+  EInstrCopyFromField  copy_from_field;
+  EInstrTuple          tuple;
+  EInstrCopyToOffset   copy_to_offset;
+  EInstrCopyFromOffset copy_from_offset;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;
@@ -326,5 +376,6 @@ void type_free(EType *type);
 u32 get_type_size(EStructs *structs, EType *type);
 
 EStruct *get_struct(EStructs *structs, Str name);
+EField  *get_field(EStruct *_struct, Str name);
 
 #endif // EIR_H

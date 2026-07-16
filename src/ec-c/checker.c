@@ -107,6 +107,20 @@ static Str get_type_str(EType *type) {
       return sb_to_str(sb);
     }
 
+    case ETypeKindTuple: {
+      StringBuilder sb = {0};
+      sb_push_char(&sb, '(');
+      for (u32 i = 0; i < type->tuple_types.len; ++i) {
+        if (i > 0)
+          sb_push(&sb, ", ");
+        Str type_str = get_type_str(type->tuple_types.items + i);
+        sb_push_str(&sb, type_str);
+        free_type_str(type_str, type->tuple_types.items + i);
+      }
+      sb_push_char(&sb, ')');
+      return sb_to_str(sb);
+    }
+
     case ETypeKindPtr: {
       Str target_str = get_type_str(type->ptr_target);
       Str result;
@@ -224,12 +238,12 @@ static bool can_do_bin_op(EBinOpKind kind, EType *a, EType *b) {
 }
 
 static bool can_cast(EType *src, EType *dest) {
-  return (src->kind == dest->kind && src->kind != ETypeKindStruct) ||
-         (is_int(src) && is_int(dest)) ||
+  return (is_int(src) && is_int(dest)) ||
          (is_int(src) && dest->kind == ETypeKindBool) ||
          (is_int(src) && dest->kind == ETypeKindPtr) ||
-         (dest->kind == ETypeKindBool && is_int(src)) ||
-         (dest->kind == ETypeKindPtr && is_int(src));
+         (src->kind == ETypeKindBool && is_int(dest)) ||
+         (src->kind == ETypeKindPtr && is_int(dest)) ||
+         (src->kind == ETypeKindPtr && dest->kind == ETypeKindPtr);
 }
 
 static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_subst) {
@@ -299,12 +313,12 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
     } break;
 
     case EInstrKindCopyToRef: {
-      if (instr->as.copy_to_ref.src_index == var_index)
-        instr->as.copy_to_ref.src_index = src_index;
+      if (instr->as.copy_to_ref.dest_index == var_index)
+        instr->as.copy_to_ref.dest_index = src_index;
       if (instr->as.copy_to_ref.dest_offset_index == var_index)
         instr->as.copy_to_ref.dest_offset_index = src_index;
-      if (instr->as.copy_to_ref.dest_index == var_index)
-        return;
+      if (instr->as.copy_to_ref.src_index == var_index)
+        instr->as.copy_to_ref.src_index = src_index;
     } break;
 
     case EInstrKindCopyFromRef: {
@@ -346,8 +360,67 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
       if (instr->as.len_of.dest_index == var_index)
         return;
     } break;
+
+    case EInstrKindCopyToField: {
+      if (instr->as.copy_to_field.dest_index == var_index)
+        instr->as.copy_to_field.dest_index = src_index;
+      if (instr->as.copy_to_field.src_index == var_index)
+        instr->as.copy_to_field.src_index = src_index;
+    } break;
+
+    case EInstrKindCopyFromField: {
+      if (instr->as.copy_from_field.src_index == var_index)
+        instr->as.copy_from_field.src_index = src_index;
+      if (instr->as.copy_from_field.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindTuple: {
+      for (u32 j = 0; j < instr->as.tuple.field_indices.len; ++j)
+        if (instr->as.tuple.field_indices.items[j] == var_index)
+          instr->as.tuple.field_indices.items[j] = src_index;
+      if (instr->as.tuple.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindCopyToOffset: {
+      if (instr->as.copy_to_offset.dest_index == var_index)
+        instr->as.copy_to_offset.dest_index = src_index;
+      if (instr->as.copy_to_offset.src_index == var_index)
+        instr->as.copy_to_offset.src_index = src_index;
+    } break;
+
+    case EInstrKindCopyFromOffset: {
+      if (instr->as.copy_from_offset.src_index == var_index)
+        instr->as.copy_from_offset.src_index = src_index;
+      if (instr->as.copy_from_offset.dest_index == var_index)
+        return;
+    } break;
     }
   }
+}
+
+static bool tuple_type_matches(EType *type, ETypes *field_types) {
+  if (type->tuple_types.len != field_types->len)
+    return false;
+
+  for (u32 i = 0; i < field_types->len; ++i)
+    if (!type_eq(type->tuple_types.items + i, field_types->items + i))
+      return false;
+
+  return true;
+}
+
+static void fprintf_tuple_type(FILE *stream, ETypes *field_types) {
+  fputc('(', stream);
+  for (u32 i = 0; i < field_types->len; ++i) {
+    Str field_type_str = get_type_str(field_types->items + i);
+    if (i > 0)
+      fputs(", ", stream);
+    fprintf(stream, STR_FMT, STR_ARG(field_type_str));
+    free_type_str(field_type_str, field_types->items + i);
+  }
+  fputc(')', stream);
 }
 
 bool check_ir(EIr *ir, Varss *varss, bool require_main) {
@@ -421,8 +494,9 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           goto fail;
         }
 
-        if (dest->type.kind == ETypeKindStruct ||
-            dest->type.kind == ETypeKindArray) {
+        if (src->type.kind == ETypeKindStruct ||
+            src->type.kind == ETypeKindArray ||
+            src->type.kind == ETypeKindTuple) {
           if (instr->as.copy.is_explicit) {
             src->moved = true;
             src->moved_loc = instr->loc;
@@ -554,9 +628,14 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
 
       case EInstrKindCall: {
         ETypeRefs arg_types = {0};
-        for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k)
-
-          DA_APPEND(arg_types, &varss->items[i].items[instr->as.call.arg_indices.items[k]].type);
+        for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k) {
+          Var *arg = varss->items[i].items + instr->as.call.arg_indices.items[k];
+          if (arg->type.kind == ETypeKindStruct ||
+              arg->type.kind == ETypeKindArray ||
+              arg->type.kind == ETypeKindTuple)
+            arg->moved = true;
+          DA_APPEND(arg_types, &arg->type);
+        }
 
         EType *return_type = get_proc_return_type(ir, instr->as.call.name, &arg_types);
         if (!return_type) {
@@ -576,8 +655,14 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         CHECK_VAR(instr->as.call_assign.dest_index, instr->as.call_assign.dest_name, 0, false);
 
         ETypeRefs arg_types = {0};
-        for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k)
-          DA_APPEND(arg_types, &varss->items[i].items[instr->as.call_assign.arg_indices.items[k]].type);
+        for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k) {
+          Var *arg = varss->items[i].items + instr->as.call_assign.arg_indices.items[k];
+          if (arg->type.kind == ETypeKindStruct ||
+              arg->type.kind == ETypeKindArray ||
+              arg->type.kind == ETypeKindTuple)
+            arg->moved = true;
+          DA_APPEND(arg_types, &arg->type);
+        }
 
         EType *return_type = get_proc_return_type(ir, instr->as.call_assign.name, &arg_types);
         if (!return_type) {
@@ -588,6 +673,9 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             free(arg_types.items);
           goto fail;
         }
+
+        if (arg_types.items)
+          free(arg_types.items);
 
         Var *dest = varss->items[i].items + instr->as.call_assign.dest_index;
         dest->moved = false;
@@ -603,9 +691,6 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(dest_type_str, &dest->type);
           goto fail;
         }
-
-        if (arg_types.items)
-          free(arg_types.items);
       } break;
 
       case EInstrKindRet: {
@@ -712,6 +797,13 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(ptr_target_type_str, dest->type.ptr_target);
           free_type_str(src_type_str, &src->type);
           goto fail;
+        }
+
+        if (src->type.kind == ETypeKindStruct ||
+            src->type.kind == ETypeKindArray ||
+            src->type.kind == ETypeKindTuple) {
+          src->moved = true;
+          src->moved_loc = instr->loc;
         }
       } break;
 
@@ -866,6 +958,213 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           CERRORF("Cannot assign value of type u64 to a variable of type "STR_FMT"\n",
                   STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
+          goto fail;
+        }
+      } break;
+
+      case EInstrKindCopyToField: {
+        CHECK_VAR(instr->as.copy_to_field.dest_index, instr->as.copy_to_field.dest_name, 0, true);
+        CHECK_VAR(instr->as.copy_to_field.src_index, instr->as.copy_to_field.src_name, 1, true);
+
+        Var *dest = varss->items[i].items + instr->as.copy_to_field.dest_index;
+        Var *src = varss->items[i].items + instr->as.copy_to_field.src_index;
+
+        if (dest->type.kind != ETypeKindStruct) {
+          Str dest_type_str = get_type_str(&dest->type);
+          CERRORF("Attempt to access field of something that is not a structure, but "STR_FMT"\n",
+                  STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          goto fail;
+        }
+
+        EStruct *_struct = get_struct(&ir->structs, dest->type.name);
+        if (!_struct) {
+          CERRORF("Structure "STR_FMT" was not defined\n",
+                  STR_ARG(dest->type.name));
+          goto fail;
+        }
+
+        EField *field = get_field(_struct, instr->as.copy_to_field.dest_field_name);
+        if (!field) {
+          CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
+                  STR_ARG(instr->as.copy_to_field.dest_field_name),
+                  STR_ARG(dest->type.name));
+          goto fail;
+        }
+
+        if (!type_eq(&src->type, &field->type)) {
+          Str field_type_str = get_type_str(&field->type);
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a field of type "STR_FMT"\n",
+                  STR_ARG(src_type_str), STR_ARG(field_type_str));
+          free_type_str(field_type_str, &field->type);
+          free_type_str(src_type_str, &src->type);
+          goto fail;
+        }
+
+        if (src->type.kind == ETypeKindStruct ||
+            src->type.kind == ETypeKindArray ||
+            src->type.kind == ETypeKindTuple) {
+          src->moved = true;
+          src->moved_loc = instr->loc;
+        }
+      } break;
+
+      case EInstrKindCopyFromField: {
+        CHECK_VAR(instr->as.copy_from_field.dest_index, instr->as.copy_from_field.dest_name, 0, false);
+        CHECK_VAR(instr->as.copy_from_field.src_index, instr->as.copy_from_field.src_name, 1, true);
+
+        Var *dest = varss->items[i].items + instr->as.copy_from_field.dest_index;
+        dest->moved = false;
+        Var *src = varss->items[i].items + instr->as.copy_from_field.src_index;
+
+        if (src->type.kind != ETypeKindStruct) {
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Attempt to access field of something that is not a structure, but "STR_FMT"\n",
+                  STR_ARG(src_type_str));
+          free_type_str(src_type_str, &src->type);
+          goto fail;
+        }
+
+        EStruct *_struct = get_struct(&ir->structs, src->type.name);
+        if (!_struct) {
+          CERRORF("Structure "STR_FMT" was not defined\n",
+                  STR_ARG(src->type.name));
+          goto fail;
+        }
+
+        EField *field = get_field(_struct, instr->as.copy_from_field.src_field_name);
+        if (!field) {
+          CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
+                  STR_ARG(instr->as.copy_from_field.src_field_name),
+                  STR_ARG(src->type.name));
+          goto fail;
+        }
+
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = type_clone(&field->type);
+        } else if (!type_eq(&field->type, &dest->type)) {
+          Str dest_type_str = get_type_str(&dest->type);
+          Str field_type_str = get_type_str(&field->type);
+          CERRORF("Cannot assign value of field of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(field_type_str), STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          free_type_str(field_type_str, &field->type);
+          goto fail;
+        }
+      } break;
+
+      case EInstrKindTuple: {
+        CHECK_VAR(instr->as.tuple.dest_index, instr->as.tuple.dest_name, 0, false);
+
+        Var *dest = varss->items[i].items + instr->as.copy_from_field.dest_index;
+        dest->moved = false;
+
+        ETypes field_types = {0};
+
+        Indices *field_indices = &instr->as.tuple.field_indices;
+        for (u32 k = 0; k < field_indices->len; ++k) {
+          Var *field_var = varss->items[i].items + field_indices->items[k];
+          EType field_type = type_clone(&field_var->type);
+          DA_APPEND(field_types, field_type);
+        }
+
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type.kind = ETypeKindTuple;
+          dest->type.tuple_types = field_types;
+        } else if (!tuple_type_matches(&dest->type, &field_types)) {
+          Str dest_type_str = get_type_str(&dest->type);
+          CERROR("Cannot assign value of type ");
+          fprintf_tuple_type(stderr, &field_types);
+          fprintf(stderr, " to a variable of type "STR_FMT"\n",
+                  STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          if (field_types.items)
+            free(field_types.items);
+          goto fail;
+        }
+      } break;
+
+      case EInstrKindCopyToOffset: {
+        CHECK_VAR(instr->as.copy_to_offset.dest_index, instr->as.copy_to_offset.dest_name, 0, true);
+        CHECK_VAR(instr->as.copy_to_offset.src_index, instr->as.copy_to_offset.src_name, 1, true);
+
+        Var *dest = varss->items[i].items + instr->as.copy_to_offset.dest_index;
+        Var *src = varss->items[i].items + instr->as.copy_to_offset.src_index;
+
+        if (dest->type.kind != ETypeKindTuple) {
+          Str dest_type_str = get_type_str(&dest->type);
+          CERRORF("Attempt to access number field of something that is not a tuple, but "STR_FMT"\n",
+                  STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          goto fail;
+        }
+
+        if (instr->as.copy_to_offset.dest_offset >= dest->type.tuple_types.len) {
+          Str dest_type_str = get_type_str(&dest->type);
+          CERRORF("Number field %u does not exist in tuple "STR_FMT"\n",
+                  instr->as.copy_to_offset.dest_offset,
+                  STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          goto fail;
+        }
+
+        EType *type = dest->type.tuple_types.items +
+                      instr->as.copy_to_offset.dest_offset;
+        if (!type_eq(&src->type, type)) {
+          Str field_type_str = get_type_str(type);
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a numbered field of type "STR_FMT"\n",
+                  STR_ARG(src_type_str), STR_ARG(field_type_str));
+          free_type_str(field_type_str, type);
+          free_type_str(src_type_str, &src->type);
+          goto fail;
+        }
+
+        if (src->type.kind == ETypeKindStruct ||
+            src->type.kind == ETypeKindArray ||
+            src->type.kind == ETypeKindTuple) {
+          src->moved = true;
+          src->moved_loc = instr->loc;
+        }
+      } break;
+
+      case EInstrKindCopyFromOffset: {
+        CHECK_VAR(instr->as.copy_from_offset.dest_index, instr->as.copy_from_offset.dest_name, 0, false);
+        CHECK_VAR(instr->as.copy_from_offset.src_index, instr->as.copy_from_offset.src_name, 1, true);
+
+        Var *dest = varss->items[i].items + instr->as.copy_from_offset.dest_index;
+        dest->moved = false;
+        Var *src = varss->items[i].items + instr->as.copy_from_offset.src_index;
+
+        if (src->type.kind != ETypeKindTuple) {
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Attempt to access numbered field of something that is not a tuple, but "STR_FMT"\n",
+                  STR_ARG(src_type_str));
+          free_type_str(src_type_str, &src->type);
+          goto fail;
+        }
+
+        if (instr->as.copy_from_offset.src_offset >= src->type.tuple_types.len) {
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Numbered ield %u does not exist in tuple "STR_FMT"\n",
+                  instr->as.copy_from_offset.src_offset,
+                  STR_ARG(src_type_str));
+          free_type_str(src_type_str, &src->type);
+          goto fail;
+        }
+
+        EType *type = src->type.tuple_types.items +
+                      instr->as.copy_from_offset.src_offset;
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = type_clone(type);
+        } else if (!type_eq(type, &dest->type)) {
+          Str dest_type_str = get_type_str(&dest->type);
+          Str field_type_str = get_type_str(type);
+          CERRORF("Cannot assign value of numbered field of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(field_type_str), STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          free_type_str(field_type_str, type);
           goto fail;
         }
       } break;

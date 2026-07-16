@@ -29,23 +29,26 @@ static char *get_bin_op_kind_cstr(BinOpKind kind) {
 
 void proc_print(Proc *proc, VarLocs *locs) {
   printf("proc "STR_FMT"(", STR_ARG(proc->name));
-  for (u32 j = 0; j < proc->args.len; ++j) {
-    if (j > 0)
+  for (u32 i = 0; i < proc->args.len; ++i) {
+    if (i > 0)
       printf(", ");
-    printf("$%u: ", j);
-    print_value_params(proc->args.items[j].kind, proc->args.items[j].size);
+    printf("$%u: ", i);
+    print_value_params(proc->args.items[i].kind, proc->args.items[i].size);
   }
   printf(") -> ");
   print_value_params(proc->return_kind, proc->return_size);
   putc('\n', stdout);
 
-  for (u32 j = 0; j < proc->instrs.len; ++j) {
-    Instr *instr = proc->instrs.items + j;
+  for (u32 i = 0; i < proc->instrs.len; ++i) {
+    Instr *instr = proc->instrs.items + i;
 
     switch (instr->kind) {
     case InstrKindAlloc: {
-      if (locs->items[instr->as.alloc.index].uses > 0)
-        printf("  $%u = alloc %u\n", instr->as.alloc.index, instr->as.alloc.size);
+      if (locs->items[instr->as.alloc.index].uses > 0) {
+        AlignedSegment *last_segment = instr->as.alloc.segments.items + instr->as.alloc.segments.len - 1;
+        printf("  $%u = alloc %u\n", instr->as.alloc.index,
+               last_segment->offset + last_segment->size);
+      }
     } break;
 
     case InstrKindStore: {
@@ -170,6 +173,22 @@ void proc_print(Proc *proc, VarLocs *locs) {
       print_value_params(instr->as.convert.dest_kind,
                          instr->as.convert.dest_size);
       putc('\n', stdout);
+    } break;
+
+    case InstrKindCopyToRefFixed: {
+      u32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[instr->as.copy_to_ref_fixed.dest_segments.len - 1].offset;
+      printf("  $%u[%u] := $%u\n",
+             instr->as.copy_to_ref_fixed.dest_index,
+             offset,
+             instr->as.copy_to_ref_fixed.src_index);
+    } break;
+
+    case InstrKindCopyFromRefFixed: {
+      u32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;
+      printf("  $%u = $%u[%u]\n",
+             instr->as.copy_from_ref_fixed.dest_index,
+             instr->as.copy_from_ref_fixed.src_index,
+             offset);
     } break;
     }
   }

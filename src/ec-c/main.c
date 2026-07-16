@@ -8,6 +8,9 @@
 #include "evm-encoder.h"
 #define SHL_STR_IMPLEMENTATION
 #include "shl/shl-str.h"
+#ifndef NDEBUG
+#include "eir-print.h"
+#endif
 
 #define EVM_PREFIX  "./evm-c -o "
 #define YASM_PREFIX "yasm -felf64 -o "
@@ -285,6 +288,11 @@ i32 main(i32 argc, char **argv) {
     config_destroy(&config);
     return 1;
   }
+
+#ifndef NDEBUG
+  for (u32 i = 0; i < ir.procs.len; ++i)
+    proc_print(ir.procs.items + i);
+#endif
 
   if (!check_ir(&ir, &varss, !config.link_only)) {
     if (included_hashes.items)

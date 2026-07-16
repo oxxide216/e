@@ -9,3 +9,5 @@
 /asm
 /arrays
 /std
+/structs
+/tuples

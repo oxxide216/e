@@ -19,6 +19,8 @@ typedef struct {
   u32 row, col;
 } Token;
 
+typedef Da(Token) Tokens;
+
 typedef enum {
   TokenStatusOk = 0,
   TokenStatusEmpty,

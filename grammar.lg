@@ -19,6 +19,7 @@ null=null
 asm=asm
 as=as
 lenof=lenof
+struct=struct
 
 oparen=\(
 cparen=\)
@@ -48,6 +49,7 @@ colon=:
 coloncolon=::
 colonset=:=
 semi=;
+dot=.
 
 int=\-?0-9+
 ident=(a-z|A-Z|_)(a-z|A-Z|_|0-9)*

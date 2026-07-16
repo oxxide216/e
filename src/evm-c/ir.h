@@ -36,11 +36,20 @@ typedef enum {
   InstrKindInlineAsm,
   InstrKindStoreData,
   InstrKindConvert,
+  InstrKindCopyToRefFixed,
+  InstrKindCopyFromRefFixed,
 } InstrKind;
 
 typedef struct {
-  u32 index;
+  u32 offset;
   u32 size;
+} AlignedSegment;
+
+typedef Da(AlignedSegment) Segments;
+
+typedef struct {
+  u32      index;
+  Segments segments;
 } InstrAlloc;
 
 typedef struct {
@@ -153,22 +162,38 @@ typedef struct {
   u32       src_index;
 } InstrConvert;
 
+typedef struct {
+  u32      dest_index;
+  Segments dest_segments;
+  u32      src_index;
+} InstrCopyToRefFixed;
+
+typedef struct {
+  u32       dest_index;
+  u32       src_index;
+  Segments  src_segments;
+  ValueKind src_target_kind;
+  u32       src_target_size;
+} InstrCopyFromRefFixed;
+
 typedef union {
-  InstrAlloc       alloc;
-  InstrStore       store;
-  InstrCopy        copy;
-  InstrBinOp       bin_op;
-  InstrCall        call;
-  InstrCallAssign  call_assign;
-  InstrRetVal      ret_val;
-  InstrJump        jump;
-  InstrJumpIfNot   jump_if_not;
-  InstrRef         ref;
-  InstrCopyToRef   copy_to_ref;
-  InstrCopyFromRef copy_from_ref;
-  InstrInlineAsm   inline_asm;
-  InstrStoreData   store_data;
-  InstrConvert     convert;
+  InstrAlloc            alloc;
+  InstrStore            store;
+  InstrCopy             copy;
+  InstrBinOp            bin_op;
+  InstrCall             call;
+  InstrCallAssign       call_assign;
+  InstrRetVal           ret_val;
+  InstrJump             jump;
+  InstrJumpIfNot        jump_if_not;
+  InstrRef              ref;
+  InstrCopyToRef        copy_to_ref;
+  InstrCopyFromRef      copy_from_ref;
+  InstrInlineAsm        inline_asm;
+  InstrStoreData        store_data;
+  InstrConvert          convert;
+  InstrCopyToRefFixed   copy_to_ref_fixed;
+  InstrCopyFromRefFixed copy_from_ref_fixed;
 } InstrAs;
 
 typedef struct {

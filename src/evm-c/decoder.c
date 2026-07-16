@@ -81,7 +81,16 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
       switch (kind) {
       case InstrKindAlloc: {
         decode_buffer(&decoder, &instr->as.alloc.index, sizeof(instr->as.alloc.index));
-        decode_buffer(&decoder, &instr->as.alloc.size, sizeof(instr->as.alloc.size));
+
+        decode_buffer(&decoder, &instr->as.alloc.segments.len, sizeof(instr->as.alloc.segments.len));
+        instr->as.alloc.segments.cap = instr->as.alloc.segments.len;
+        instr->as.alloc.segments.items = arena_alloc(arena, instr->as.alloc.segments.cap * sizeof(AlignedSegment));
+
+        for (u32 k = 0; k < instr->as.alloc.segments.len; ++k) {
+          AlignedSegment *segment = instr->as.alloc.segments.items + k;
+          decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
+          decode_buffer(&decoder, &segment->size, sizeof(segment->size));
+        }
       } break;
 
       case InstrKindStore: {
@@ -221,6 +230,37 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         decode_buffer(&decoder, &instr->as.convert.dest_size, sizeof(instr->as.convert.dest_size));
 
         decode_buffer(&decoder, &instr->as.convert.src_index, sizeof(instr->as.convert.src_index));
+      } break;
+
+      case InstrKindCopyToRefFixed: {
+        decode_buffer(&decoder, &instr->as.copy_to_ref_fixed.dest_index, sizeof(instr->as.copy_to_ref_fixed.dest_index));
+
+        decode_buffer(&decoder, &instr->as.copy_to_ref_fixed.dest_segments.len, sizeof(instr->as.copy_to_ref_fixed.dest_segments.len));
+        instr->as.copy_to_ref_fixed.dest_segments.cap = instr->as.copy_to_ref_fixed.dest_segments.len;
+        instr->as.copy_to_ref_fixed.dest_segments.items = arena_alloc(arena, instr->as.copy_to_ref_fixed.dest_segments.cap * sizeof(AlignedSegment));
+
+        for (u32 k = 0; k < instr->as.copy_to_ref_fixed.dest_segments.len; ++k) {
+          AlignedSegment *segment = instr->as.copy_to_ref_fixed.dest_segments.items + k;
+          decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
+          decode_buffer(&decoder, &segment->size, sizeof(segment->size));
+        }
+
+        decode_buffer(&decoder, &instr->as.copy_to_ref_fixed.src_index, sizeof(instr->as.copy_to_ref_fixed.src_index));
+      } break;
+
+      case InstrKindCopyFromRefFixed: {
+        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.dest_index, sizeof(instr->as.copy_from_ref_fixed.dest_index));
+        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_index, sizeof(instr->as.copy_from_ref_fixed.src_index));
+
+        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_segments.len, sizeof(instr->as.copy_from_ref_fixed.src_segments.len));
+        instr->as.copy_from_ref_fixed.src_segments.cap = instr->as.copy_from_ref_fixed.src_segments.len;
+        instr->as.copy_from_ref_fixed.src_segments.items = arena_alloc(arena, instr->as.copy_from_ref_fixed.src_segments.cap * sizeof(AlignedSegment));
+
+        for (u32 k = 0; k < instr->as.copy_from_ref_fixed.src_segments.len; ++k) {
+          AlignedSegment *segment = instr->as.copy_from_ref_fixed.src_segments.items + k;
+          decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
+          decode_buffer(&decoder, &segment->size, sizeof(segment->size));
+        }
       } break;
       }
     }

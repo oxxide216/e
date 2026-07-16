@@ -31,7 +31,7 @@ void get_proc_return_kind_and_size(Procs *procs, Str name, ValueKind *kind, u32 
 }
 
 u32 align(u32 value, u32 base) {
-  if (value == 0)
-    return 0;
+  if (value % base == 0)
+    return value;
   return value + base - value % base;
 }

@@ -1,4 +1,5 @@
 #include "codegen.h"
+#include "utils.h"
 
 void add_var_locs(VarLocs *locs, Proc *proc) {
   for (u32 i = 0; i < proc->instrs.len; ++i) {
@@ -21,10 +22,12 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         locs->cap = new_cap;
       }
 
+      AlignedSegment *last_segment = instr->as.alloc.segments.items + instr->as.alloc.segments.len - 1;
+      u32 size = last_segment->offset + last_segment->size;
+      bool is_stack_only = size > 8 || (size != 1 && size != 2 && size != 4 && size != 8);
       VarLoc loc = {
-        ValueKindSigned,
-        0, instr->as.alloc.size,
-        0, i, 0, instr->as.alloc.size > 8, false,
+        ValueKindSigned, 0, size,
+        0, i, 0, is_stack_only, false,
       };
       locs->items[instr->as.alloc.index] = loc;
     } break;
@@ -177,6 +180,28 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         locs->items[instr->as.convert.src_index].end = i;
       }
     } break;
+
+    case InstrKindCopyToRefFixed: {
+      if (instr->as.copy_to_ref_fixed.dest_index < locs->cap) {
+        ++locs->items[instr->as.copy_to_ref_fixed.dest_index].uses;
+        locs->items[instr->as.copy_to_ref_fixed.dest_index].end = i;
+      }
+      if (instr->as.copy_to_ref_fixed.src_index < locs->cap) {
+        ++locs->items[instr->as.copy_to_ref_fixed.src_index].uses;
+        locs->items[instr->as.copy_to_ref_fixed.src_index].end = i;
+      }
+    } break;
+
+    case InstrKindCopyFromRefFixed: {
+      if (instr->as.copy_from_ref_fixed.dest_index < locs->cap) {
+        ++locs->items[instr->as.copy_from_ref_fixed.dest_index].uses;
+        locs->items[instr->as.copy_from_ref_fixed.dest_index].end = i;
+      }
+      if (instr->as.copy_from_ref_fixed.src_index < locs->cap) {
+        ++locs->items[instr->as.copy_from_ref_fixed.src_index].uses;
+        locs->items[instr->as.copy_from_ref_fixed.src_index].end = i;
+      }
+    } break;
     }
   }
 }
@@ -272,6 +297,27 @@ void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *lo
             locs->items[j].end = i;
         }
       }
+    }
+  }
+}
+
+void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
+  for (u32 i = 0; i < proc->instrs.len; ++i) {
+    Instr *instr = proc->instrs.items + i;
+
+    Segments *offsets = NULL;
+    if (instr->kind == InstrKindCopyToRefFixed)
+      offsets = &instr->as.copy_to_ref_fixed.dest_segments;
+    else if (instr->kind == InstrKindCopyFromRefFixed)
+      offsets = &instr->as.copy_from_ref_fixed.src_segments;
+    else
+      continue;
+
+    u32 offset = 0;
+    for (u32 j = 0; j < offsets->len; ++j) {
+      u32 alignment = alignment_func(offsets->items[j].size);
+      offsets->items[j].offset = align(offsets->items[j].offset, alignment);
+      offset += offsets->items[j].size;
     }
   }
 }
