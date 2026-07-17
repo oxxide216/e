@@ -168,6 +168,8 @@ static EType get_type_from_token(Token *name_token) {
     return (EType) { ETypeKindU64, {}, loc };
   else if (str_eq(name_token->lexeme, STR_LIT("bool")))
     return (EType) { ETypeKindBool, {}, loc };
+  else if (str_eq(name_token->lexeme, STR_LIT("str")))
+    return (EType) { ETypeKindStr, {}, loc };
   else
     return (EType) { ETypeKindStruct, { .name = name_token->lexeme }, loc };
 }
@@ -324,10 +326,10 @@ static void backpatch_dest(EProc *proc, u32 starting_index, Str new_dest_name, u
 
     case EInstrKindInlineAsm: break;
 
-    case EInstrKindStoreData: {
-      if (instr->as.store_data.index == prev_dest_index) {
-        instr->as.store_data.name = new_dest_name;
-        instr->as.store_data.index = new_dest_index;
+    case EInstrKindStoreStr: {
+      if (instr->as.store_str.index == prev_dest_index) {
+        instr->as.store_str.name = new_dest_name;
+        instr->as.store_str.index = new_dest_index;
       }
     } break;
 
@@ -455,17 +457,18 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
     case TT_STR: {
       u32 index = parser->ir->data.len;
 
-      u8 *data = malloc(token.lexeme.len - 1);
-      memcpy(data, token.lexeme.ptr + 1, token.lexeme.len - 2);
-      data[token.lexeme.len - 2] = 0;
+      u8 *data = malloc(4 + token.lexeme.len - 1);
+      *(u32 *) data = token.lexeme.len - 2;
+      memcpy(data + 4, token.lexeme.ptr + 1, token.lexeme.len - 2);
+      data[4 + token.lexeme.len - 2] = 0;
 
-      emit_data(&parser->ir->data, data, token.lexeme.len - 1);
+      emit_data(&parser->ir->data, data, 4 + token.lexeme.len - 1);
 
       emit_instr(
         &parser->ir->procs,
         token,
-        EInstrKindStoreData,
-        .store_data = {
+        EInstrKindStoreStr,
+        .store_str = {
           dest_name,
           dest_index,
           index,

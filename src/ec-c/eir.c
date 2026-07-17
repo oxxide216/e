@@ -81,6 +81,7 @@ u32 get_type_size(EStructs *structs, EType *type) {
     return size;
   }
 
+  case ETypeKindStr: return 8;
   case ETypeKindPtr: return 8;
   }
 

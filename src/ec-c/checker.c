@@ -59,7 +59,7 @@ typedef Da(VarSubstitution) VarSubstitutions;
 static bool check_struct_existence(EStructs *structs, EType *type) {
   if (type->kind == ETypeKindStruct) {
     if (!get_struct(structs, type->name)) {
-      CERRORFT("Type "STR_FMT" was not defined\n", STR_ARG(type->name));
+      CERRORFT("Structure "STR_FMT" was not defined\n", STR_ARG(type->name));
       return false;
     }
   } else if (type->kind == ETypeKindPtr) {
@@ -120,6 +120,8 @@ static Str get_type_str(EType *type) {
       sb_push_char(&sb, ')');
       return sb_to_str(sb);
     }
+
+    case ETypeKindStr: return STR_LIT("str");
 
     case ETypeKindPtr: {
       Str target_str = get_type_str(type->ptr_target);
@@ -342,8 +344,8 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
           instr->as.inline_asm.segments.items[j].value_index = src_index;
     } break;
 
-    case EInstrKindStoreData: {
-      if (instr->as.store_data.index == var_index)
+    case EInstrKindStoreStr: {
+      if (instr->as.store_str.index == var_index)
         return;
     } break;
 
@@ -431,7 +433,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
     EStruct *_struct = ir->structs.items + i;
 
     for (u32 j = 0; j < _struct->fields.len; ++j)
-      check_struct_existence(&ir->structs, &_struct->fields.items[j].type);
+      if (!check_struct_existence(&ir->structs, &_struct->fields.items[j].type))
+        goto fail;
   }
 
   for (u32 i = 0; i < ir->procs.len; ++i) {
@@ -447,8 +450,10 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
     }
 
     for (u32 j = 0; j < proc->args.len; ++j)
-      check_struct_existence(&ir->structs, &proc->args.items[j].type);
-    check_struct_existence(&ir->structs, &proc->return_type);
+      if (!check_struct_existence(&ir->structs, &proc->args.items[j].type))
+        goto fail;
+    if (!check_struct_existence(&ir->structs, &proc->return_type))
+      goto fail;
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
@@ -873,34 +878,20 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         }
       } break;
 
-      case EInstrKindStoreData: {
-        CHECK_VAR(instr->as.store_data.index, instr->as.store_data.name, 0, false);
+      case EInstrKindStoreStr: {
+        CHECK_VAR(instr->as.store_str.index, instr->as.store_str.name, 0, false);
 
-        Var *var = varss->items[i].items + instr->as.store_data.index;
+        Var *var = varss->items[i].items + instr->as.store_str.index;
         var->moved = false;
 
-        EType ptr_type = {
-          ETypeKindPtr,
-          {
-            .ptr_target = malloc(sizeof(EType)),
-          },
-          {},
-        };
-        *ptr_type.ptr_target = (EType) { ETypeKindU8, {}, {} };
-
         if (var->type.kind == ETypeKindUnit) {
-          var->type = ptr_type;
-        } else if (!type_eq(&ptr_type, &var->type)) {
+          var->type.kind = ETypeKindStr;
+        } else if (var->type.kind != ETypeKindStr) {
           Str var_type_str = get_type_str(&var->type);
-          Str ptr_type_str = get_type_str(&ptr_type);
-          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
-                  STR_ARG(ptr_type_str), STR_ARG(var_type_str));
+          CERRORF("Cannot assign value of type str to a variable of type "STR_FMT"\n",
+                  STR_ARG(var_type_str));
           free_type_str(var_type_str, &var->type);
-          free_type_str(ptr_type_str, &ptr_type);
-          type_free(ptr_type.ptr_target);
           goto fail;
-        } else {
-          type_free(ptr_type.ptr_target);
         }
       } break;
 
@@ -969,44 +960,84 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         Var *dest = varss->items[i].items + instr->as.copy_to_field.dest_index;
         Var *src = varss->items[i].items + instr->as.copy_to_field.src_index;
 
-        if (dest->type.kind != ETypeKindStruct) {
+        if (dest->type.kind != ETypeKindStruct && dest->type.kind != ETypeKindStr) {
           Str dest_type_str = get_type_str(&dest->type);
-          CERRORF("Attempt to access field of something that is not a structure, but "STR_FMT"\n",
+          CERRORF("Attempt to access field of something that is not a structure nor an str, but "STR_FMT"\n",
                   STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           goto fail;
         }
 
-        EStruct *_struct = get_struct(&ir->structs, dest->type.name);
-        if (!_struct) {
-          CERRORF("Structure "STR_FMT" was not defined\n",
-                  STR_ARG(dest->type.name));
-          goto fail;
-        }
+        if (dest->type.kind == ETypeKindStruct) {
+          EStruct *_struct = get_struct(&ir->structs, dest->type.name);
+          if (!_struct) {
+            CERRORF("Structure "STR_FMT" was not defined\n",
+                    STR_ARG(dest->type.name));
+            goto fail;
+          }
 
-        EField *field = get_field(_struct, instr->as.copy_to_field.dest_field_name);
-        if (!field) {
-          CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
-                  STR_ARG(instr->as.copy_to_field.dest_field_name),
-                  STR_ARG(dest->type.name));
-          goto fail;
-        }
+          EField *field = get_field(_struct, instr->as.copy_to_field.dest_field_name);
+          if (!field) {
+            CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
+                    STR_ARG(instr->as.copy_to_field.dest_field_name),
+                    STR_ARG(dest->type.name));
+            goto fail;
+          }
 
-        if (!type_eq(&src->type, &field->type)) {
-          Str field_type_str = get_type_str(&field->type);
-          Str src_type_str = get_type_str(&src->type);
-          CERRORF("Cannot assign value of type "STR_FMT" to a field of type "STR_FMT"\n",
-                  STR_ARG(src_type_str), STR_ARG(field_type_str));
-          free_type_str(field_type_str, &field->type);
-          free_type_str(src_type_str, &src->type);
-          goto fail;
-        }
+          if (!type_eq(&src->type, &field->type)) {
+            Str field_type_str = get_type_str(&field->type);
+            Str src_type_str = get_type_str(&src->type);
+            CERRORF("Cannot assign value of type "STR_FMT" to a field of type "STR_FMT"\n",
+                    STR_ARG(src_type_str), STR_ARG(field_type_str));
+            free_type_str(field_type_str, &field->type);
+            free_type_str(src_type_str, &src->type);
+            goto fail;
+          }
 
-        if (src->type.kind == ETypeKindStruct ||
-            src->type.kind == ETypeKindArray ||
-            src->type.kind == ETypeKindTuple) {
-          src->moved = true;
-          src->moved_loc = instr->loc;
+          if (src->type.kind == ETypeKindStruct ||
+              src->type.kind == ETypeKindArray ||
+              src->type.kind == ETypeKindTuple) {
+            src->moved = true;
+            src->moved_loc = instr->loc;
+          }
+        } else {
+          bool is_ptr = str_eq(instr->as.copy_to_field.dest_field_name, STR_LIT("ptr"));
+          if (!is_ptr && !str_eq(instr->as.copy_to_field.dest_field_name, STR_LIT("len"))) {
+            CERRORF("Field "STR_FMT" does not exist in str\n",
+                    STR_ARG(instr->as.copy_to_field.dest_field_name));
+            goto fail;
+          }
+
+          if (is_ptr) {
+            CERROR("`ptr` field of str type is read-only\n");
+            goto fail;
+          }
+
+          EType type = { ETypeKindU32, {}, {} };
+          if (!type_eq(&src->type, &type)) {
+            Str field_type_str = get_type_str(&type);
+            Str src_type_str = get_type_str(&src->type);
+            CERRORF("Cannot assign value of type "STR_FMT" to a field of type "STR_FMT"\n",
+                    STR_ARG(src_type_str), STR_ARG(field_type_str));
+            free_type_str(field_type_str, &type);
+            free_type_str(src_type_str, &src->type);
+            goto fail;
+          }
+
+          EInstr replacement = {
+            EInstrKindCopyToOffset,
+            {
+              .copy_to_offset = {
+                instr->as.copy_to_field.dest_name,
+                instr->as.copy_to_field.dest_index,
+                is_ptr ? 4 : 0,
+                instr->as.copy_to_field.src_name,
+                instr->as.copy_to_field.src_index,
+              },
+            },
+            instr->loc,
+          };
+          *instr = replacement;
         }
       } break;
 
@@ -1018,39 +1049,149 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         dest->moved = false;
         Var *src = varss->items[i].items + instr->as.copy_from_field.src_index;
 
-        if (src->type.kind != ETypeKindStruct) {
+        if (src->type.kind != ETypeKindStruct && src->type.kind != ETypeKindStr) {
           Str src_type_str = get_type_str(&src->type);
-          CERRORF("Attempt to access field of something that is not a structure, but "STR_FMT"\n",
+          CERRORF("Attempt to access field of something that is not a structure nor an str, but "STR_FMT"\n",
                   STR_ARG(src_type_str));
           free_type_str(src_type_str, &src->type);
           goto fail;
         }
 
-        EStruct *_struct = get_struct(&ir->structs, src->type.name);
-        if (!_struct) {
-          CERRORF("Structure "STR_FMT" was not defined\n",
-                  STR_ARG(src->type.name));
-          goto fail;
-        }
+        if (src->type.kind == ETypeKindStruct) {
+          EStruct *_struct = get_struct(&ir->structs, src->type.name);
+          if (!_struct) {
+            CERRORF("Structure "STR_FMT" was not defined\n",
+                    STR_ARG(src->type.name));
+            goto fail;
+          }
 
-        EField *field = get_field(_struct, instr->as.copy_from_field.src_field_name);
-        if (!field) {
-          CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
-                  STR_ARG(instr->as.copy_from_field.src_field_name),
-                  STR_ARG(src->type.name));
-          goto fail;
-        }
+          EField *field = get_field(_struct, instr->as.copy_from_field.src_field_name);
+          if (!field) {
+            CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
+                    STR_ARG(instr->as.copy_from_field.src_field_name),
+                    STR_ARG(src->type.name));
+            goto fail;
+          }
 
-        if (dest->type.kind == ETypeKindUnit) {
-          dest->type = type_clone(&field->type);
-        } else if (!type_eq(&field->type, &dest->type)) {
-          Str dest_type_str = get_type_str(&dest->type);
-          Str field_type_str = get_type_str(&field->type);
-          CERRORF("Cannot assign value of field of type "STR_FMT" to a variable of type "STR_FMT"\n",
-                  STR_ARG(field_type_str), STR_ARG(dest_type_str));
-          free_type_str(dest_type_str, &dest->type);
-          free_type_str(field_type_str, &field->type);
-          goto fail;
+          if (dest->type.kind == ETypeKindUnit) {
+            dest->type = type_clone(&field->type);
+          } else if (!type_eq(&field->type, &dest->type)) {
+            Str dest_type_str = get_type_str(&dest->type);
+            Str field_type_str = get_type_str(&field->type);
+            CERRORF("Cannot assign value of field of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                    STR_ARG(field_type_str), STR_ARG(dest_type_str));
+            free_type_str(dest_type_str, &dest->type);
+            free_type_str(field_type_str, &field->type);
+            goto fail;
+          }
+        } else {
+          bool is_ptr = str_eq(instr->as.copy_from_field.src_field_name, STR_LIT("ptr"));
+          if (!is_ptr && !str_eq(instr->as.copy_from_field.src_field_name, STR_LIT("len"))) {
+            CERRORF("Field "STR_FMT" does not exist in str\n",
+                    STR_ARG(instr->as.copy_from_field.src_field_name));
+            goto fail;
+          }
+
+          EType type;
+          if (is_ptr) {
+            type = (EType) {
+              ETypeKindPtr,
+              {
+                .ptr_target = malloc(sizeof(EType)),
+              },
+              {},
+            };
+            *type.ptr_target = (EType) { ETypeKindU8, {}, {} };
+          } else {
+            type = (EType) { ETypeKindU32, {}, {} };
+          }
+
+          if (dest->type.kind == ETypeKindUnit) {
+            dest->type = type;
+          } else if (!type_eq(&type, &dest->type)) {
+            Str dest_type_str = get_type_str(&dest->type);
+            Str field_type_str = get_type_str(&type);
+            CERRORF("Cannot assign value of field of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                    STR_ARG(field_type_str), STR_ARG(dest_type_str));
+            free_type_str(dest_type_str, &dest->type);
+            free_type_str(field_type_str, &type);
+            if (is_ptr)
+              type_free(type.ptr_target);
+            goto fail;
+          } else {
+            if (is_ptr)
+              type_free(type.ptr_target);
+          }
+
+          if (is_ptr) {
+            Var new_var = {
+              {},
+              { ETypeKindU64, {}, {} },
+              false,
+              {},
+            };
+            DA_APPEND(varss->items[i], new_var);
+            EInstr new_instr0 = {
+              EInstrKindAlloc,
+              {
+                .alloc = {
+                  {},
+                  varss->items[i].len - 1,
+                },
+              },
+              {},
+            };
+            EInstr new_instr1 = {
+              EInstrKindStore,
+              {
+                .store = {
+                  {},
+                  varss->items[i].len - 1,
+                  {
+                    ETypeKindU64,
+                    {
+                      ._unsigned = 4,
+                    },
+                  },
+                },
+              },
+              {},
+            };
+            EInstr replacement = {
+              EInstrKindBinOp,
+              {
+                .bin_op = {
+                  instr->as.copy_from_field.dest_name,
+                  instr->as.copy_from_field.dest_index,
+                  instr->as.copy_from_field.src_name,
+                  instr->as.copy_from_field.src_index,
+                  {},
+                  varss->items[i].len - 1,
+                  EBinOpKindAdd,
+                },
+              },
+              instr->loc,
+            };
+            *instr = replacement;
+            DA_INSERT(proc->instrs, j, new_instr1);
+            DA_INSERT(proc->instrs, j, new_instr0);
+            j += 3;
+          } else {
+            EInstr replacement = {
+              EInstrKindCopyFromOffset,
+              {
+                .copy_from_offset = {
+                  instr->as.copy_from_field.dest_name,
+                  instr->as.copy_from_field.dest_index,
+                  instr->as.copy_from_field.src_name,
+                  instr->as.copy_from_field.src_index,
+                  is_ptr ? 4 : 0,
+                },
+              },
+              instr->loc,
+            };
+            *instr = replacement;
+          }
         }
       } break;
 

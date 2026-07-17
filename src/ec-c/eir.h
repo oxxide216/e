@@ -19,6 +19,7 @@ typedef enum {
   ETypeKindStruct,
   ETypeKindArray,
   ETypeKindTuple,
+  ETypeKindStr,
   ETypeKindPtr,
 } ETypeKind;
 
@@ -72,7 +73,7 @@ typedef enum {
   EInstrKindCopyFromRef,
   EInstrKindStoreNull,
   EInstrKindInlineAsm,
-  EInstrKindStoreData,
+  EInstrKindStoreStr,
   EInstrKindCast,
   EInstrKindLenOf,
   EInstrKindCopyToField,
@@ -208,7 +209,7 @@ typedef struct {
   Str name;
   u32 index;
   u32 data_index;
-} EInstrStoreData;
+} EInstrStoreStr;
 
 typedef struct {
   Str   dest_name;
@@ -278,7 +279,7 @@ typedef union {
   EInstrCopyFromRef    copy_from_ref;
   EInstrStoreNull      store_null;
   EInstrInlineAsm      inline_asm;
-  EInstrStoreData      store_data;
+  EInstrStoreStr       store_str;
   EInstrCast           cast;
   EInstrLenOf          len_of;
   EInstrCopyToField    copy_to_field;

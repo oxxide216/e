@@ -906,6 +906,11 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopyFromRef: {
+        locs.items[instr->as.copy_from_ref.dest_index].kind =
+          instr->as.copy_from_ref.src_target_kind;
+        locs.items[instr->as.copy_from_ref.dest_index].size =
+          instr->as.copy_from_ref.src_target_size;
+
         ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_index, 0);
         if (instr->as.copy_from_ref.src_offset_index != (u32) -1)
           ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_offset_index, 1);
@@ -1005,10 +1010,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         if (needs_convertation ||
             locs.items[instr->as.convert.dest_index].value !=
             locs.items[instr->as.convert.src_index].value) {
-          if (needs_convertation)
-            write_loc_ensure_in_reg(stream, locs.items + instr->as.convert.dest_index, 0);
-          else
+          if (!needs_convertation || (dest_size == 8 && src_size == 4))
             write_loc_of_size_ensure_in_reg(stream, locs.items + instr->as.convert.dest_index, src_size, 0);
+          else
+            write_loc_ensure_in_reg(stream, locs.items + instr->as.convert.dest_index, 0);
           write_cstr(stream, ",");
           write_loc(stream, locs.items + instr->as.convert.src_index);
           write_cstr(stream, "\n");
@@ -1027,7 +1032,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopyToRefFixed: {
-        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0);;
+        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0);
         ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.src_index, 1);
 
         u32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[instr->as.copy_to_ref_fixed.dest_segments.len - 1].offset;
@@ -1041,6 +1046,11 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopyFromRefFixed: {
+        locs.items[instr->as.copy_from_ref_fixed.dest_index].kind =
+          instr->as.copy_from_ref_fixed.src_target_kind;
+        locs.items[instr->as.copy_from_ref_fixed.dest_index].size =
+          instr->as.copy_from_ref_fixed.src_target_size;
+
         ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0);
 
         u32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;

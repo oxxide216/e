@@ -43,6 +43,10 @@ static void value_print(EValue *value) {
     printf("tuple");
   } break;
 
+  case ETypeKindStr: {
+    printf("str");
+  } break;
+
   case ETypeKindPtr: {
     printf("pointer");
   } break;
@@ -118,7 +122,7 @@ void proc_print(EProc *proc) {
     } break;
 
     case EInstrKindCall: {
-      printf(STR_FMT"(", STR_ARG(instr->as.call.name));
+      printf("  "STR_FMT"(", STR_ARG(instr->as.call.name));
       for (u32 j = 0; j < instr->as.call.arg_indices.len; ++j) {
         if (j > 0)
           printf(", ");
@@ -211,10 +215,10 @@ void proc_print(EProc *proc) {
       printf("  asm\n");
     } break;
 
-    case EInstrKindStoreData: {
+    case EInstrKindStoreStr: {
       printf("  ");
-      var_print(instr->as.store_data.index, instr->as.store_data.name);
-      printf(" = data %u\n", instr->as.store_data.data_index);
+      var_print(instr->as.store_str.index, instr->as.store_str.name);
+      printf(" = str %u\n", instr->as.store_str.data_index);
     } break;
 
     case EInstrKindCast: {

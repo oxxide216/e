@@ -261,6 +261,11 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
           decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
           decode_buffer(&decoder, &segment->size, sizeof(segment->size));
         }
+
+        u8 src_target_kind;
+        decode_buffer(&decoder, &src_target_kind, 1);
+        instr->as.copy_from_ref_fixed.src_target_kind = src_target_kind;
+        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_target_size, sizeof(instr->as.copy_from_ref_fixed.src_target_size));
       } break;
       }
     }
