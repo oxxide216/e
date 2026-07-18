@@ -960,16 +960,20 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         Var *dest = varss->items[i].items + instr->as.copy_to_field.dest_index;
         Var *src = varss->items[i].items + instr->as.copy_to_field.src_index;
 
-        if (dest->type.kind != ETypeKindStruct && dest->type.kind != ETypeKindStr) {
+        EType *dest_type = &dest->type;
+        if (dest_type->kind == ETypeKindPtr)
+          dest_type = dest_type->ptr_target;
+
+        if (dest_type->kind != ETypeKindStruct && dest_type->kind != ETypeKindStr) {
           Str dest_type_str = get_type_str(&dest->type);
-          CERRORF("Attempt to access field of something that is not a structure nor an str, but "STR_FMT"\n",
+          CERRORF("Attempt to access field of something that is not a structure nor an str nor a pointer to any of these, but "STR_FMT"\n",
                   STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           goto fail;
         }
 
-        if (dest->type.kind == ETypeKindStruct) {
-          EStruct *_struct = get_struct(&ir->structs, dest->type.name);
+        if (dest_type->kind == ETypeKindStruct) {
+          EStruct *_struct = get_struct(&ir->structs, dest_type->name);
           if (!_struct) {
             CERRORF("Structure "STR_FMT" was not defined\n",
                     STR_ARG(dest->type.name));
@@ -980,7 +984,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           if (!field) {
             CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
                     STR_ARG(instr->as.copy_to_field.dest_field_name),
-                    STR_ARG(dest->type.name));
+                    STR_ARG(dest_type->name));
             goto fail;
           }
 
@@ -1049,19 +1053,23 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         dest->moved = false;
         Var *src = varss->items[i].items + instr->as.copy_from_field.src_index;
 
-        if (src->type.kind != ETypeKindStruct && src->type.kind != ETypeKindStr) {
-          Str src_type_str = get_type_str(&src->type);
+        EType *src_type = &src->type;
+        if (src_type->kind == ETypeKindPtr)
+          src_type = src_type->ptr_target;
+
+        if (src_type->kind != ETypeKindStruct && src_type->kind != ETypeKindStr) {
+          Str src_type_str = get_type_str(src_type);
           CERRORF("Attempt to access field of something that is not a structure nor an str, but "STR_FMT"\n",
                   STR_ARG(src_type_str));
-          free_type_str(src_type_str, &src->type);
+          free_type_str(src_type_str, src_type);
           goto fail;
         }
 
-        if (src->type.kind == ETypeKindStruct) {
-          EStruct *_struct = get_struct(&ir->structs, src->type.name);
+        if (src_type->kind == ETypeKindStruct) {
+          EStruct *_struct = get_struct(&ir->structs, src_type->name);
           if (!_struct) {
             CERRORF("Structure "STR_FMT" was not defined\n",
-                    STR_ARG(src->type.name));
+                    STR_ARG(src_type->name));
             goto fail;
           }
 
@@ -1069,7 +1077,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           if (!field) {
             CERRORF("Field "STR_FMT" does not exist in structure "STR_FMT"\n",
                     STR_ARG(instr->as.copy_from_field.src_field_name),
-                    STR_ARG(src->type.name));
+                    STR_ARG(src_type->name));
             goto fail;
           }
 

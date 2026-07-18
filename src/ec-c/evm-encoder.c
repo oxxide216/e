@@ -440,7 +440,11 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         fwrite(&instr->as.copy_to_field.dest_index, sizeof(instr->as.copy_to_field.dest_index), 1, stream);
 
         Var *dest = varss->items[i].items + instr->as.copy_to_field.dest_index;
-        EStruct *_struct = get_struct(structs, dest->type.name);
+        EType *dest_type = &dest->type;
+        if (dest_type->kind == ETypeKindPtr)
+          dest_type = dest_type->ptr_target;
+
+        EStruct *_struct = get_struct(structs, dest_type->name);
         u32 index = 0;
 
         while (!str_eq(_struct->fields.items[index].name, instr->as.copy_to_field.dest_field_name))
@@ -448,7 +452,7 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         ++index;
 
 
-        encode_type_fields_as_aligned_segments_until(stream, &dest->type, index, structs);
+        encode_type_fields_as_aligned_segments_until(stream, dest_type, index, structs);
 
         fwrite(&instr->as.copy_to_field.src_index, sizeof(instr->as.copy_to_field.src_index), 1, stream);
       } break;
@@ -458,14 +462,24 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         fwrite(&instr->as.copy_from_field.src_index, sizeof(instr->as.copy_from_field.src_index), 1, stream);
 
         Var *src = varss->items[i].items + instr->as.copy_from_field.src_index;
-        EStruct *_struct = get_struct(structs, src->type.name);
+        EType *src_type = &src->type;
+        if (src_type->kind == ETypeKindPtr)
+          src_type = src_type->ptr_target;
+
+        EStruct *_struct = get_struct(structs, src_type->name);
         u32 index = 0;
 
         while (!str_eq(_struct->fields.items[index].name, instr->as.copy_from_field.src_field_name))
           ++index;
         ++index;
 
-        encode_type_fields_as_aligned_segments_until(stream, &src->type, index, structs);
+        encode_type_fields_as_aligned_segments_until(stream, src_type, index, structs);
+
+        EField *field = _struct->fields.items + index - 1;
+        ValueKind src_target_kind = e_type_kind_to_evm_value_kind(field->type.kind);
+        u32 src_target_size = get_type_size(structs, &field->type);
+        fwrite(&src_target_kind, 1, 1, stream);
+        fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
       } break;
 
       // Unreachable, skipped above
