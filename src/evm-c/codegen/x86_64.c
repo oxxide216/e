@@ -897,7 +897,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0);
         if (instr->as.copy_to_ref.dest_offset_index != (u32) -1) {
           write_cstr(stream, "+");
-          write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_offset_index, 2);
+          write_loc_of_size_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_offset_index, 8, 2);
           fprintf(stream, "*%u", locs.items[instr->as.copy_to_ref.src_index].size);
         }
         write_cstr(stream, "],");
@@ -921,7 +921,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_index, 0);
         if (instr->as.copy_from_ref.src_offset_index != (u32) -1) {
           write_cstr(stream, "+");
-          write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_offset_index, 1);
+          write_loc_of_size_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_offset_index, 8, 1);
           fprintf(stream, "*%u", instr->as.copy_from_ref.src_target_size);
         }
         write_cstr(stream, "]\n");
