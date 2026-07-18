@@ -164,6 +164,35 @@ static char *get_bin_op_kind_cstr(EBinOpKind kind) {
   return NULL;
 }
 
+static EType *get_proc_return_type_dep(EModuleDep *dep, Str name, ETypeRefs *arg_types) {
+  for (u32 j = 0; j < dep->ir.procs.len; ++j) {
+    EProc *proc = dep->ir.procs.items + j;
+
+    if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
+      continue;
+
+    bool all = true;
+
+    for (u32 j = 0; j < proc->args.len; ++j) {
+      if (!type_eq(&proc->args.items[j].type, arg_types->items[j])) {
+        all = false;
+        break;
+      }
+    }
+
+    if (all)
+      return &proc->return_type;
+  }
+
+  for (u32 i = 0; i < dep->ir.module_deps.len; ++i) {
+    EType *return_type = get_proc_return_type_dep(dep->ir.module_deps.items + i, name, arg_types);
+    if (return_type)
+      return return_type;
+  }
+
+  return NULL;
+}
+
 static EType *get_proc_return_type(EIr *ir, Str name, ETypeRefs *arg_types) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
@@ -185,26 +214,9 @@ static EType *get_proc_return_type(EIr *ir, Str name, ETypeRefs *arg_types) {
   }
 
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
-    EModuleDep *dep = ir->module_deps.items + i;
-
-    for (u32 j = 0; j < dep->ir.procs.len; ++j) {
-      EProc *proc = dep->ir.procs.items + j;
-
-      if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
-        continue;
-
-      bool all = true;
-
-      for (u32 j = 0; j < proc->args.len; ++j) {
-        if (!type_eq(&proc->args.items[j].type, arg_types->items[j])) {
-          all = false;
-          break;
-        }
-      }
-
-      if (all)
-        return &proc->return_type;
-    }
+    EType *return_type = get_proc_return_type_dep(ir->module_deps.items + i, name, arg_types);
+    if (return_type)
+      return return_type;
   }
 
   return NULL;
