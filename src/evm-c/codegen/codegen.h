@@ -36,9 +36,10 @@ typedef struct {
 typedef u32 (*AlignmentFunc)(u32 size);
 
 void      add_var_locs(VarLocs *locs, Proc *proc);
-SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs, u32 scratch_regs_len);
+SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len);
 void      promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs);
 void      align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func);
+bool      get_has_function_call(Proc *proc);
 
 void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir);
 

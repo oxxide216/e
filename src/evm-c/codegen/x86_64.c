@@ -312,10 +312,13 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     Proc *proc = ir->procs.items + i;
 
-    if (locs.cap < proc->args.len) {
+    bool has_nested_call = get_has_function_call(proc);
+
+    u32 target_cap = has_nested_call ? proc->args.len * 2 : proc->args.len;
+    if (locs.cap < target_cap) {
       u32 new_cap = locs.cap;
-      if (new_cap < proc->args.len)
-        new_cap = proc->args.len;
+      if (new_cap < target_cap)
+        new_cap = target_cap;
       if (locs.items)
         locs.items = realloc(locs.items, new_cap * sizeof(VarLoc));
       else
@@ -353,9 +356,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         args_space.stack_size += size;
       }
 
+      bool is_arg = !has_nested_call || j >= ARRAY_LEN(arg_regs8);
       VarLoc loc = {
         value, proc->args.items[j].kind,
-        size, 0, 0, 0, false, true,
+        size, 0, 0, 0, false, is_arg,
       };
       locs.items[j] = loc;
     }
@@ -363,8 +367,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     align_fixed_offsets(proc, alignment_func_x86_64);
     add_var_locs(&locs, proc);
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
-    SpaceUsed space_used = var_locs_set_values(proc, &locs,
-                                               ARRAY_LEN(scratch_regs8));
+    SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8));
     u32 total_space_used = DEFAULT_STACK_SIZE + space_used.regs * 8 +
                                                 space_used.stack_size;
 
@@ -383,6 +386,21 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     for (u32 j = 0; j < space_used.regs; ++j)
       fprintf(stream, "  push "STR_FMT"\n", STR_ARG(scratch_regs8[j]));
+
+    if (has_nested_call) {
+      for (u32 j = 0; j < proc->args.len; ++j) {
+        VarLoc *loc = locs.items + j;
+
+        if (loc->is_arg)
+          break;
+
+        write_cstr(stream, "  mov ");
+        write_loc_of_size(stream, loc, 8);
+        write_cstr(stream, ",");
+        write_str(stream, arg_regs8[j]);
+        write_cstr(stream, "\n");
+      }
+    }
 
     u8 *labels = malloc(proc->instrs.len);
     memset(labels, 0, proc->instrs.len);

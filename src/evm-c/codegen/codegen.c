@@ -232,10 +232,10 @@ static i32 get_var_loc_reg_index(Allocator *allocator, VarLoc *loc,
   return -1;
 }
 
-SpaceUsed var_locs_set_values(Proc *proc, VarLocs *locs, u32 scratch_regs_len) {
+SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len) {
   Allocator allocator = {0};
-  for (u32 i = proc->args.len; i < locs->cap; ++i)
-    if (locs->items[i].uses > 0)
+  for (u32 i = 0; i < locs->cap; ++i)
+    if (locs->items[i].uses > 0 && !locs->items[i].is_arg)
       DA_APPEND(allocator.refs, locs->items + i);
 
   for (u32 i = 0; i + 1 < allocator.refs.len; ++i) {
@@ -320,4 +320,13 @@ void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
       offset += offsets->items[j].size;
     }
   }
+}
+
+bool get_has_function_call(Proc *proc) {
+  for (u32 i = 0; i < proc->instrs.len; ++i)
+    if (proc->instrs.items[i].kind == InstrKindCall ||
+        proc->instrs.items[i].kind == InstrKindCallAssign)
+      return true;
+
+  return false;
 }
