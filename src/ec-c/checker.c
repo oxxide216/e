@@ -579,68 +579,6 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           type_free(dest_type.ptr_target);
         else if (dest_type.kind == ETypeKindArray)
           type_free(dest_type.array_element);
-
-        if ((src0->type.kind == ETypeKindPtr || src0->type.kind == ETypeKindArray) &&
-            (instr->as.bin_op.kind == EBinOpKindAdd || instr->as.bin_op.kind == EBinOpKindSub)) {
-          EType *sub_type;
-          if (src0->type.kind == ETypeKindPtr)
-            sub_type = src0->type.ptr_target;
-          else
-            sub_type = src0->type.array_element;
-
-          Var new_var = {
-            {},
-            { ETypeKindU64, {}, {} },
-            false,
-            {},
-          };
-          DA_APPEND(varss->items[i], new_var);
-          EInstr new_instr0 = {
-            EInstrKindAlloc,
-            {
-              .alloc = {
-                {},
-                varss->items[i].len - 1,
-              },
-            },
-            {},
-          };
-          EInstr new_instr1 = {
-            EInstrKindStore,
-            {
-              .store = {
-                {},
-                varss->items[i].len - 1,
-                {
-                  ETypeKindU64,
-                  {
-                    ._unsigned = get_type_size(&ir->structs, sub_type),
-                  },
-                },
-              },
-            },
-            {},
-          };
-          EInstr new_instr2 = {
-            EInstrKindBinOp,
-            {
-              .bin_op = {
-                {},
-                instr->as.bin_op.src1_index,
-                {},
-                instr->as.bin_op.src1_index,
-                {},
-                varss->items[i].len - 1,
-                EBinOpKindMul,
-              },
-            },
-            {},
-          };
-          DA_INSERT(proc->instrs, j, new_instr2);
-          DA_INSERT(proc->instrs, j, new_instr1);
-          DA_INSERT(proc->instrs, j, new_instr0);
-          j += 3;
-        }
       } break;
 
       case EInstrKindCall: {
