@@ -457,12 +457,13 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
     case TT_STR: {
       u32 index = parser->ir->data.len;
 
-      u8 *data = malloc(4 + token.lexeme.len - 1);
+      u8 *data = malloc(4 + token.lexeme.len - 1 + 1);
       *(u32 *) data = token.lexeme.len - 2;
       memcpy(data + 4, token.lexeme.ptr + 1, token.lexeme.len - 2);
       data[4 + token.lexeme.len - 2] = 0;
+      data[4 + token.lexeme.len - 1] = 1;
 
-      emit_data(&parser->ir->data, data, 4 + token.lexeme.len - 1);
+      emit_data(&parser->ir->data, data, 4 + token.lexeme.len - 1 + 1);
 
       emit_instr(
         &parser->ir->procs,
