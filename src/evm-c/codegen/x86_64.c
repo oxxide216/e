@@ -4,7 +4,7 @@
 #include "utils.h"
 #include "shl/shl-log.h"
 #ifndef NDEBUG
-#include "ir-print.h"
+#include "../ir-print.h"
 #endif
 
 // 8 bytes for base pointer + 8 for return address

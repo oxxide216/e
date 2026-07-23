@@ -3,7 +3,7 @@
 
 #include "shl/shl-defs.h"
 #define MATER_COMPILER
-#include "ir.h"
+#include "evm/ir.h"
 
 #define emit_proc(procs, name)         \
   do {                                 \

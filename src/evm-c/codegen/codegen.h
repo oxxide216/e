@@ -1,7 +1,7 @@
 #ifndef CODEGEN_H
 #define CODEGEN_H
 
-#include "ir.h"
+#include "evm/ir.h"
 
 typedef struct {
   // value >= means register, < 0 means stack

@@ -1,4 +1,4 @@
-cflags = -Wall -Wextra -Ilibs -Ilibs/lexgen/include -Isrc/evm-c -Isrc/common-c -ggdb
+cflags = -Wall -Wextra -Ilibs -Ilibs/lexgen/include -Iinclude -Isrc/common-c -ggdb
 build_dir = build
 
 [ec-c]

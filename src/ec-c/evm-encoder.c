@@ -1,5 +1,5 @@
 #include "evm-encoder.h"
-#include "ir.h"
+#include "evm/ir.h"
 
 static void encode_str(FILE *stream, Str str) {
   fwrite(&str.len, sizeof(str.len), 1, stream);

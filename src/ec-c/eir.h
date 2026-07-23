@@ -3,7 +3,7 @@
 
 #include "shl/shl-defs.h"
 #include "shl/shl-str.h"
-#include "ir.h"
+#include "evm/ir.h"
 
 typedef enum {
   ETypeKindUnit = 0,
