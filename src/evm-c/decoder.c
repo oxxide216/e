@@ -267,6 +267,34 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         instr->as.copy_from_ref_fixed.src_target_kind = src_target_kind;
         decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_target_size, sizeof(instr->as.copy_from_ref_fixed.src_target_size));
       } break;
+
+      case InstrKindCallRef: {
+        decode_buffer(&decoder, &instr->as.call_ref.index, sizeof(instr->as.call_ref.index));
+
+        decode_buffer(&decoder, &instr->as.call_ref.arg_indices.len, sizeof(instr->as.call_ref.arg_indices.len));
+        instr->as.call_ref.arg_indices.cap = instr->as.call_ref.arg_indices.len;
+        instr->as.call_ref.arg_indices.items = arena_alloc(arena, instr->as.call_ref.arg_indices.cap * sizeof(u32));
+        for (u32 k = 0; k < instr->as.call_ref.arg_indices.len; ++k) {
+          u32 *arg_index = instr->as.call_ref.arg_indices.items + k;
+          decode_buffer(&decoder, arg_index, sizeof(*arg_index));
+        }
+      } break;
+
+      case InstrKindCallRefAssign: {
+        decode_buffer(&decoder, &instr->as.call_ref_assign.dest_index, sizeof(instr->as.call_ref_assign.dest_index));
+        decode_buffer(&decoder, &instr->as.call_ref_assign.return_size, sizeof(instr->as.call_ref_assign.return_size));
+        u8 kind;
+        decode_buffer(&decoder, &kind, 1);
+        instr->as.call_ref_assign.return_kind = kind;
+
+        decode_buffer(&decoder, &instr->as.call_ref_assign.arg_indices.len, sizeof(instr->as.call_ref_assign.arg_indices.len));
+        instr->as.call_ref_assign.arg_indices.cap = instr->as.call_ref_assign.arg_indices.len;
+        instr->as.call_ref_assign.arg_indices.items = arena_alloc(arena, instr->as.call_ref_assign.arg_indices.cap * sizeof(u32));
+        for (u32 k = 0; k < instr->as.call_ref_assign.arg_indices.len; ++k) {
+          u32 *arg_index = instr->as.call_ref_assign.arg_indices.items + k;
+          decode_buffer(&decoder, arg_index, sizeof(*arg_index));
+        }
+      } break;
       }
     }
   }

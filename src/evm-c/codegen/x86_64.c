@@ -660,21 +660,40 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCall:
-      case InstrKindCallAssign: {
+      case InstrKindCallAssign:
+      case InstrKindCallRef:
+      case InstrKindCallRefAssign: {
         Str name;
+        u32 index;
         Indices *arg_indices;
         if (instr->kind == InstrKindCall) {
           name = instr->as.call.name;
           arg_indices = &instr->as.call.arg_indices;
-        } else {
+        } else if (instr->kind == InstrKindCallAssign) {
           name = instr->as.call_assign.name;
+          arg_indices = &instr->as.call_assign.arg_indices;
+        } else if (instr->kind == InstrKindCallRef) {
+          index = instr->as.call_ref.index;
+          arg_indices = &instr->as.call.arg_indices;
+        } else if (instr->kind == InstrKindCallRefAssign) {
+          index = instr->as.call_ref_assign.index;
           arg_indices = &instr->as.call_assign.arg_indices;
         }
 
         if (instr->kind == InstrKindCallAssign) {
-          VarLoc *loc = locs.items + instr->as.bin_op.dest_index;
+          VarLoc *loc = locs.items + instr->as.call_assign.dest_index;
           get_proc_return_kind_and_size(&ir->procs, instr->as.call_assign.name,
                                         &loc->kind, &loc->size);
+
+          if (loc->size > 16) {
+            write_cstr(stream, "  lea rdi,");
+            write_loc(stream, loc);
+            write_cstr(stream, "\n");
+          }
+        } else if (instr->kind == InstrKindCallRefAssign) {
+          VarLoc *loc = locs.items + instr->as.call_ref_assign.dest_index;
+          loc->size = instr->as.call_ref_assign.return_size;
+          loc->kind = instr->as.call_ref_assign.return_kind;
 
           if (loc->size > 16) {
             write_cstr(stream, "  lea rdi,");
@@ -777,7 +796,13 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           }
         }
 
-        fprintf(stream, "  call $"STR_FMT"\n", STR_ARG(name));
+        if (index == (u32) -1) {
+          fprintf(stream, "  call $"STR_FMT"\n", STR_ARG(name));
+        } else {
+          write_cstr(stream, "  call ");
+          write_loc(stream, locs.items + index);
+          write_cstr(stream, "\n");
+        }
 
         if (aligned > 0)
           fprintf(stream, "  add rsp,%u\n", aligned);

@@ -209,6 +209,41 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         locs->items[instr->as.ref_proc.dest_index].end = i;
       }
     } break;
+
+    case InstrKindCallRef: {
+      if (instr->as.call_ref.index < locs->cap) {
+        ++locs->items[instr->as.call_ref.index].uses;
+        locs->items[instr->as.call_ref.index].end = i;
+      }
+
+      for (u32 j = 0; j < instr->as.call_ref.arg_indices.len; ++j) {
+        u32 arg_index = instr->as.call_ref.arg_indices.items[j];
+        if (arg_index < locs->cap) {
+          ++locs->items[arg_index].uses;
+          locs->items[arg_index].end = i;
+        }
+      }
+    } break;
+
+    case InstrKindCallRefAssign: {
+      if (instr->as.call_ref_assign.dest_index < locs->cap) {
+        ++locs->items[instr->as.call_ref_assign.dest_index].uses;
+        locs->items[instr->as.call_ref_assign.dest_index].end = i;
+      }
+
+      if (instr->as.call_ref_assign.index < locs->cap) {
+        ++locs->items[instr->as.call_ref_assign.index].uses;
+        locs->items[instr->as.call_ref_assign.index].end = i;
+      }
+
+      for (u32 j = 0; j < instr->as.call_ref_assign.arg_indices.len; ++j) {
+        u32 arg_index = instr->as.call_ref_assign.arg_indices.items[j];
+        if (arg_index < locs->cap) {
+          ++locs->items[arg_index].uses;
+          locs->items[arg_index].end = i;
+        }
+      }
+    } break;
     }
   }
 }

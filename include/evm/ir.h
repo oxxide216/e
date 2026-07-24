@@ -39,6 +39,8 @@ typedef enum {
   InstrKindCopyToRefFixed,
   InstrKindCopyFromRefFixed,
   InstrKindRefProc,
+  InstrKindCallRef,
+  InstrKindCallRefAssign,
 } InstrKind;
 
 typedef struct {
@@ -182,6 +184,19 @@ typedef struct {
   Str proc_name;
 } InstrRefProc;
 
+typedef struct {
+  u32     index;
+  Indices arg_indices;
+} InstrCallRef;
+
+typedef struct {
+  u32       dest_index;
+  u32       return_size;
+  ValueKind return_kind;
+  u32       index;
+  Indices   arg_indices;
+} InstrCallRefAssign;
+
 typedef union {
   InstrAlloc            alloc;
   InstrStore            store;
@@ -201,6 +216,8 @@ typedef union {
   InstrCopyToRefFixed   copy_to_ref_fixed;
   InstrCopyFromRefFixed copy_from_ref_fixed;
   InstrRefProc          ref_proc;
+  InstrCallRef          call_ref;
+  InstrCallRefAssign    call_ref_assign;
 } InstrAs;
 
 typedef struct {

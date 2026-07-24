@@ -196,6 +196,28 @@ void proc_print(Proc *proc, VarLocs *locs) {
              instr->as.ref_proc.dest_index,
              STR_ARG(instr->as.ref_proc.proc_name));
     } break;
+
+    case InstrKindCallRef: {
+      printf("  $%u(", instr->as.call_ref.index);
+      for (u32 k = 0; k < instr->as.call_ref.arg_indices.len; ++k) {
+        if (k > 0)
+          printf(", ");
+        printf("$%u", instr->as.call_ref.arg_indices.items[k]);
+      }
+      printf(")\n");
+    } break;
+
+    case InstrKindCallRefAssign: {
+      printf("  $%u = $%u(",
+             instr->as.call_ref_assign.dest_index,
+             instr->as.call_ref_assign.index);
+      for (u32 k = 0; k < instr->as.call_ref_assign.arg_indices.len; ++k) {
+        if (k > 0)
+          printf(", ");
+        printf("$%u", instr->as.call_ref_assign.arg_indices.items[k]);
+      }
+      printf(")\n");
+    } break;
     }
   }
 
