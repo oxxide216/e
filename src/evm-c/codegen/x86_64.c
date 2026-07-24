@@ -443,7 +443,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         dest_loc->kind = src_loc->kind;
         dest_loc->size = src_loc->size;
 
-        if (dest_loc->value != src_loc->value) {
+        if (dest_loc->value != src_loc->value || dest_loc->is_arg != src_loc->is_arg) {
           if (dest_loc->size <= 8) {
             if (dest_loc->value < 0)
               ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0);
@@ -566,7 +566,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           locs.items[instr->as.bin_op.dest_index].size = locs.items[instr->as.bin_op.src0_index].size;
 
           if (locs.items[instr->as.bin_op.dest_index].value !=
-              locs.items[instr->as.bin_op.src0_index].value) {
+              locs.items[instr->as.bin_op.src0_index].value ||
+              locs.items[instr->as.bin_op.dest_index].is_arg !=
+              locs.items[instr->as.bin_op.src0_index].is_arg) {
             if (locs.items[instr->as.bin_op.dest_index].value < 0)
               ensure_in_reg(stream, locs.items + instr->as.bin_op.src0_index, 0);
             write_cstr(stream, "  mov ");
