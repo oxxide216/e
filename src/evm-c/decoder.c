@@ -78,7 +78,7 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
       decode_buffer(&decoder, &kind, 1);
       instr->kind = kind;
 
-      switch (kind) {
+      switch (instr->kind) {
       case InstrKindAlloc: {
         decode_buffer(&decoder, &instr->as.alloc.index, sizeof(instr->as.alloc.index));
 
@@ -268,6 +268,11 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_target_size, sizeof(instr->as.copy_from_ref_fixed.src_target_size));
       } break;
 
+      case InstrKindRefProc: {
+        decode_buffer(&decoder, &instr->as.ref_proc.dest_index, sizeof(instr->as.ref_proc.dest_index));
+        decode_str(&decoder, &instr->as.ref_proc.proc_name);
+      } break;
+
       case InstrKindCallRef: {
         decode_buffer(&decoder, &instr->as.call_ref.index, sizeof(instr->as.call_ref.index));
 
@@ -283,10 +288,11 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
       case InstrKindCallRefAssign: {
         decode_buffer(&decoder, &instr->as.call_ref_assign.dest_index, sizeof(instr->as.call_ref_assign.dest_index));
         decode_buffer(&decoder, &instr->as.call_ref_assign.return_size, sizeof(instr->as.call_ref_assign.return_size));
-        u8 kind;
-        decode_buffer(&decoder, &kind, 1);
-        instr->as.call_ref_assign.return_kind = kind;
+        u8 return_kind;
+        decode_buffer(&decoder, &return_kind, 1);
+        instr->as.call_ref_assign.return_kind = return_kind;
 
+        decode_buffer(&decoder, &instr->as.call_ref_assign.index, sizeof(instr->as.call_ref_assign.index));
         decode_buffer(&decoder, &instr->as.call_ref_assign.arg_indices.len, sizeof(instr->as.call_ref_assign.arg_indices.len));
         instr->as.call_ref_assign.arg_indices.cap = instr->as.call_ref_assign.arg_indices.len;
         instr->as.call_ref_assign.arg_indices.items = arena_alloc(arena, instr->as.call_ref_assign.arg_indices.cap * sizeof(u32));
