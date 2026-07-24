@@ -12,7 +12,7 @@
 #include "eir-print.h"
 #endif
 
-#define EVM_PREFIX  "./evm-c -o "
+#define EVM_PREFIX  "./evm -o "
 #define YASM_PREFIX "yasm -felf64 -o "
 #define LD_PREFIX   "ld -o "
 
