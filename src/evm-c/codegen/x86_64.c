@@ -664,7 +664,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       case InstrKindCallRef:
       case InstrKindCallRefAssign: {
         Str name;
-        u32 index;
+        u32 index = (u32) -1;
         Indices *arg_indices;
         if (instr->kind == InstrKindCall) {
           name = instr->as.call.name;
