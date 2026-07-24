@@ -1,14 +1,14 @@
 cflags = -Wall -Wextra -Ilibs -Ilibs/lexgen/include -Iinclude -Isrc/common-c -ggdb
 build_dir = build
 
-[ec-c]
+[ec]
 src = src/ec-c/**.c src/common-c/**.c
 deps = lexgen
 ghost_deps = src/ec-c/grammar.h
 cflags = $cflags
 incpath = $build_dir
 
-[evm-c]
+[evm]
 src = src/evm-c/**.c src/common-c/**.c
 cflags = $cflags
 incpath = $build_dir

@@ -2,8 +2,8 @@
 /nsb
 /build/
 /liblexgen.a
-/ec-c
-/evm-c
+/ec
+/evm
 /hello
 /pointers
 /asm

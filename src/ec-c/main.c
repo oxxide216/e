@@ -37,7 +37,6 @@ static void print_usage(char *program_name) {
   fprintf(stderr, "       -I <search paths>         Specify included module search path\n");
 }
 
-
 static char *make_ir_path(char *input_path) {
   u32 len = strlen(input_path);
   u32 begin = len;
