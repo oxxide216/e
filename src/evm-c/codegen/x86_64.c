@@ -1087,6 +1087,25 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           write_cstr(stream, "\n");
         }
       } break;
+
+      case InstrKindRefProc: {
+        locs.items[instr->as.ref_proc.dest_index].kind = ValueKindUnsigned;
+        locs.items[instr->as.ref_proc.dest_index].size = 8;
+
+        write_cstr(stream, "  lea ");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.ref_proc.dest_index, 0);
+        write_cstr(stream, ",");
+        write_str(stream, instr->as.ref_proc.proc_name);
+        write_cstr(stream, "\n");
+
+        if (locs.items[instr->as.ref_proc.dest_index].value < 0) {
+          write_cstr(stream, "  mov ");
+          write_loc(stream, locs.items + instr->as.ref_proc.dest_index);
+          write_cstr(stream, ",");
+          write_str(stream, get_temp_regs(locs.items[instr->as.ref_proc.dest_index].size)[0]);
+          write_cstr(stream, "\n");
+        }
+      } break;
       }
     }
 

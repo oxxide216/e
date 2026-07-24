@@ -202,6 +202,13 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         locs->items[instr->as.copy_from_ref_fixed.src_index].end = i;
       }
     } break;
+
+    case InstrKindRefProc: {
+      if (instr->as.ref_proc.dest_index < locs->cap) {
+        ++locs->items[instr->as.ref_proc.dest_index].uses;
+        locs->items[instr->as.ref_proc.dest_index].end = i;
+      }
+    } break;
     }
   }
 }

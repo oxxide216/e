@@ -190,6 +190,12 @@ void proc_print(Proc *proc, VarLocs *locs) {
              instr->as.copy_from_ref_fixed.src_index,
              offset);
     } break;
+
+    case InstrKindRefProc: {
+      printf("  $%u = &"STR_FMT"\n",
+             instr->as.ref_proc.dest_index,
+             STR_ARG(instr->as.ref_proc.proc_name));
+    } break;
     }
   }
 

@@ -38,6 +38,7 @@ typedef enum {
   InstrKindConvert,
   InstrKindCopyToRefFixed,
   InstrKindCopyFromRefFixed,
+  InstrKindRefProc,
 } InstrKind;
 
 typedef struct {
@@ -176,6 +177,11 @@ typedef struct {
   u32       src_target_size;
 } InstrCopyFromRefFixed;
 
+typedef struct {
+  u32 dest_index;
+  Str proc_name;
+} InstrRefProc;
+
 typedef union {
   InstrAlloc            alloc;
   InstrStore            store;
@@ -194,6 +200,7 @@ typedef union {
   InstrConvert          convert;
   InstrCopyToRefFixed   copy_to_ref_fixed;
   InstrCopyFromRefFixed copy_from_ref_fixed;
+  InstrRefProc          ref_proc;
 } InstrAs;
 
 typedef struct {
