@@ -5,7 +5,7 @@ My own low-level, strictly statically typed language compiled to native code.
 ```e
 use libe::io
 
-proc main() -> s32
+proc main() -> s64
   println("Hello, World!")
   retval 1
 end
