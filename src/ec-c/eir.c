@@ -56,7 +56,7 @@ u32 get_type_size(EStructs *structs, EType *type) {
   case ETypeKindU16:  return 2;
   case ETypeKindU32:  return 4;
   case ETypeKindU64:  return 8;
-  case ETypeKindBool: return 4;
+  case ETypeKindBool: return 1;
 
   case ETypeKindStruct: {
     u32 size = 0;
