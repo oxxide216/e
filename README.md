@@ -3,7 +3,7 @@
 My own low-level, strictly statically typed language compiled to native code.
 
 ```e
-use std::io
+use libe::io
 
 proc main() -> s32
   println("Hello, World!")
