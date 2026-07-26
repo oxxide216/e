@@ -99,9 +99,11 @@ typedef struct {
 } InstrCall;
 
 typedef struct {
-  u32     dest_index;
-  Str     name;
-  Indices arg_indices;
+  u32       dest_index;
+  u32       return_size;
+  ValueKind return_kind;
+  Str       name;
+  Indices   arg_indices;
 } InstrCallAssign;
 
 typedef struct {

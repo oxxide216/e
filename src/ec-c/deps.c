@@ -10,16 +10,12 @@
 static Str merge_module_path(EModulePath path) {
   StringBuilder sb = {0};
   for (u32 i = 0; i < path.len; ++i) {
-    if (str_eq(path.items[i], STR_LIT("super"))) {
-      while (sb.len > 0 && sb.buffer[sb.len - 1] != '/')
-        --sb.len;
-      if (sb.len > 0)
-        --sb.len;
-    } else {
-      if (i > 0)
-        sb_push_char(&sb, '/');
+    if (i > 0)
+      sb_push_char(&sb, '/');
+    if (str_eq(path.items[i], STR_LIT("super")))
+      sb_push(&sb, "..");
+    else
       sb_push_str(&sb, path.items[i]);
-    }
   }
   return sb_to_str(sb);
 }

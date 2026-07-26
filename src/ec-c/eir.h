@@ -136,11 +136,14 @@ typedef struct {
   Indices arg_indices;
 } EInstrCall;
 
+typedef struct EProc EProc;
+
 typedef struct {
-  Str     dest_name;
-  u32     dest_index;
-  Str     name;
-  Indices arg_indices;
+  Str      dest_name;
+  u32      dest_index;
+  Str      name;
+  EProc   *callee;
+  Indices  arg_indices;
 } EInstrCallAssign;
 
 typedef struct {
@@ -306,12 +309,12 @@ typedef struct {
 
 typedef Da(EArg) EArgs;
 
-typedef struct {
+struct EProc {
   Str     name;
   EArgs   args;
   EType   return_type;
   EInstrs instrs;
-} EProc;
+};
 
 typedef Da(EProc) EProcs;
 

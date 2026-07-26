@@ -138,6 +138,10 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
 
       case InstrKindCallAssign: {
         decode_buffer(&decoder, &instr->as.call_assign.dest_index, sizeof(instr->as.call_assign.dest_index));
+        decode_buffer(&decoder, &instr->as.call_assign.return_size, sizeof(instr->as.call_assign.return_size));
+        u8 return_kind;
+        decode_buffer(&decoder, &return_kind, 1);
+        instr->as.call_assign.return_kind = return_kind;
 
         decode_str(&decoder, &instr->as.call_assign.name);
 

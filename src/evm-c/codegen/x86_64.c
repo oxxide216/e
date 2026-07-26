@@ -682,8 +682,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
         if (instr->kind == InstrKindCallAssign) {
           VarLoc *loc = locs.items + instr->as.call_assign.dest_index;
-          get_proc_return_kind_and_size(&ir->procs, instr->as.call_assign.name,
-                                        &loc->kind, &loc->size);
+          loc->size = instr->as.call_assign.return_size;
+          loc->kind = instr->as.call_assign.return_kind;
 
           if (loc->size > 16) {
             write_cstr(stream, "  lea rdi,");

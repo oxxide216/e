@@ -664,6 +664,7 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             dest_name,
             dest_index,
             name_token.lexeme,
+            NULL,
             arg_indices,
           },
         );

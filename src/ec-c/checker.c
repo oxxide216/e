@@ -164,36 +164,7 @@ static char *get_bin_op_kind_cstr(EBinOpKind kind) {
   return NULL;
 }
 
-static EType *get_proc_return_type_dep(EModuleDep *dep, Str name, ETypeRefs *arg_types) {
-  for (u32 j = 0; j < dep->ir.procs.len; ++j) {
-    EProc *proc = dep->ir.procs.items + j;
-
-    if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
-      continue;
-
-    bool all = true;
-
-    for (u32 j = 0; j < proc->args.len; ++j) {
-      if (!type_eq(&proc->args.items[j].type, arg_types->items[j])) {
-        all = false;
-        break;
-      }
-    }
-
-    if (all)
-      return &proc->return_type;
-  }
-
-  for (u32 i = 0; i < dep->ir.module_deps.len; ++i) {
-    EType *return_type = get_proc_return_type_dep(dep->ir.module_deps.items + i, name, arg_types);
-    if (return_type)
-      return return_type;
-  }
-
-  return NULL;
-}
-
-static EType *get_proc_return_type(EIr *ir, Str name, ETypeRefs *arg_types) {
+static EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
 
@@ -210,13 +181,13 @@ static EType *get_proc_return_type(EIr *ir, Str name, ETypeRefs *arg_types) {
     }
 
     if (all)
-      return &proc->return_type;
+      return proc;
   }
 
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
-    EType *return_type = get_proc_return_type_dep(ir->module_deps.items + i, name, arg_types);
-    if (return_type)
-      return return_type;
+    EProc *proc = get_proc(&ir->module_deps.items[i].ir, name, arg_types);
+    if (proc)
+      return proc;
   }
 
   return NULL;
@@ -590,8 +561,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           DA_APPEND(arg_types, &arg->type);
         }
 
-        EType *return_type = get_proc_return_type(ir, instr->as.call.name, &arg_types);
-        if (!return_type) {
+        EProc *callee = get_proc(ir, instr->as.call.name, &arg_types);
+        if (!callee) {
           CERROR("Procedure ");
           fprintf_proc_signature(stderr, instr->as.call.name, &arg_types);
           fprintf(stderr, " was not declared or defined\n");
@@ -617,8 +588,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           DA_APPEND(arg_types, &arg->type);
         }
 
-        EType *return_type = get_proc_return_type(ir, instr->as.call_assign.name, &arg_types);
-        if (!return_type) {
+        instr->as.call_assign.callee = get_proc(ir, instr->as.call_assign.name, &arg_types);
+        if (!instr->as.call_assign.callee) {
           CERROR("Procedure ");
           fprintf_proc_signature(stderr, instr->as.call_assign.name, &arg_types);
           fprintf(stderr, " was not declared or defined\n");
@@ -633,6 +604,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         Var *dest = varss->items[i].items + instr->as.call_assign.dest_index;
         dest->moved = false;
 
+        EType *return_type = &instr->as.call_assign.callee->return_type;
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(return_type);
         } else if (!type_eq(return_type, &dest->type)) {

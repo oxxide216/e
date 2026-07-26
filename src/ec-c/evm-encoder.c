@@ -331,6 +331,11 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
 
       case EInstrKindCallAssign: {
         fwrite(&instr->as.call_assign.dest_index, sizeof(instr->as.call_assign.dest_index), 1, stream);
+        EType *return_type = &instr->as.call_assign.callee->return_type;
+        u32 size = get_type_size(structs, return_type);
+        fwrite(&size, sizeof(size), 1, stream);
+        ValueKind kind = e_type_kind_to_evm_value_kind(return_type->kind);
+        fwrite(&kind, 1, 1, stream);
 
         Str mangled_name = mangle_callee_name(instr->as.call_assign.name, &instr->as.call_assign.arg_indices, varss->items + i);
         encode_str(stream, mangled_name);
@@ -591,7 +596,8 @@ static void traverse_deps(EIr *ir, u32 *procs_len, u32 *data_len) {
 static void encode_deps_procs(FILE *stream, EIr *ir, u32 *data_base) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
-    encode_procs_no_len(stream, &dep->ir.procs, &dep->ir.structs, &dep->varss, *data_base);
+    encode_procs_no_len(stream, &dep->ir.procs, &dep->ir.structs,
+                        &dep->varss, *data_base);
     *data_base += dep->ir.data.len;
     encode_deps_procs(stream, &dep->ir, data_base);
   }
