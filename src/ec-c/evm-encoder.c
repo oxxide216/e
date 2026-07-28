@@ -318,9 +318,13 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
       } break;
 
       case EInstrKindCall: {
-        Str mangled_name = mangle_callee_name(instr->as.call.name, &instr->as.call.arg_indices, varss->items + i);
-        encode_str(stream, mangled_name);
-        free(mangled_name.ptr);
+        if (str_eq(instr->as.call.name, STR_LIT("main"))) {
+          encode_str(stream, instr->as.call.name);
+        } else {
+          Str mangled_name = mangle_callee_name(instr->as.call.name, &instr->as.call.arg_indices, varss->items + i);
+          encode_str(stream, mangled_name);
+          free(mangled_name.ptr);
+        }
 
         fwrite(&instr->as.call.arg_indices.len, sizeof(instr->as.call.arg_indices.len), 1, stream);
         for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k) {
@@ -337,9 +341,13 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         ValueKind kind = e_type_kind_to_evm_value_kind(return_type->kind);
         fwrite(&kind, 1, 1, stream);
 
-        Str mangled_name = mangle_callee_name(instr->as.call_assign.name, &instr->as.call_assign.arg_indices, varss->items + i);
-        encode_str(stream, mangled_name);
-        free(mangled_name.ptr);
+        if (str_eq(instr->as.call_assign.name, STR_LIT("main"))) {
+          encode_str(stream, instr->as.call_assign.name);
+        } else {
+          Str mangled_name = mangle_callee_name(instr->as.call_assign.name, &instr->as.call_assign.arg_indices, varss->items + i);
+          encode_str(stream, mangled_name);
+          free(mangled_name.ptr);
+        }
 
         fwrite(&instr->as.call_assign.arg_indices.len, sizeof(instr->as.call_assign.arg_indices.len), 1, stream);
         for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k) {

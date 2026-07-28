@@ -387,6 +387,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     for (u32 j = 0; j < space_used.regs; ++j)
       fprintf(stream, "  push "STR_FMT"\n", STR_ARG(scratch_regs8[j]));
 
+    write_cstr(stream, ".begin:\n");
+
     if (has_nested_call) {
       for (u32 j = 0; j < proc->args.len; ++j) {
         VarLoc *loc = locs.items + j;
@@ -689,25 +691,31 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           arg_indices = &instr->as.call_assign.arg_indices;
         }
 
-        if (instr->kind == InstrKindCallAssign) {
-          VarLoc *loc = locs.items + instr->as.call_assign.dest_index;
-          loc->size = instr->as.call_assign.return_size;
-          loc->kind = instr->as.call_assign.return_kind;
+        bool is_tail = i + 1 == proc->instrs.len ||
+                       instr[1].kind == InstrKindRet ||
+                       instr[1].kind == InstrKindRetVal;
 
-          if (loc->size > 16) {
-            write_cstr(stream, "  lea rdi,");
-            write_loc(stream, loc);
-            write_cstr(stream, "\n");
-          }
-        } else if (instr->kind == InstrKindCallRefAssign) {
-          VarLoc *loc = locs.items + instr->as.call_ref_assign.dest_index;
-          loc->size = instr->as.call_ref_assign.return_size;
-          loc->kind = instr->as.call_ref_assign.return_kind;
+        if (!is_tail) {
+          if (instr->kind == InstrKindCallAssign) {
+            VarLoc *loc = locs.items + instr->as.call_assign.dest_index;
+            loc->size = instr->as.call_assign.return_size;
+            loc->kind = instr->as.call_assign.return_kind;
 
-          if (loc->size > 16) {
-            write_cstr(stream, "  lea rdi,");
-            write_loc(stream, loc);
-            write_cstr(stream, "\n");
+            if (loc->size > 16) {
+              write_cstr(stream, "  lea rdi,");
+              write_loc(stream, loc);
+              write_cstr(stream, "\n");
+            }
+          } else if (instr->kind == InstrKindCallRefAssign) {
+            VarLoc *loc = locs.items + instr->as.call_ref_assign.dest_index;
+            loc->size = instr->as.call_ref_assign.return_size;
+            loc->kind = instr->as.call_ref_assign.return_kind;
+
+            if (loc->size > 16) {
+              write_cstr(stream, "  lea rdi,");
+              write_loc(stream, loc);
+              write_cstr(stream, "\n");
+            }
           }
         }
 
@@ -734,7 +742,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         if (args_space.stack_size > 0)
           aligned = align(args_space.stack_size + total_space_used, 16) - total_space_used;
 
-        if (aligned > 0)
+        if (!is_tail && aligned > 0)
           fprintf(stream, "  sub rsp,%u\n", aligned);
 
         args_space.regs = 0;
@@ -750,7 +758,13 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               write_cstr(stream, "\n");
             } else {
               ensure_in_reg(stream, loc, 0);
-              fprintf(stream, "  mov [rsp+%u],", aligned - args_space.stack_size);
+
+              write_cstr(stream, "  mov ");
+              if (is_tail)
+                write_loc(stream, locs.items + k);
+              else
+                fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+              write_cstr(stream, ",");
               write_loc_ensure_in_reg(stream, loc, 0);
               write_cstr(stream, "\n");
               args_space.stack_size -= loc->size;
@@ -772,7 +786,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
               write_loc_part_of_size(stream, loc, 0, 8);
               write_cstr(stream, "\n");
-              fprintf(stream, "  mov [rsp+%u],", aligned - args_space.stack_size);
+              write_cstr(stream, "  mov ");
+              if (is_tail)
+                write_loc(stream, locs.items + k);
+              else
+                fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+              write_cstr(stream, ",");
               write_str(stream, get_temp_regs(8)[0]);
               write_cstr(stream, "\n");
               args_space.stack_size -= 8;
@@ -780,7 +799,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
               write_loc_part_of_size(stream, loc, 8, 8);
               write_cstr(stream, "\n");
-              fprintf(stream, "  mov [rsp+%u],", aligned - args_space.stack_size);
+              write_cstr(stream, "  mov ");
+              if (is_tail)
+                write_loc(stream, locs.items + k);
+              else
+                fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+              write_cstr(stream, ",");
               write_str(stream, get_temp_regs(8)[0]);
               write_cstr(stream, "\n");
               args_space.stack_size -= 8;
@@ -795,7 +819,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(part_size)[0]));
               write_loc_part_of_size(stream, loc, arg_size, part_size);
               write_cstr(stream, "\n");
-              fprintf(stream, "  mov [rsp+%u],", aligned - args_space.stack_size);
+              write_cstr(stream, "  mov ");
+              if (is_tail)
+                write_loc(stream, locs.items + k);
+              else
+                fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+              write_cstr(stream, ",");
               write_str(stream, get_temp_regs(part_size)[0]);
               write_cstr(stream, "\n");
 
@@ -805,18 +834,22 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           }
         }
 
-        if (index == (u32) -1) {
-          fprintf(stream, "  call $"STR_FMT"\n", STR_ARG(name));
+        if (is_tail) {
+          write_cstr(stream, "  jmp .begin\n");
         } else {
-          write_cstr(stream, "  call ");
-          write_loc(stream, locs.items + index);
-          write_cstr(stream, "\n");
+          if (index == (u32) -1) {
+            fprintf(stream, "  call $"STR_FMT"\n", STR_ARG(name));
+          } else {
+            write_cstr(stream, "  call ");
+            write_loc(stream, locs.items + index);
+            write_cstr(stream, "\n");
+          }
         }
 
-        if (aligned > 0)
+        if (!is_tail && aligned > 0)
           fprintf(stream, "  add rsp,%u\n", aligned);
 
-        if (instr->kind == InstrKindCallAssign) {
+        if (!is_tail && instr->kind == InstrKindCallAssign) {
           VarLoc *loc = locs.items + instr->as.bin_op.dest_index;
 
           if (loc->size <= 8 || loc->size == 16) {
