@@ -985,7 +985,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopyToRef: {
-        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0, true);
+        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0, false);
         if (instr->as.copy_to_ref.dest_offset_index != (u32) -1)
           ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_offset_index, 2, false);
         ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.src_index, 1, false);
@@ -1141,7 +1141,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
 
         if (deref) {
-          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0, true);
+          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0, !deref);
           ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.src_index, 1, false);
         }
 
