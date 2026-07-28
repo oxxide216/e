@@ -683,7 +683,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       case InstrKindCallAssign:
       case InstrKindCallRef:
       case InstrKindCallRefAssign: {
-        Str name;
+        Str name = {0};
         u32 index = (u32) -1;
         Indices *arg_indices;
         if (instr->kind == InstrKindCall) {
@@ -700,9 +700,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           arg_indices = &instr->as.call_assign.arg_indices;
         }
 
-        bool is_tail = j + 1 == proc->instrs.len ||
-                       instr[1].kind == InstrKindRet ||
-                       instr[1].kind == InstrKindRetVal;
+        bool is_tail = str_eq(name, proc->name) &&
+                       (j + 1 == proc->instrs.len ||
+                        instr[1].kind == InstrKindRet ||
+                        instr[1].kind == InstrKindRetVal);
 
         if (!is_tail) {
           if (instr->kind == InstrKindCallAssign) {
