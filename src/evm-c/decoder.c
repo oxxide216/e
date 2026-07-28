@@ -199,6 +199,10 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         decode_buffer(&decoder, &src_target_kind, 1);
         instr->as.copy_from_ref.src_target_kind = src_target_kind;
         decode_buffer(&decoder, &instr->as.copy_from_ref.src_target_size, sizeof(instr->as.copy_from_ref.src_target_size));
+
+        u8 take_ref;
+        decode_buffer(&decoder, &take_ref, 1);
+        instr->as.copy_from_ref.take_ref = take_ref;
       } break;
 
       case InstrKindInlineAsm: {
@@ -250,6 +254,10 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         }
 
         decode_buffer(&decoder, &instr->as.copy_to_ref_fixed.src_index, sizeof(instr->as.copy_to_ref_fixed.src_index));
+
+        u8 deref;
+        decode_buffer(&decoder, &deref, 1);
+        instr->as.copy_to_ref_fixed.deref = deref;
       } break;
 
       case InstrKindCopyFromRefFixed: {
@@ -270,6 +278,14 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
         decode_buffer(&decoder, &src_target_kind, 1);
         instr->as.copy_from_ref_fixed.src_target_kind = src_target_kind;
         decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_target_size, sizeof(instr->as.copy_from_ref_fixed.src_target_size));
+
+        u8 deref;
+        decode_buffer(&decoder, &deref, 1);
+        instr->as.copy_from_ref_fixed.deref = deref;
+
+        u8 take_ref;
+        decode_buffer(&decoder, &take_ref, 1);
+        instr->as.copy_from_ref_fixed.take_ref = take_ref;
       } break;
 
       case InstrKindRefProc: {

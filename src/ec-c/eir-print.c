@@ -192,6 +192,8 @@ void proc_print(EProc *proc) {
         printf("  ");
         var_print(instr->as.copy_from_ref.dest_index, instr->as.copy_from_ref.dest_name);
         printf(" := ");
+        if (instr->as.copy_from_ref.take_ref)
+          putc('&', stdout);
         var_print(instr->as.copy_from_ref.src_index, instr->as.copy_from_ref.src_name);
         printf("[");
         var_print(instr->as.copy_from_ref.src_offset_index, instr->as.copy_from_ref.src_offset_name);
@@ -199,7 +201,9 @@ void proc_print(EProc *proc) {
       } else {
         printf("  ");
         var_print(instr->as.copy_from_ref.dest_index, instr->as.copy_from_ref.dest_name);
-        printf(" = *");
+        printf(" = ");
+        if (!instr->as.copy_from_ref.take_ref)
+          putc('*', stdout);
         var_print(instr->as.copy_from_ref.src_index, instr->as.copy_from_ref.src_name);
         printf("\n");
       }
@@ -249,6 +253,8 @@ void proc_print(EProc *proc) {
       printf("  ");
       var_print(instr->as.copy_from_field.dest_index, instr->as.copy_from_field.dest_name);
       printf(" = ");
+      if (instr->as.copy_from_field.take_ref)
+        putc('&', stdout);
       var_print(instr->as.copy_from_field.src_index, instr->as.copy_from_field.src_name);
       printf("."STR_FMT"\n", STR_ARG(instr->as.copy_from_field.src_field_name));
     } break;
@@ -271,6 +277,8 @@ void proc_print(EProc *proc) {
       printf("  ");
       var_print(instr->as.copy_from_offset.dest_index, instr->as.copy_from_offset.dest_name);
       printf(" = ");
+      if (instr->as.copy_from_offset.take_ref)
+        putc('&', stdout);
       var_print(instr->as.copy_from_offset.src_index, instr->as.copy_from_offset.src_name);
       printf(".%u\n", instr->as.copy_from_offset.src_offset);
     } break;

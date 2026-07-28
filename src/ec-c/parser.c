@@ -821,11 +821,11 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name, u32 dest_
   u32 index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len - 2;
 
   Token token;
-  if (parser_peek_token(parser, &token) != TokenStatusEOF &&
-      (token.id == TT_AS || token.id == TT_OBRACE || token.id == TT_DOT)) {
+  while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+         (token.id == TT_AS || token.id == TT_OBRACE || token.id == TT_DOT)) {
     parser_next_token(parser, NULL);
 
-    index = (u32) -1;
+    u32 temp1_index = alloc_var(parser, (Str) {0}, (Token) {});
 
     if (token.id == TT_AS) {
       parser_parse_type(parser);
@@ -835,31 +835,36 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name, u32 dest_
         token,
         EInstrKindCast,
         .cast = {
-          dest_name,
-          dest_index,
+          {},
+          temp1_index,
           parser->last_type,
           {},
           temp0_index,
         },
       );
     } else if (token.id == TT_OBRACE) {
-      u32 temp1_index = alloc_var(parser, (Str) {0}, token);
+      u32 temp2_index = alloc_var(parser, (Str) {0}, token);
 
-      parser_parse_expr(parser, (Str) {0}, temp1_index);
+      parser_parse_expr(parser, (Str) {0}, temp2_index);
       parser_expect_token(parser, MASK(TT_CBRACE), "`]`");
+
+      Token temp_token;
+      bool not_last = parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+                      (temp_token.id == TT_OBRACE || temp_token.id == TT_DOT);
 
       emit_instr(
         &parser->ir->procs,
         token,
         EInstrKindCopyFromRef,
         .copy_from_ref = {
-          dest_name,
-          dest_index,
+          {},
+          temp1_index,
           {},
           temp0_index,
           true,
           {},
-          temp1_index,
+          temp2_index,
+          not_last,
         },
       );
     } else if (token.id == TT_DOT) {
@@ -867,17 +872,22 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name, u32 dest_
       parser_peek_token(parser, &field_name_token);
       parser_expect_token(parser, MASK(TT_IDENT) | MASK(TT_INT), "identifier or integer");
 
+      Token temp_token;
+      bool not_last = parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+                      (temp_token.id == TT_OBRACE || temp_token.id == TT_DOT);
+
       if (field_name_token.id == TT_IDENT) {
         emit_instr(
           &parser->ir->procs,
           token,
           EInstrKindCopyFromField,
           .copy_from_field = {
-            dest_name,
-            dest_index,
+            {},
+            temp1_index,
             {},
             temp0_index,
             field_name_token.lexeme,
+            not_last,
           },
         );
       } else {
@@ -886,18 +896,35 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name, u32 dest_
           token,
           EInstrKindCopyFromOffset,
           .copy_from_offset = {
-            dest_name,
-            dest_index,
+            {},
+            temp1_index,
             {},
             temp0_index,
             str_to_u32(field_name_token.lexeme),
+            not_last,
           },
         );
       }
     }
+
+    index = (u32) -1;
+    temp0_index = temp1_index;
   }
 
-  if (index != (u32) -1) {
+  if (index == (u32) -1) {
+    emit_instr(
+      &parser->ir->procs,
+      (Token) {},
+      EInstrKindCopy,
+      .copy = {
+        dest_name,
+        dest_index,
+        {},
+        temp0_index,
+        false,
+      },
+    );
+  } else {
     DA_REMOVE_AT(parser->ir->procs.items[parser->ir->procs.len - 1].instrs, alloc_index);
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);
@@ -1311,65 +1338,311 @@ static void parser_parse_stmt_impl(Parser *parser) {
         EInstrKindCall,
         .call = { name_token.lexeme, arg_indices },
       );
-    } else if (token.id == TT_OBRACE) {
-      u32 index_index = alloc_var(parser, (Str) {0}, token);
-      u32 temp_index = alloc_var(parser, (Str) {0}, token);
+    } else if (token.id == TT_OBRACE || token.id == TT_DOT) {
+      u32 temp0_index;
+      if (token.id == TT_DOT) {
+        Token field_name_token;
+        parser_peek_token(parser, &field_name_token);
+        parser_expect_token(parser, MASK(TT_IDENT) | MASK(TT_INT), "identifier or integer");
 
-      parser_parse_expr(parser, (Str) {0}, index_index);
-      parser_expect_token(parser, MASK(TT_CBRACE), "`]`");
-      parser_expect_token(parser, MASK(TT_COLONSET), "`:=`");
-      parser_parse_expr(parser, (Str) {0}, temp_index);
+        Token temp_token;
+        if (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+            (temp_token.id == TT_DOT || temp_token.id == TT_OBRACE)) {
+          temp0_index = alloc_var(parser, (Str) {0}, token);
+          if (field_name_token.id == TT_IDENT) {
+            emit_instr(
+              &parser->ir->procs,
+              token,
+              EInstrKindCopyFromField,
+              .copy_from_field = {
+                {},
+                temp0_index,
+                name_token.lexeme,
+                get_var_index(parser->varss, name_token.lexeme),
+                field_name_token.lexeme,
+                true,
+              },
+            );
+          } else {
+            emit_instr(
+              &parser->ir->procs,
+              token,
+              EInstrKindCopyFromOffset,
+              .copy_from_offset = {
+                {},
+                temp0_index,
+                name_token.lexeme,
+                get_var_index(parser->varss, name_token.lexeme),
+                str_to_u32(field_name_token.lexeme),
+                true,
+              },
+            );
+          }
+        } else {
+          parser_peek_token(parser, &token);
+          parser_expect_token(parser, MASK(TT_SET), "`=`");
 
-      emit_instr(
-        &parser->ir->procs,
-        token,
-        EInstrKindCopyToRef,
-        .copy_to_ref = {
-          name_token.lexeme,
-          get_var_index(parser->varss, name_token.lexeme),
-          true,
-          {},
-          index_index,
-          {},
-          temp_index,
-        },
-      );
-    } else if (token.id == TT_DOT) {
-      Token field_name_token;
-      u32 temp_index = alloc_var(parser, (Str) {0}, token);
+          u32 new_index = alloc_var(parser, (Str) {0}, token);
+          parser_parse_expr(parser, (Str) {0}, new_index);
 
-      parser_peek_token(parser, &field_name_token);
-      parser_expect_token(parser, MASK(TT_IDENT) | MASK(TT_INT), "identifier or integer");
-      parser_expect_token(parser, MASK(TT_SET), "`=`");
-      parser_parse_expr(parser, (Str) {0}, temp_index);
-
-      if (field_name_token.id == TT_IDENT) {
-        emit_instr(
-          &parser->ir->procs,
-          token,
-          EInstrKindCopyToField,
-          .copy_to_field = {
-            name_token.lexeme,
-            get_var_index(parser->varss, name_token.lexeme),
-            field_name_token.lexeme,
-            {},
-            temp_index,
-          },
-        );
+          if (field_name_token.id == TT_IDENT) {
+            emit_instr(
+              &parser->ir->procs,
+              token,
+              EInstrKindCopyToField,
+              .copy_to_field = {
+                name_token.lexeme,
+                get_var_index(parser->varss, name_token.lexeme),
+                field_name_token.lexeme,
+                {},
+                new_index,
+              },
+            );
+          } else {
+            emit_instr(
+              &parser->ir->procs,
+              token,
+              EInstrKindCopyToOffset,
+              .copy_to_offset = {
+                name_token.lexeme,
+                get_var_index(parser->varss, name_token.lexeme),
+                str_to_u32(field_name_token.lexeme),
+                {},
+                new_index,
+              },
+            );
+          }
+        }
       } else {
-        emit_instr(
-          &parser->ir->procs,
-          token,
-          EInstrKindCopyToOffset,
-          .copy_to_offset = {
-            name_token.lexeme,
-            get_var_index(parser->varss, name_token.lexeme),
-            str_to_u32(field_name_token.lexeme),
-            {},
-            temp_index,
-          },
-        );
+        u32 index_index = alloc_var(parser, (Str) {0}, token);
+        parser_parse_expr(parser, (Str) {0}, index_index);
+        parser_expect_token(parser, MASK(TT_CBRACE), "`]`");
+
+        Token temp_token;
+        if (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+            (temp_token.id == TT_DOT || temp_token.id == TT_OBRACE)) {
+          temp0_index = alloc_var(parser, (Str) {0}, token);
+          emit_instr(
+            &parser->ir->procs,
+            token,
+            EInstrKindCopyFromRef,
+            .copy_from_ref = {
+              {},
+              temp0_index,
+              name_token.lexeme,
+              get_var_index(parser->varss, name_token.lexeme),
+              true,
+              {},
+              index_index,
+              true,
+            },
+          );
+        } else {
+          parser_peek_token(parser, &token);
+          parser_expect_token(parser, MASK(TT_SET), "`=`");
+
+          u32 new_index = alloc_var(parser, (Str) {0}, token);
+          parser_parse_expr(parser, (Str) {0}, new_index);
+
+          emit_instr(
+            &parser->ir->procs,
+            token,
+            EInstrKindCopyToRef,
+            .copy_to_ref = {
+              name_token.lexeme,
+              get_var_index(parser->varss, name_token.lexeme),
+              true,
+              {},
+              index_index,
+              {},
+              new_index,
+            },
+          );
+        }
       }
+
+      while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+             (token.id == TT_DOT || token.id == TT_OBRACE)) {
+        parser_next_token(parser, NULL);
+
+        Token field_name_token;
+        u32 index_index;
+        if (token.id == TT_DOT) {
+          parser_peek_token(parser, &field_name_token);
+          parser_expect_token(parser, MASK(TT_IDENT) | MASK(TT_INT), "identifier or integer");
+        } else {
+          index_index = alloc_var(parser, (Str) {0}, token);
+          parser_parse_expr(parser, (Str) {0}, index_index);
+          parser_expect_token(parser, MASK(TT_CBRACE), "`]`");
+        }
+
+        Token temp_token;
+        if (parser_peek_token(parser, &temp_token) == TokenStatusEOF)
+          break;
+
+        if (temp_token.id == TT_DOT || temp_token.id == TT_OBRACE) {
+          u32 temp1_index = alloc_var(parser, (Str) {0}, token);
+          if (token.id == TT_DOT) {
+            if (field_name_token.id == TT_IDENT) {
+              emit_instr(
+                &parser->ir->procs,
+                token,
+                EInstrKindCopyFromField,
+                .copy_from_field = {
+                  {},
+                  temp1_index,
+                  {},
+                  temp0_index,
+                  field_name_token.lexeme,
+                  true,
+                },
+              );
+            } else {
+              emit_instr(
+                &parser->ir->procs,
+                token,
+                EInstrKindCopyFromOffset,
+                .copy_from_offset = {
+                  {},
+                  temp1_index,
+                  {},
+                  temp0_index,
+                  str_to_u32(field_name_token.lexeme),
+                  true,
+                },
+              );
+            }
+          } else {
+            emit_instr(
+              &parser->ir->procs,
+              token,
+              EInstrKindCopyFromRef,
+              .copy_from_ref = {
+                {},
+                temp1_index,
+                {},
+                temp0_index,
+                true,
+                {},
+                index_index,
+                true,
+              },
+            );
+          }
+          temp0_index = temp1_index;
+        } else {
+          parser_peek_token(parser, &temp_token);
+          parser_expect_token(parser, MASK(TT_SET), "`=`");
+
+          u32 new_index = alloc_var(parser, (Str) {0}, temp_token);
+          parser_parse_expr(parser, (Str) {0}, new_index);
+
+          if (token.id == TT_DOT) {
+            if (field_name_token.id == TT_IDENT) {
+              emit_instr(
+                &parser->ir->procs,
+                temp_token,
+                EInstrKindCopyToField,
+                .copy_to_field = {
+                  {},
+                  temp0_index,
+                  field_name_token.lexeme,
+                  {},
+                  new_index,
+                },
+              );
+            } else {
+              emit_instr(
+                &parser->ir->procs,
+                temp_token,
+                EInstrKindCopyToOffset,
+                .copy_to_offset = {
+                  {},
+                  temp0_index,
+                  str_to_u32(field_name_token.lexeme),
+                  {},
+                  new_index,
+                },
+              );
+            }
+          } else {
+            emit_instr(
+              &parser->ir->procs,
+              temp_token,
+              EInstrKindCopyToRef,
+              .copy_to_ref = {
+                {},
+                temp0_index,
+                true,
+                {},
+                index_index,
+                {},
+                new_index,
+              },
+            );
+          }
+          break;
+        }
+      }
+    // } else if (token.id == TT_OBRACE) {
+    //   u32 index_index = alloc_var(parser, (Str) {0}, token);
+    //   u32 temp_index = alloc_var(parser, (Str) {0}, token);
+
+    //   parser_parse_expr(parser, (Str) {0}, index_index);
+    //   parser_expect_token(parser, MASK(TT_CBRACE), "`]`");
+    //   parser_expect_token(parser, MASK(TT_COLONSET), "`:=`");
+    //   parser_parse_expr(parser, (Str) {0}, temp_index);
+
+    //   emit_instr(
+    //     &parser->ir->procs,
+    //     token,
+    //     EInstrKindCopyToRef,
+    //     .copy_to_ref = {
+    //       name_token.lexeme,
+    //       get_var_index(parser->varss, name_token.lexeme),
+    //       true,
+    //       {},
+    //       index_index,
+    //       {},
+    //       temp_index,
+    //     },
+    //   );
+    // } else if (token.id == TT_DOT) {
+    //   Token field_name_token;
+    //   u32 temp_index = alloc_var(parser, (Str) {0}, token);
+
+    //   parser_peek_token(parser, &field_name_token);
+    //   parser_expect_token(parser, MASK(TT_IDENT) | MASK(TT_INT), "identifier or integer");
+    //   parser_expect_token(parser, MASK(TT_SET), "`=`");
+    //   parser_parse_expr(parser, (Str) {0}, temp_index);
+
+    //   if (field_name_token.id == TT_IDENT) {
+    //     emit_instr(
+    //       &parser->ir->procs,
+    //       token,
+    //       EInstrKindCopyToField,
+    //       .copy_to_field = {
+    //         name_token.lexeme,
+    //         get_var_index(parser->varss, name_token.lexeme),
+    //         field_name_token.lexeme,
+    //         {},
+    //         temp_index,
+    //       },
+    //     );
+    //   } else {
+    //     emit_instr(
+    //       &parser->ir->procs,
+    //       token,
+    //       EInstrKindCopyToOffset,
+    //       .copy_to_offset = {
+    //         name_token.lexeme,
+    //         get_var_index(parser->varss, name_token.lexeme),
+    //         str_to_u32(field_name_token.lexeme),
+    //         {},
+    //         temp_index,
+    //       },
+    //     );
+    //   }
     }
   } else if (token.id == TT_RET) {
     emit_instr(&parser->ir->procs, token, EInstrKindRet,);

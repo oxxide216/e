@@ -44,6 +44,7 @@ struct EType {
     ETypes   tuple_types;
   };
   ETypeLoc   loc;
+  bool       is_implicit_ptr;
 };
 
 typedef union {
@@ -184,6 +185,7 @@ typedef struct {
   bool has_offset;
   Str  src_offset_name;
   u32  src_offset_index;
+  bool take_ref;
 } EInstrCopyFromRef;
 
 typedef struct {
@@ -238,11 +240,12 @@ typedef struct {
 } EInstrCopyToField;
 
 typedef struct {
-  Str dest_name;
-  u32 dest_index;
-  Str src_name;
-  u32 src_index;
-  Str src_field_name;
+  Str  dest_name;
+  u32  dest_index;
+  Str  src_name;
+  u32  src_index;
+  Str  src_field_name;
+  bool take_ref;
 } EInstrCopyFromField;
 
 typedef struct {
@@ -260,11 +263,12 @@ typedef struct {
 } EInstrCopyToOffset;
 
 typedef struct {
-  Str dest_name;
-  u32 dest_index;
-  Str src_name;
-  u32 src_index;
-  u32 src_offset;
+  Str  dest_name;
+  u32  dest_index;
+  Str  src_name;
+  u32  src_index;
+  u32  src_offset;
+  bool take_ref;
 } EInstrCopyFromOffset;
 
 typedef union {

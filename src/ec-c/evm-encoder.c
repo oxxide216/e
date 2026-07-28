@@ -396,6 +396,7 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         u32 src_target_size = get_type_size(structs, src->type.ptr_target);
         fwrite(&src_target_kind, 1, 1, stream);
         fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
+        fwrite(&instr->as.copy_from_ref.take_ref, 1, 1, stream);
       } break;
 
       case EInstrKindStoreNull: {
@@ -468,6 +469,10 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         encode_type_fields_as_aligned_segments_until(stream, dest_type, index, structs);
 
         fwrite(&instr->as.copy_to_field.src_index, sizeof(instr->as.copy_to_field.src_index), 1, stream);
+
+        bool deref = dest->type.kind == ETypeKindPtr ||
+                     dest->type.is_implicit_ptr;
+        fwrite(&deref, 1, 1, stream);
       } break;
 
       case EInstrKindCopyFromField: {
@@ -493,6 +498,12 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         u32 src_target_size = get_type_size(structs, &field->type);
         fwrite(&src_target_kind, 1, 1, stream);
         fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
+
+        bool deref = src->type.kind == ETypeKindPtr ||
+                     src->type.is_implicit_ptr;
+        fwrite(&deref, 1, 1, stream);
+
+        fwrite(&instr->as.copy_from_field.take_ref, 1, 1, stream);
       } break;
 
       // Unreachable, skipped above
@@ -516,6 +527,9 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         }
 
         fwrite(&instr->as.copy_to_offset.src_index, sizeof(instr->as.copy_to_offset.src_index), 1, stream);
+
+        bool deref_if_in_reg = dest->type.kind == ETypeKindStr;
+        fwrite(&deref_if_in_reg, 1, 1, stream);
       } break;
 
       case EInstrKindCopyFromOffset: {
@@ -568,6 +582,11 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
           fwrite(&src_target_kind, 1, 1, stream);
           fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
         }
+
+        bool deref_if_in_reg = src->type.kind == ETypeKindStr;
+        fwrite(&deref_if_in_reg, 1, 1, stream);
+
+        fwrite(&instr->as.copy_from_offset.take_ref, 1, 1, stream);
       } break;
       }
     }

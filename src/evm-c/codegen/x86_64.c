@@ -226,28 +226,37 @@ static void write_loc_ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_inde
 }
 
 static void write_loc_part_of_size(FILE *stream, VarLoc *loc, u32 offset, u32 size) {
-  if (loc->is_arg) {
-    if (loc->value >= 0) {
-      fprintf(stream, STR_FMT, STR_ARG(get_arg_regs(size)[loc->value + offset / size]));
-    } else {
-      write_str(stream, get_mem_prefix(size));
-      write_cstr(stream, "[");
-      fprintf(stream, "rbp+%u]", -loc->value + offset);
+  if (loc->value >= 0) {
+    if (offset != 0) {
+      ERROR("Invalid offset for an in-register variable\n");
+      exit(1);
     }
+
+    write_loc_of_size(stream, loc, size);
   } else {
-    if (loc->value >= 0) {
-      fprintf(stream, STR_FMT, STR_ARG(get_scratch_regs(size)[loc->value + offset / size]));
+    if (loc->is_arg) {
+      if (loc->value >= 0) {
+        fprintf(stream, STR_FMT, STR_ARG(get_arg_regs(size)[loc->value + offset / size]));
+      } else {
+        write_str(stream, get_mem_prefix(size));
+        write_cstr(stream, "[");
+        fprintf(stream, "rbp+%u]", -loc->value + offset);
+      }
     } else {
-      write_str(stream, get_mem_prefix(size));
-      write_cstr(stream, "[");
-      fprintf(stream, "rbp-%u]", -loc->value - offset);
+      if (loc->value >= 0) {
+        fprintf(stream, STR_FMT, STR_ARG(get_scratch_regs(size)[loc->value + offset / size]));
+      } else {
+        write_str(stream, get_mem_prefix(size));
+        write_cstr(stream, "[");
+        fprintf(stream, "rbp-%u]", -loc->value - offset);
+      }
     }
   }
 }
 
-static void ensure_in_reg_of_size(FILE *stream, VarLoc *loc, u32 size, u32 temp_reg_index) {
+static void ensure_in_reg_of_size(FILE *stream, VarLoc *loc, u32 size, u32 temp_reg_index, bool ref) {
   if (loc->value < 0) {
-    if (size > 8)
+    if (ref)
       fprintf(stream, "  lea "STR_FMT",", STR_ARG(get_temp_regs(8)[temp_reg_index]));
     else
       fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(size)[temp_reg_index]));
@@ -256,8 +265,8 @@ static void ensure_in_reg_of_size(FILE *stream, VarLoc *loc, u32 size, u32 temp_
   }
 }
 
-static void ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_index) {
-  ensure_in_reg_of_size(stream, loc, loc->size, temp_reg_index);
+static void ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_index, bool ref) {
+  ensure_in_reg_of_size(stream, loc, loc->size, temp_reg_index, ref);
 }
 
 static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
@@ -268,7 +277,7 @@ static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
   if (locs->items[dest_index].value !=
       locs->items[src0_index].value) {
     if (locs->items[dest_index].value < 0)
-      ensure_in_reg(stream, locs->items + src0_index, 0);
+      ensure_in_reg(stream, locs->items + src0_index, 0, false);
     write_cstr(stream, "  mov ");
     write_loc(stream, locs->items + dest_index);
     write_cstr(stream, ",");
@@ -279,7 +288,7 @@ static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
     write_cstr(stream, "\n");
   }
 
-  ensure_in_reg(stream, locs->items + src1_index, 0);
+  ensure_in_reg(stream, locs->items + src1_index, 0, false);
 
   write_cstr(stream, "  ");
   write_cstr(stream, op);
@@ -448,7 +457,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         if (dest_loc->value != src_loc->value || dest_loc->is_arg != src_loc->is_arg) {
           if (dest_loc->size <= 8) {
             if (dest_loc->value < 0)
-              ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0);
+              ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0, false);
             write_cstr(stream, "  mov ");
             write_loc(stream, locs.items + instr->as.copy.dest_index);
             write_cstr(stream, ",");
@@ -572,7 +581,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               locs.items[instr->as.bin_op.dest_index].is_arg !=
               locs.items[instr->as.bin_op.src0_index].is_arg) {
             if (locs.items[instr->as.bin_op.dest_index].value < 0)
-              ensure_in_reg(stream, locs.items + instr->as.bin_op.src0_index, 0);
+              ensure_in_reg(stream, locs.items + instr->as.bin_op.src0_index, 0, false);
             write_cstr(stream, "  mov ");
             write_loc(stream, locs.items + instr->as.bin_op.dest_index);
             write_cstr(stream, ",");
@@ -626,7 +635,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           locs.items[instr->as.bin_op.dest_index].kind = ValueKindUnsigned;
           locs.items[instr->as.bin_op.dest_index].size = 1;
 
-          ensure_in_reg(stream, locs.items + instr->as.bin_op.src1_index, 0);
+          ensure_in_reg(stream, locs.items + instr->as.bin_op.src1_index, 0, false);
 
           write_cstr(stream, "  cmp ");
           write_loc(stream, locs.items + instr->as.bin_op.src0_index);
@@ -640,7 +649,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
             jump_optimization_bin_op_kind = instr->as.bin_op.kind;
             jump_optimization_value_kind = locs.items[instr->as.bin_op.dest_index].kind;
           } else {
-            ensure_in_reg(stream, locs.items + instr->as.bin_op.src1_index, 0);
+            ensure_in_reg(stream, locs.items + instr->as.bin_op.src1_index, 0, false);
 
             write_cstr(stream, "  mov ");
             write_loc(stream, locs.items + instr->as.bin_op.src0_index);
@@ -757,7 +766,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
               write_loc(stream, loc);
               write_cstr(stream, "\n");
             } else {
-              ensure_in_reg(stream, loc, 0);
+              ensure_in_reg(stream, loc, 0, false);
 
               write_cstr(stream, "  mov ");
               if (is_tail)
@@ -975,10 +984,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopyToRef: {
-        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0);
+        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0, true);
         if (instr->as.copy_to_ref.dest_offset_index != (u32) -1)
-          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_offset_index, 2);
-        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.src_index, 1);
+          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_offset_index, 2, false);
+        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.src_index, 1, false);
 
         write_cstr(stream, "  mov [");
         write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref.dest_index, 0);
@@ -993,16 +1002,24 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopyFromRef: {
-        locs.items[instr->as.copy_from_ref.dest_index].kind =
-          instr->as.copy_from_ref.src_target_kind;
-        locs.items[instr->as.copy_from_ref.dest_index].size =
-          instr->as.copy_from_ref.src_target_size;
+        if (instr->as.copy_from_ref.take_ref) {
+          locs.items[instr->as.copy_from_ref.dest_index].kind = ValueKindUnsigned;
+          locs.items[instr->as.copy_from_ref.dest_index].size = 8;
+        } else {
+          locs.items[instr->as.copy_from_ref.dest_index].kind =
+            instr->as.copy_from_ref.src_target_kind;
+          locs.items[instr->as.copy_from_ref.dest_index].size =
+            instr->as.copy_from_ref.src_target_size;
+        }
 
-        ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_index, 0);
+        ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_index, 0, true);
         if (instr->as.copy_from_ref.src_offset_index != (u32) -1)
-          ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_offset_index, 1);
+          ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_offset_index, 1, false);
 
-        write_cstr(stream, "  mov ");
+        if (instr->as.copy_from_ref.take_ref)
+          write_cstr(stream, "  lea ");
+        else
+          write_cstr(stream, "  mov ");
         write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.dest_index, 0);
         write_cstr(stream, ",[");
         write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref.src_index, 0);
@@ -1119,40 +1136,66 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       } break;
 
       case InstrKindCopyToRefFixed: {
-        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0);
-        ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.src_index, 1);
-
         i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[instr->as.copy_to_ref_fixed.dest_segments.len - 1].offset;
+        bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
+        printf("blabla: %b\n", deref);
 
-        write_cstr(stream, "  mov [");
-        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0);
-        if (offset >= 0)
-          fprintf(stream, "+%d],", offset);
-        else
-          fprintf(stream, "-%d],", -offset);
+        if (deref) {
+          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0, true);
+          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.src_index, 1, false);
+        }
+
+        write_cstr(stream, "  mov ");
+        if (!deref) {
+          write_loc(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index);
+        } else {
+          write_cstr(stream, "[");
+          write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0);
+          if (offset >= 0)
+            fprintf(stream, "+%d]", offset);
+          else
+            fprintf(stream, "-%d]", -offset);
+        }
+        write_cstr(stream, ",");
 
         write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.src_index, 1);
         write_cstr(stream, "\n");
       } break;
 
       case InstrKindCopyFromRefFixed: {
-        locs.items[instr->as.copy_from_ref_fixed.dest_index].kind =
-          instr->as.copy_from_ref_fixed.src_target_kind;
-        locs.items[instr->as.copy_from_ref_fixed.dest_index].size =
-          instr->as.copy_from_ref_fixed.src_target_size;
-
-        ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0);
+        if (instr->as.copy_from_ref_fixed.take_ref) {
+          locs.items[instr->as.copy_from_ref_fixed.dest_index].kind = ValueKindUnsigned;
+          locs.items[instr->as.copy_from_ref_fixed.dest_index].size = 8;
+        } else {
+          locs.items[instr->as.copy_from_ref_fixed.dest_index].kind =
+            instr->as.copy_from_ref_fixed.src_target_kind;
+          locs.items[instr->as.copy_from_ref_fixed.dest_index].size =
+            instr->as.copy_from_ref_fixed.src_target_size;
+        }
 
         i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;
+        bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
 
-        write_cstr(stream, "  mov ");
-        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.dest_index, 0);
-        write_cstr(stream, ",[");
-        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0);
-        if (offset >= 0)
-          fprintf(stream, "+%d]\n", offset);
+        if (deref)
+          ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0, true);
+
+        if (instr->as.copy_from_ref_fixed.take_ref)
+          write_cstr(stream, "  lea ");
         else
-          fprintf(stream, "-%d]\n", -offset);
+          write_cstr(stream, "  mov ");
+        write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.dest_index, 0);
+        write_cstr(stream, ",");
+        if (!deref) {
+          write_loc(stream, locs.items + instr->as.copy_from_ref_fixed.src_index);
+        } else {
+          write_cstr(stream, "[");
+          write_loc_ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0);
+          if (offset >= 0)
+            fprintf(stream, "+%d]", offset);
+          else
+            fprintf(stream, "-%d]", -offset);
+        }
+        write_cstr(stream, "\n");
 
         if (locs.items[instr->as.copy_from_ref_fixed.dest_index].value < 0) {
           write_cstr(stream, "  mov ");

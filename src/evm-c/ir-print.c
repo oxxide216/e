@@ -135,15 +135,27 @@ void proc_print(Proc *proc, VarLocs *locs) {
     } break;
 
     case InstrKindCopyFromRef: {
-      if (instr->as.copy_from_ref.src_offset_index == (u32) -1)
-        printf("  $%u = $%u\n",
-               instr->as.copy_from_ref.dest_index,
-               instr->as.copy_from_ref.src_index);
-      else
-        printf("  $%u = $%u[$%u]\n",
-               instr->as.copy_from_ref.dest_index,
-               instr->as.copy_from_ref.src_index,
-               instr->as.copy_from_ref.src_offset_index);
+      if (instr->as.copy_from_ref.take_ref) {
+        if (instr->as.copy_from_ref.src_offset_index == (u32) -1)
+          printf("  $%u = &$%u\n",
+                 instr->as.copy_from_ref.dest_index,
+                 instr->as.copy_from_ref.src_index);
+        else
+          printf("  $%u = $%u[$%u]\n",
+                 instr->as.copy_from_ref.dest_index,
+                 instr->as.copy_from_ref.src_index,
+                 instr->as.copy_from_ref.src_offset_index);
+      } else {
+        if (instr->as.copy_from_ref.src_offset_index == (u32) -1)
+          printf("  $%u = &$%u\n",
+                 instr->as.copy_from_ref.dest_index,
+                 instr->as.copy_from_ref.src_index);
+        else
+          printf("  $%u = $%u[$%u]\n",
+                 instr->as.copy_from_ref.dest_index,
+                 instr->as.copy_from_ref.src_index,
+                 instr->as.copy_from_ref.src_offset_index);
+      }
     } break;
 
     case InstrKindInlineAsm: {
@@ -185,8 +197,10 @@ void proc_print(Proc *proc, VarLocs *locs) {
 
     case InstrKindCopyFromRefFixed: {
       i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;
-      printf("  $%u = $%u[%d]\n",
-             instr->as.copy_from_ref_fixed.dest_index,
+      printf("  $%u = ", instr->as.copy_from_ref_fixed.dest_index);
+      if (instr->as.copy_from_ref_fixed.take_ref)
+        putc('&', stdout);
+      printf("$%u[%d]\n",
              instr->as.copy_from_ref_fixed.src_index,
              offset);
     } break;

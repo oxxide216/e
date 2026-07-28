@@ -125,9 +125,9 @@ typedef struct {
 } InstrRef;
 
 typedef struct {
-  u32 dest_index;
-  u32 dest_offset_index;
-  u32 src_index;
+  u32  dest_index;
+  u32  dest_offset_index;
+  u32  src_index;
 } InstrCopyToRef;
 
 typedef struct {
@@ -136,6 +136,7 @@ typedef struct {
   u32       src_offset_index;
   ValueKind src_target_kind;
   u32       src_target_size;
+  bool      take_ref;
 } InstrCopyFromRef;
 
 typedef enum {
@@ -171,6 +172,7 @@ typedef struct {
   u32      dest_index;
   Segments dest_segments;
   u32      src_index;
+  bool     deref; // Basically true for pointers and false for structures
 } InstrCopyToRefFixed;
 
 typedef struct {
@@ -179,6 +181,8 @@ typedef struct {
   Segments  src_segments;
   ValueKind src_target_kind;
   u32       src_target_size;
+  bool      deref; // Basically true for pointers and false for structures
+  bool      take_ref;
 } InstrCopyFromRefFixed;
 
 typedef struct {

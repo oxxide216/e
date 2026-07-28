@@ -124,6 +124,7 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       if (instr->as.copy_to_ref.dest_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref.dest_index].uses;
         locs->items[instr->as.copy_to_ref.dest_index].end = i;
+        locs->items[instr->as.copy_to_ref.dest_index].is_stack_only = true;
       }
       if (instr->as.copy_to_ref.dest_offset_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref.dest_offset_index].uses;
@@ -143,6 +144,7 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       if (instr->as.copy_from_ref.src_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref.src_index].uses;
         locs->items[instr->as.copy_from_ref.src_index].end = i;
+        locs->items[instr->as.copy_from_ref.src_index].is_stack_only = true;
       }
       if (instr->as.copy_from_ref.src_offset_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref.src_offset_index].uses;
@@ -185,6 +187,9 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       if (instr->as.copy_to_ref_fixed.dest_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref_fixed.dest_index].uses;
         locs->items[instr->as.copy_to_ref_fixed.dest_index].end = i;
+        if (instr->as.copy_to_ref_fixed.dest_segments.len > 1 ||
+            instr->as.copy_to_ref_fixed.dest_segments.items[0].offset != 0)
+          locs->items[instr->as.copy_to_ref_fixed.dest_index].is_stack_only = true;
       }
       if (instr->as.copy_to_ref_fixed.src_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref_fixed.src_index].uses;
@@ -200,6 +205,10 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       if (instr->as.copy_from_ref_fixed.src_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref_fixed.src_index].uses;
         locs->items[instr->as.copy_from_ref_fixed.src_index].end = i;
+        if (instr->as.copy_from_ref_fixed.take_ref ||
+            instr->as.copy_from_ref_fixed.src_segments.len > 1 ||
+            instr->as.copy_from_ref_fixed.src_segments.items[0].offset != 0)
+          locs->items[instr->as.copy_from_ref_fixed.src_index].is_stack_only = true;
       }
     } break;
 
@@ -244,6 +253,18 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         }
       }
     } break;
+    }
+  }
+
+  for (u32 i = 0; i < proc->instrs.len; ++i) {
+    Instr *instr = proc->instrs.items + i;
+
+    if (instr->kind == InstrKindCopyToRef) {
+      if (locs->items[instr->as.copy_to_ref.src_index].is_stack_only)
+        locs->items[instr->as.copy_to_ref.dest_index].is_stack_only = true;
+    } else if (instr->kind == InstrKindCopyToRefFixed) {
+      if (locs->items[instr->as.copy_to_ref_fixed.src_index].is_stack_only)
+        locs->items[instr->as.copy_to_ref_fixed.dest_index].is_stack_only = true;
     }
   }
 }
@@ -317,7 +338,7 @@ SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len) {
   return allocator.space_used;
 }
 
-// Fixes a bug when a variable that is defined before loop and used in it is overwritten byt an in-loop variable
+// Fixes a bug when a variable that is defined before loop and used in it is overwritten by an in-loop variable
 void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs) {
   for (u32 i = 0; i < proc->instrs.len; ++i) {
     Instr *instr = proc->instrs.items + i;

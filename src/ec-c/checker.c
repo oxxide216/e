@@ -70,7 +70,7 @@ static bool check_struct_existence(EStructs *structs, EType *type) {
 }
 
 static EType make_type_from_kind(ETypeKind kind) {
-  return (EType) { kind, {}, {} };
+  return (EType) { kind, {}, {}, false };
 }
 
 static void free_type_str(Str str, EType *type) {
@@ -524,7 +524,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         EType dest_type;
         if (instr->as.bin_op.kind >= EBinOpKindEq &&
             instr->as.bin_op.kind <= EBinOpKindGe)
-          dest_type = (EType) { ETypeKindBool, {}, {} };
+          dest_type = (EType) { ETypeKindBool, {}, {}, false };
         else
           dest_type = type_clone(&src0->type);
 
@@ -668,6 +668,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             .ptr_target = malloc(sizeof(EType)),
           },
           {},
+          false,
         };
         *ptr_type.ptr_target = type_clone(&src->type);
 
@@ -771,6 +772,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(ptr_target_type_str, src->type.ptr_target);
           goto fail;
         }
+
+        dest->type.is_implicit_ptr |= instr->as.copy_from_ref.take_ref;
       } break;
 
       case EInstrKindStoreNull: {
@@ -857,6 +860,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             ETypeKindU64,
             {},
             {},
+            false,
           };
         } else if (src->type.kind != ETypeKindArray) {
           Str src_type_str = get_type_str(&src->type);
@@ -937,7 +941,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             goto fail;
           }
 
-          EType type = { ETypeKindU32, {}, {} };
+          EType type = { ETypeKindU32, {}, {}, false };
           if (!type_eq(&src->type, &type)) {
             Str field_type_str = get_type_str(&type);
             Str src_type_str = get_type_str(&src->type);
@@ -1028,10 +1032,11 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                 .ptr_target = malloc(sizeof(EType)),
               },
               {},
+              false,
             };
-            *type.ptr_target = (EType) { ETypeKindU8, {}, {} };
+            *type.ptr_target = (EType) { ETypeKindU8, {}, {}, false };
           } else {
-            type = (EType) { ETypeKindU32, {}, {} };
+            type = (EType) { ETypeKindU32, {}, {}, false };
           }
 
           if (dest->type.kind == ETypeKindUnit) {
@@ -1054,7 +1059,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           if (is_ptr) {
             Var new_var = {
               {},
-              { ETypeKindU64, {}, {} },
+              { ETypeKindU64, {}, {}, false },
               false,
               {},
             };
@@ -1121,6 +1126,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             *instr = replacement;
           }
         }
+
+        dest->type.is_implicit_ptr |= instr->as.copy_from_field.take_ref;
       } break;
 
       case EInstrKindTuple: {
@@ -1236,6 +1243,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(field_type_str, type);
           goto fail;
         }
+
+        dest->type.is_implicit_ptr |= instr->as.copy_from_offset.take_ref;
       } break;
       }
     }
