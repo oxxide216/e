@@ -1138,7 +1138,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       case InstrKindCopyToRefFixed: {
         i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[instr->as.copy_to_ref_fixed.dest_segments.len - 1].offset;
         bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
-        printf("blabla: %b\n", deref);
 
         if (deref) {
           ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0, true);
