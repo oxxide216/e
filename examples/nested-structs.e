@@ -13,7 +13,8 @@ proc main() -> s64
     end,
   end
 
-  a.b.field = 17
+  let ref = &a.b
+  ref.field = 17
 
   retval a.b.field
 end

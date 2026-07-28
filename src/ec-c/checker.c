@@ -773,7 +773,15 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           goto fail;
         }
 
-        dest->type.is_implicit_ptr |= instr->as.copy_from_ref.take_ref;
+        if (instr->as.copy_from_ref.is_ref_explicit) {
+          EType new_type;
+          new_type.kind = ETypeKindPtr;
+          new_type.ptr_target = malloc(sizeof(EType));
+          *new_type.ptr_target = dest->type;
+          dest->type = new_type;
+        } else {
+          dest->type.is_implicit_ptr |= instr->as.copy_from_ref.take_ref;
+        }
       } break;
 
       case EInstrKindStoreNull: {
@@ -1057,6 +1065,11 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           }
 
           if (is_ptr) {
+            if (instr->as.copy_from_field.take_ref) {
+              CERROR("Cannot take a reference to field ptr of type field\n");
+              goto fail;
+            }
+
             Var new_var = {
               {},
               { ETypeKindU64, {}, {}, false },
@@ -1119,6 +1132,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                   instr->as.copy_from_field.src_name,
                   instr->as.copy_from_field.src_index,
                   is_ptr ? 4 : 0,
+                  instr->as.copy_from_field.take_ref,
+                  instr->as.copy_from_field.is_ref_explicit,
                 },
               },
               instr->loc,
@@ -1127,7 +1142,15 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           }
         }
 
-        dest->type.is_implicit_ptr |= instr->as.copy_from_field.take_ref;
+        if (instr->as.copy_from_field.is_ref_explicit) {
+          EType new_type;
+          new_type.kind = ETypeKindPtr;
+          new_type.ptr_target = malloc(sizeof(EType));
+          *new_type.ptr_target = dest->type;
+          dest->type = new_type;
+        } else {
+          dest->type.is_implicit_ptr |= instr->as.copy_from_field.take_ref;
+        }
       } break;
 
       case EInstrKindTuple: {
@@ -1244,7 +1267,15 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           goto fail;
         }
 
-        dest->type.is_implicit_ptr |= instr->as.copy_from_offset.take_ref;
+        if (instr->as.copy_from_offset.is_ref_explicit) {
+          EType new_type;
+          new_type.kind = ETypeKindPtr;
+          new_type.ptr_target = malloc(sizeof(EType));
+          *new_type.ptr_target = dest->type;
+          dest->type = new_type;
+        } else {
+          dest->type.is_implicit_ptr |= instr->as.copy_from_offset.take_ref;
+        }
       } break;
       }
     }

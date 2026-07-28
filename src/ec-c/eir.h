@@ -186,6 +186,7 @@ typedef struct {
   Str  src_offset_name;
   u32  src_offset_index;
   bool take_ref;
+  bool is_ref_explicit;
 } EInstrCopyFromRef;
 
 typedef struct {
@@ -246,6 +247,7 @@ typedef struct {
   u32  src_index;
   Str  src_field_name;
   bool take_ref;
+  bool is_ref_explicit;
 } EInstrCopyFromField;
 
 typedef struct {
@@ -269,6 +271,7 @@ typedef struct {
   u32  src_index;
   u32  src_offset;
   bool take_ref;
+  bool is_ref_explicit;
 } EInstrCopyFromOffset;
 
 typedef union {
