@@ -576,9 +576,6 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
       while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
              temp_token.id != TT_CBRACE) {
-        if (i > 0)
-          parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CBRACE), "`,` or `]`");
-
         parser_peek_token(parser, &temp_token);
         parser_parse_expr(parser, (Str) {0}, element_index);
 
