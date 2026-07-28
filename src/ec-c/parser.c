@@ -430,10 +430,7 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
         first_index = i - 1;
     } break;
 
-    case EInstrKindCopyToRef: {
-      if (instr->as.copy_to_ref.dest_index == prev_dest_index)
-        first_index = i - 1;
-    } break;
+    case EInstrKindCopyToRef: break;
 
     case EInstrKindCopyFromRef: {
       if (instr->as.copy_from_ref.dest_index == prev_dest_index)
@@ -462,10 +459,7 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
         first_index = i - 1;
     } break;
 
-    case EInstrKindCopyToField: {
-      if (instr->as.copy_to_field.dest_index == prev_dest_index)
-        first_index = i - 1;
-    } break;
+    case EInstrKindCopyToField: break;
 
     case EInstrKindCopyFromField: {
       if (instr->as.copy_from_field.dest_index == prev_dest_index)
@@ -477,10 +471,7 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
         first_index = i - 1;
     } break;
 
-    case EInstrKindCopyToOffset: {
-      if (instr->as.copy_to_offset.dest_index == prev_dest_index)
-        first_index = i - 1;
-    } break;
+    case EInstrKindCopyToOffset: break;
 
     case EInstrKindCopyFromOffset: {
       if (instr->as.copy_from_offset.dest_index == prev_dest_index)
@@ -925,6 +916,22 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
           temp0_index,
         },
       );
+
+      if (ref_token) {
+        u32 temp2_index = alloc_var(parser, (Str) {0}, token);
+        emit_instr(
+          &parser->ir->procs,
+          token,
+          EInstrKindRef,
+          .ref = {
+            {},
+            temp2_index,
+            {},
+            temp1_index,
+          },
+        );
+        temp1_index = temp2_index;
+      }
     } else if (token.id == TT_OBRACE) {
       u32 temp2_index = alloc_var(parser, (Str) {0}, token);
 
@@ -1030,13 +1037,6 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
 
     switch (token.id) {
     case TT_AND: {
-      // u32 temp_index = alloc_var(parser, (Str) {0}, token);
-      // parser_parse_post_expr(parser, (Str) {0}, temp_index);
-
-      // EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
-      // backpatch_dest_ref(proc, proc->instrs.len - 1, dest_name,
-      //                    dest_index, temp_index, &token);
-
       parser_parse_post_expr(parser, dest_name, dest_index, &token);
     } break;
 

@@ -141,13 +141,13 @@ void proc_print(Proc *proc, VarLocs *locs) {
                  instr->as.copy_from_ref.dest_index,
                  instr->as.copy_from_ref.src_index);
         else
-          printf("  $%u = $%u[$%u]\n",
+          printf("  $%u = &$%u[$%u]\n",
                  instr->as.copy_from_ref.dest_index,
                  instr->as.copy_from_ref.src_index,
                  instr->as.copy_from_ref.src_offset_index);
       } else {
         if (instr->as.copy_from_ref.src_offset_index == (u32) -1)
-          printf("  $%u = &$%u\n",
+          printf("  $%u = *$%u\n",
                  instr->as.copy_from_ref.dest_index,
                  instr->as.copy_from_ref.src_index);
         else
