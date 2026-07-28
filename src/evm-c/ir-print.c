@@ -176,16 +176,16 @@ void proc_print(Proc *proc, VarLocs *locs) {
     } break;
 
     case InstrKindCopyToRefFixed: {
-      u32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[instr->as.copy_to_ref_fixed.dest_segments.len - 1].offset;
-      printf("  $%u[%u] := $%u\n",
+      i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[instr->as.copy_to_ref_fixed.dest_segments.len - 1].offset;
+      printf("  $%u[%d] := $%u\n",
              instr->as.copy_to_ref_fixed.dest_index,
              offset,
              instr->as.copy_to_ref_fixed.src_index);
     } break;
 
     case InstrKindCopyFromRefFixed: {
-      u32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;
-      printf("  $%u = $%u[%u]\n",
+      i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;
+      printf("  $%u = $%u[%d]\n",
              instr->as.copy_from_ref_fixed.dest_index,
              instr->as.copy_from_ref_fixed.src_index,
              offset);

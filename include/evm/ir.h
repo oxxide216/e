@@ -44,7 +44,7 @@ typedef enum {
 } InstrKind;
 
 typedef struct {
-  u32 offset;
+  i32 offset;
   u32 size;
 } AlignedSegment;
 
