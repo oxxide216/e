@@ -691,7 +691,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
           arg_indices = &instr->as.call_assign.arg_indices;
         }
 
-        bool is_tail = i + 1 == proc->instrs.len ||
+        bool is_tail = j + 1 == proc->instrs.len ||
                        instr[1].kind == InstrKindRet ||
                        instr[1].kind == InstrKindRetVal;
 
