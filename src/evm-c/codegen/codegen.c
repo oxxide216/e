@@ -26,8 +26,9 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       u32 size = last_segment->offset + last_segment->size;
       bool is_stack_only = size > 8 || (size != 1 && size != 2 && size != 4 && size != 8);
       VarLoc loc = {
-        ValueKindSigned, 0, size,
-        0, i, 0, is_stack_only, false,
+        0, ValueKindSigned, size,
+        0, i, 0, is_stack_only,
+        false, false, 0, false,
       };
       locs->items[instr->as.alloc.index] = loc;
     } break;
@@ -187,8 +188,12 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       if (instr->as.copy_to_ref_fixed.dest_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref_fixed.dest_index].uses;
         locs->items[instr->as.copy_to_ref_fixed.dest_index].end = i;
-        if (instr->as.copy_to_ref_fixed.dest_segments.len > 1 ||
-            instr->as.copy_to_ref_fixed.dest_segments.items[0].offset != 0)
+
+        i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[0].offset;
+        for (u32 j = 1; j < instr->as.copy_to_ref_fixed.dest_segments.len; ++j)
+          offset += instr->as.copy_to_ref_fixed.dest_segments.items[j].offset;
+
+        if (offset != 0)
           locs->items[instr->as.copy_to_ref_fixed.dest_index].is_stack_only = true;
       }
       if (instr->as.copy_to_ref_fixed.src_index < locs->cap) {
@@ -205,9 +210,12 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       if (instr->as.copy_from_ref_fixed.src_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref_fixed.src_index].uses;
         locs->items[instr->as.copy_from_ref_fixed.src_index].end = i;
-        if (instr->as.copy_from_ref_fixed.take_ref ||
-            instr->as.copy_from_ref_fixed.src_segments.len > 1 ||
-            instr->as.copy_from_ref_fixed.src_segments.items[0].offset != 0)
+
+        i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[0].offset;
+        for (u32 j = 1; j < instr->as.copy_from_ref_fixed.src_segments.len; ++j)
+          offset += instr->as.copy_from_ref_fixed.src_segments.items[j].offset;
+
+        if (instr->as.copy_from_ref_fixed.take_ref || offset != 0)
           locs->items[instr->as.copy_from_ref_fixed.src_index].is_stack_only = true;
       }
     } break;
@@ -285,7 +293,7 @@ static i32 get_var_loc_reg_index(Allocator *allocator, VarLoc *loc,
                                  u32 max, u32 scratch_regs_len) {
   for (u32 i = 0; i < scratch_regs_len; ++i) {
     if (!var_loc_collides_at_reg_index(&allocator->refs, loc, i, max)) {
-      if (i + 1 > allocator->space_used.regs)
+      if (allocator->space_used.regs < i + 1)
         allocator->space_used.regs = i + 1;
 
       return i;

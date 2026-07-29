@@ -2,9 +2,10 @@
 #define CODEGEN_H
 
 #include "evm/ir.h"
+#include "arena.h"
 
 typedef struct {
-  // value >= means register, < 0 means stack
+  // value >= 0 means register, < 0 means stack
   i32       value;
   ValueKind kind;
   u32       size;
@@ -14,6 +15,9 @@ typedef struct {
   u32       end;
   bool      is_stack_only;
   bool      is_arg;
+  bool      has_imm_value;
+  i64       imm_value;
+  bool      is_ret;
 } VarLoc;
 
 typedef struct {
@@ -41,6 +45,6 @@ void      promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLoc
 void      align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func);
 bool      get_has_function_call(Proc *proc);
 
-void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir);
+void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena);
 
 #endif // CODEGEN_H

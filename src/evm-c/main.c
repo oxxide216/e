@@ -112,7 +112,7 @@ i32 main(i32 argc, char **argv) {
     return 1;
   }
 
-  write_ir_as_asm_yasm_x86_64(output_file, &ir);
+  write_ir_as_asm_yasm_x86_64(output_file, &ir, &arena);
 
   fclose(output_file);
   arena_free(&arena);
