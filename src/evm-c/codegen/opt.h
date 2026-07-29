@@ -3,10 +3,10 @@
 
 #include "codegen.h"
 
-void opt_merge_derefs(Proc *proc, Arena *arena);
+void opt_merge_derefs(Proc *proc, u8 *labels, Arena *arena);
 void opt_derefs_to_copies(Proc *proc);
-void opt_copy_prop(Proc *proc, VarLocs *locs);
-void opt_ret_val_prop(Proc *proc, VarLocs *locs, Arena *arena);
-void opt_const_fold(Proc *proc, VarLocs *locs, u8 *labels);
+void opt_copy_prop(Proc *proc, VarLocs *locs, u8 *labels);
+// TODO: fixed version of opt_ret_val_prop
+// TODO: fixed version of opt_const_fold
 
 #endif // OPT_H

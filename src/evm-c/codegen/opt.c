@@ -1,24 +1,5 @@
 #include "opt.h"
-
-#define DA_ARENA_INSERT(da, index, element, arena)                      \
-  do {                                                                  \
-    if ((da).cap <= (da).len) {                                         \
-      if ((da).cap != 0)                                                \
-        while ((da).cap <= (da).len)                                    \
-          (da).cap *= 2;                                                \
-      else                                                              \
-        (da).cap = 1;                                                   \
-      void *new_items = arena_alloc(arena, (da).cap * sizeof(element)); \
-      if ((da).items)                                                   \
-        memcpy(new_items, (da).items, (da).len * sizeof(element));      \
-      (da).items = new_items;                                           \
-    }                                                                   \
-    memmove((da).items + (index) + 1,                                   \
-            (da).items + (index),                                       \
-            ((da).len - (index)) * sizeof(element));                    \
-    (da).items[index] = element;                                        \
-    ++(da).len;                                                         \
-  } while (0)
+#include "utils.h"
 
 typedef struct {
   u32      dest_index;
@@ -60,7 +41,7 @@ void find_replacement(Replacements *replacements, VarLocs *locs, u32 *src_index)
   }
 }
 
-void opt_merge_derefs(Proc *proc, Arena *arena) {
+void opt_merge_derefs(Proc *proc, u8 *labels, Arena *arena) {
   DestIndicesWithSegments indices = {0};
 
   for (u32 i = 0; i < proc->instrs.len; ++i) {
@@ -68,6 +49,9 @@ void opt_merge_derefs(Proc *proc, Arena *arena) {
     u32 j = i + 1;
     Instr *next_instr = proc->instrs.items + j;
     bool removed = false;
+
+    if (labels[i] || is_jump(instr))
+      indices.len = 0;
 
     if (instr->kind == InstrKindCopyFromRefFixed &&
         instr->as.copy_from_ref_fixed.take_ref) {
@@ -230,19 +214,21 @@ void opt_derefs_to_copies(Proc *proc) {
   }
 }
 
-void opt_copy_prop(Proc *proc, VarLocs *locs) {
+void opt_copy_prop(Proc *proc, VarLocs *locs, u8 *labels) {
   Replacements replacements = {0};
 
   for (u32 i = 0; i < proc->instrs.len; ++i) {
     Instr *instr = proc->instrs.items + i;
 
-    switch (instr->kind) {
-    case InstrKindAlloc: break;
-    case InstrKindStore: break;
+    if (labels[i] || is_jump(instr))
+      replacements.len = 0;
 
-    case InstrKindCopy: {
-      find_replacement(&replacements, locs, &instr->as.copy.src_index);
+    u32 *arg;
+    u32 j = 0;
+    while ((arg = get_nth_arg(instr, j++)))
+      find_replacement(&replacements, locs, arg);
 
+    if (instr->kind == InstrKindCopy) {
       VarLoc *dest_loc = locs->items + instr->as.copy.dest_index;
       VarLoc *src_loc = locs->items + instr->as.copy.src_index;
       if (dest_loc->uses <= 2) {
@@ -258,354 +244,9 @@ void opt_copy_prop(Proc *proc, VarLocs *locs) {
         DA_REMOVE_AT(proc->instrs, i);
         --i;
       }
-    } break;
-
-    case InstrKindBinOp: {
-      find_replacement(&replacements, locs, &instr->as.bin_op.src0_index);
-      find_replacement(&replacements, locs, &instr->as.bin_op.src1_index);
-    } break;
-
-    case InstrKindCall: {
-      for (u32 j = 0; j < instr->as.call.arg_indices.len; ++j)
-        find_replacement(&replacements, locs, instr->as.call.arg_indices.items + j);
-    } break;
-
-    case InstrKindCallAssign: {
-      for (u32 j = 0; j < instr->as.call_assign.arg_indices.len; ++j)
-        find_replacement(&replacements, locs, instr->as.call_assign.arg_indices.items + j);
-    } break;
-
-    case InstrKindRet: break;
-
-    case InstrKindRetVal: {
-      find_replacement(&replacements, locs, &instr->as.ret_val.index);
-    } break;
-
-    case InstrKindJump: break;
-
-    case InstrKindJumpIfNot: {
-      find_replacement(&replacements, locs, &instr->as.jump_if_not.cond_index);
-    } break;
-
-    case InstrKindRef: {
-      find_replacement(&replacements, locs, &instr->as.ref.src_index);
-    } break;
-
-    case InstrKindCopyToRef: {
-      find_replacement(&replacements, locs, &instr->as.copy_to_ref.dest_index);
-      find_replacement(&replacements, locs, &instr->as.copy_to_ref.dest_offset_index);
-      find_replacement(&replacements, locs, &instr->as.copy_to_ref.src_index);
-    } break;
-
-    case InstrKindCopyFromRef: {
-      find_replacement(&replacements, locs, &instr->as.copy_from_ref.dest_index);
-      find_replacement(&replacements, locs, &instr->as.copy_from_ref.src_index);
-      find_replacement(&replacements, locs, &instr->as.copy_from_ref.src_offset_index);
-    } break;
-
-    case InstrKindInlineAsm: {
-      for (u32 j = 0; j < instr->as.inline_asm.segments.len; ++j)
-        if (instr->as.inline_asm.segments.items[j].kind == AsmSegmentKindVar)
-          find_replacement(&replacements, locs, &instr->as.inline_asm.segments.items[j].index);
-    } break;
-
-    case InstrKindStoreData: break;
-
-    case InstrKindConvert: {
-      find_replacement(&replacements, locs, &instr->as.convert.src_index);
-    } break;
-
-    case InstrKindCopyToRefFixed: {
-      find_replacement(&replacements, locs, &instr->as.copy_to_ref_fixed.dest_index);
-      find_replacement(&replacements, locs, &instr->as.copy_to_ref_fixed.src_index);
-    } break;
-
-    case InstrKindCopyFromRefFixed: {
-      find_replacement(&replacements, locs, &instr->as.copy_from_ref_fixed.dest_index);
-      find_replacement(&replacements, locs, &instr->as.copy_from_ref_fixed.src_index);
-    } break;
-
-    case InstrKindRefProc: break;
-
-    case InstrKindCallRef: {
-      find_replacement(&replacements, locs, &instr->as.call_ref.index);
-      for (u32 j = 0; j < instr->as.call_ref.arg_indices.len; ++j)
-        find_replacement(&replacements, locs, instr->as.call_ref.arg_indices.items + j);
-    } break;
-
-    case InstrKindCallRefAssign: {
-      find_replacement(&replacements, locs, &instr->as.call_ref_assign.index);
-      for (u32 j = 0; j < instr->as.call_ref_assign.arg_indices.len; ++j)
-        find_replacement(&replacements, locs, instr->as.call_ref_assign.arg_indices.items + j);
-    } break;
     }
   }
 
   if (replacements.items)
     free(replacements.items);
-}
-
-void opt_ret_val_prop(Proc *proc, VarLocs *locs, Arena *arena) {
-  if (proc->return_size == 0 || proc->return_size > 8)
-    return;
-
-  u32 ret_val_instr_index = (u32) -1;
-  for (u32 i = proc->instrs.len; i > 0; --i) {
-    Instr *instr = proc->instrs.items + i - 1;
-    u32 *dest_index = NULL;
-
-    switch (instr->kind) {
-    case InstrKindAlloc: break;
-
-    case InstrKindStore: {
-      dest_index = &instr->as.store.index;
-    } break;
-
-    case InstrKindCopy: {
-      dest_index = &instr->as.copy.dest_index;
-    } break;
-
-    case InstrKindBinOp: {
-      dest_index = &instr->as.bin_op.dest_index;
-    } break;
-
-    case InstrKindCall: break;
-
-    case InstrKindCallAssign: {
-      dest_index = &instr->as.call_assign.dest_index;
-    } break;
-
-    case InstrKindRet: break;
-
-    case InstrKindRetVal: {
-      ret_val_instr_index = i - 1;
-    } break;
-
-    case InstrKindJump: break;
-    case InstrKindJumpIfNot: break;
-
-    case InstrKindRef: {
-      dest_index = &instr->as.ref.dest_index;
-    } break;
-
-    case InstrKindCopyToRef: break;
-
-    case InstrKindCopyFromRef: {
-      dest_index = &instr->as.copy_from_ref.dest_index;
-    } break;
-
-    case InstrKindInlineAsm: break;
-
-    case InstrKindStoreData: {
-      dest_index = &instr->as.store_data.index;
-    } break;
-
-    case InstrKindConvert: {
-      dest_index = &instr->as.convert.dest_index;
-    } break;
-
-    case InstrKindCopyToRefFixed: break;
-
-    case InstrKindCopyFromRefFixed: {
-      dest_index = &instr->as.copy_from_ref_fixed.dest_index;
-    } break;
-
-    case InstrKindRefProc: {
-      dest_index = &instr->as.ref_proc.dest_index;
-    } break;
-
-    case InstrKindCallRef: break;
-
-    case InstrKindCallRefAssign: {
-      dest_index = &instr->as.call_ref_assign.dest_index;
-    } break;
-    }
-
-    if (ret_val_instr_index != (u32) -1 && dest_index) {
-      VarLoc ret_var_loc = {
-        0,
-        proc->return_kind,
-        proc->return_size,
-        2,
-        i - 1,
-        ret_val_instr_index,
-        false,
-        false,
-        false,
-        0,
-        true,
-      };
-      if (locs->items)
-        locs->items = realloc(locs->items, (locs->cap + 1) * sizeof(VarLoc));
-      else
-        locs->items = malloc((locs->cap + 1) * sizeof(VarLoc));
-      locs->items[locs->cap] = ret_var_loc;
-
-      --locs->items[*dest_index].uses;
-      --locs->items[proc->instrs.items[ret_val_instr_index].as.ret_val.index].uses;
-
-      *dest_index = locs->cap;
-      proc->instrs.items[ret_val_instr_index].as.ret_val.index = locs->cap;
-
-      Segments segments;
-      segments.len = 1;
-      segments.cap = segments.len;
-      segments.items = arena_alloc(arena, segments.cap * sizeof(AlignedSegment));
-      segments.items[0].offset = 0;
-      segments.items[0].size = proc->return_size;
-
-      Instr new_instr = {
-        InstrKindAlloc,
-        {
-          .alloc = {
-            locs->cap,
-            segments,
-          },
-        },
-      };
-      DA_ARENA_INSERT(proc->instrs, i - 1, new_instr, arena);
-
-      ++locs->cap;
-
-      ret_val_instr_index = (u32) -1;
-    } else if (instr->kind == InstrKindCall || instr->kind == InstrKindCallAssign ||
-               instr->kind == InstrKindCallRef || instr->kind == InstrKindCallRefAssign) {
-      ret_val_instr_index = (u32) -1;
-    }
-  }
-}
-
-void opt_const_fold(Proc *proc, VarLocs *locs, u8 *labels) {
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
-    Instr *instr = proc->instrs.items + i;
-
-    if (labels[i])
-      for (u32 j = 0; j < locs->cap; ++j)
-        locs->items[j].has_imm_value = false;
-
-    switch (instr->kind) {
-    case InstrKindAlloc: break;
-
-    case InstrKindStore: {
-      locs->items[instr->as.store.index].has_imm_value = true;
-      --locs->items[instr->as.store.index].uses;
-    } break;
-
-    case InstrKindCopy: {
-      locs->items[instr->as.copy.dest_index].has_imm_value = locs->items[instr->as.copy.src_index].has_imm_value;
-      if (locs->items[instr->as.copy.src_index].has_imm_value) {
-        --locs->items[instr->as.copy.src_index].uses;
-        --locs->items[instr->as.copy.dest_index].uses;
-      }
-    } break;
-
-    case InstrKindBinOp: {
-      locs->items[instr->as.bin_op.dest_index].has_imm_value = false;
-      if (locs->items[instr->as.bin_op.src0_index].has_imm_value)
-        --locs->items[instr->as.bin_op.src0_index].uses;
-      if (locs->items[instr->as.bin_op.src1_index].has_imm_value)
-        --locs->items[instr->as.bin_op.src1_index].uses;
-    } break;
-
-    case InstrKindCall: {
-      for (u32 j = 0; j < instr->as.call.arg_indices.len; ++j)
-        if (locs->items[instr->as.call.arg_indices.items[j]].has_imm_value)
-          --locs->items[instr->as.call.arg_indices.items[j]].uses;
-    } break;
-
-    case InstrKindCallAssign: {
-      locs->items[instr->as.call_assign.dest_index].has_imm_value = false;
-      for (u32 j = 0; j < instr->as.call_assign.arg_indices.len; ++j)
-        if (locs->items[instr->as.call_assign.arg_indices.items[j]].has_imm_value)
-          --locs->items[instr->as.call_assign.arg_indices.items[j]].uses;
-    } break;
-
-    case InstrKindRet: break;
-
-    case InstrKindRetVal: {
-      if (locs->items[instr->as.ret_val.index].has_imm_value)
-        --locs->items[instr->as.ret_val.index].uses;
-    } break;
-
-    case InstrKindJump: break;
-
-    case InstrKindJumpIfNot: {
-      if (locs->items[instr->as.jump_if_not.cond_index].has_imm_value)
-        --locs->items[instr->as.jump_if_not.cond_index].uses;
-    } break;
-
-    case InstrKindRef: {
-      locs->items[instr->as.ref.dest_index].has_imm_value = false;
-      if (locs->items[instr->as.ref.src_index].has_imm_value)
-        --locs->items[instr->as.ref.src_index].uses;
-    } break;
-
-    case InstrKindCopyToRef: {
-      if (locs->items[instr->as.copy_to_ref.dest_index].has_imm_value)
-        --locs->items[instr->as.copy_to_ref.dest_index].uses;
-      if (locs->items[instr->as.copy_to_ref.dest_offset_index].has_imm_value)
-        --locs->items[instr->as.copy_to_ref.dest_offset_index].uses;
-      if (locs->items[instr->as.copy_to_ref.src_index].has_imm_value)
-        --locs->items[instr->as.copy_to_ref.src_index].uses;
-    } break;
-
-    case InstrKindCopyFromRef: {
-      locs->items[instr->as.copy_from_ref.dest_index].has_imm_value = false;
-      if (locs->items[instr->as.copy_from_ref.src_index].has_imm_value)
-        --locs->items[instr->as.copy_from_ref.src_index].uses;
-      if (locs->items[instr->as.copy_from_ref.src_offset_index].has_imm_value)
-        --locs->items[instr->as.copy_from_ref.src_offset_index].uses;
-    } break;
-
-    case InstrKindInlineAsm: {
-      for (u32 j = 0; j < instr->as.inline_asm.segments.len; ++j)
-        if (instr->as.inline_asm.segments.items[j].kind == AsmSegmentKindVar)
-          if (locs->items[instr->as.inline_asm.segments.items[j].index].has_imm_value)
-            --locs->items[instr->as.inline_asm.segments.items[j].index].uses;
-    } break;
-
-    case InstrKindStoreData: {
-      locs->items[instr->as.store_data.index].has_imm_value = false;
-    } break;
-
-    case InstrKindConvert: {
-      locs->items[instr->as.convert.dest_index].has_imm_value = false;
-      if (locs->items[instr->as.convert.src_index].has_imm_value)
-        --locs->items[instr->as.convert.src_index].uses;
-    } break;
-
-    case InstrKindCopyToRefFixed: {
-      if (locs->items[instr->as.copy_to_ref_fixed.dest_index].has_imm_value)
-        --locs->items[instr->as.copy_to_ref_fixed.dest_index].uses;
-      if (locs->items[instr->as.copy_to_ref_fixed.src_index].has_imm_value)
-        --locs->items[instr->as.copy_to_ref_fixed.src_index].uses;
-    } break;
-
-    case InstrKindCopyFromRefFixed: {
-      locs->items[instr->as.copy_from_ref_fixed.dest_index].has_imm_value = false;
-      if (locs->items[instr->as.copy_from_ref_fixed.src_index].has_imm_value)
-        --locs->items[instr->as.copy_from_ref_fixed.src_index].uses;
-    } break;
-
-    case InstrKindRefProc: {
-      locs->items[instr->as.ref_proc.dest_index].has_imm_value = false;
-    } break;
-
-    case InstrKindCallRef: {
-      for (u32 j = 0; j < instr->as.call_ref.arg_indices.len; ++j)
-        if (locs->items[instr->as.call_ref.arg_indices.items[j]].has_imm_value)
-          --locs->items[instr->as.call_ref.arg_indices.items[j]].uses;
-    } break;
-
-    case InstrKindCallRefAssign: {
-      locs->items[instr->as.call_ref_assign.dest_index].has_imm_value = false;
-      for (u32 j = 0; j < instr->as.call_ref_assign.arg_indices.len; ++j)
-        if (locs->items[instr->as.call_ref_assign.arg_indices.items[j]].has_imm_value)
-          --locs->items[instr->as.call_ref_assign.arg_indices.items[j]].uses;
-    } break;
-    }
-  }
-
-  for (u32 i = 0; i < locs->cap; ++i)
-    locs->items[i].has_imm_value = false;
 }

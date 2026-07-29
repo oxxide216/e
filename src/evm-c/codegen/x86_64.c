@@ -82,27 +82,27 @@ static Str arg_regs8[] = {
 };
 
 static Str temp_regs1[] = {
-  STR_LIT("al"),
   STR_LIT("r10b"),
   STR_LIT("r11b"),
+  STR_LIT("al"),
 };
 
 static Str temp_regs2[] = {
-  STR_LIT("ax"),
   STR_LIT("r10w"),
   STR_LIT("r11w"),
+  STR_LIT("ax"),
 };
 
 static Str temp_regs4[] = {
-  STR_LIT("eax"),
   STR_LIT("r10d"),
   STR_LIT("r11d"),
+  STR_LIT("eax"),
 };
 
 static Str temp_regs8[] = {
-  STR_LIT("rax"),
   STR_LIT("r10"),
   STR_LIT("r11"),
+  STR_LIT("rax"),
 };
 
 static Str get_return_reg(u32 size) {
@@ -346,6 +346,26 @@ u32 alignment_func_x86_64(u32 size) {
   return 8;
 }
 
+bool uses_return_reg_x86_64(Instr *instr) {
+  return instr->kind == InstrKindCall || instr->kind == InstrKindCallAssign ||
+         instr->kind == InstrKindCallRef || instr->kind == InstrKindCallRefAssign ||
+         (instr->kind == InstrKindCopyToRef && instr->as.copy_to_ref.dest_offset_index != (u32) -1);
+}
+
+u8 *get_labels(Proc *proc, u8 *prev) {
+  u8 *labels = realloc(prev, proc->instrs.len);
+  memset(labels, 0, proc->instrs.len);
+  for (u32 j = 0; j < proc->instrs.len; ++j) {
+    Instr *instr = proc->instrs.items + j;
+
+    if (instr->kind == InstrKindJump && instr->as.jump.target < proc->instrs.len)
+      labels[instr->as.jump.target] = 1;
+    else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target < proc->instrs.len)
+      labels[instr->as.jump_if_not.target] = 1;
+  }
+  return labels;
+}
+
 void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
   write_cstr(stream, "section '.text'\n");
   write_cstr(stream, "global _start\n");
@@ -414,27 +434,17 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
       locs.items[j] = loc;
     }
 
-    opt_merge_derefs(proc, arena);
+    u8 *labels = get_labels(proc, NULL);
+    opt_merge_derefs(proc, labels, arena);
     opt_derefs_to_copies(proc);
 
     align_fixed_offsets(proc, alignment_func_x86_64);
     add_var_locs(&locs, proc);
 
-    opt_copy_prop(proc, &locs);
-    opt_ret_val_prop(proc, &locs, arena);
+    labels = get_labels(proc, labels);
+    opt_copy_prop(proc, &locs, labels);
 
-    u8 *labels = malloc(proc->instrs.len);
-    memset(labels, 0, proc->instrs.len);
-    for (u32 j = 0; j < proc->instrs.len; ++j) {
-      Instr *instr = proc->instrs.items + j;
-
-      if (instr->kind == InstrKindJump && instr->as.jump.target < proc->instrs.len)
-        labels[instr->as.jump.target] = 1;
-      else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target < proc->instrs.len)
-        labels[instr->as.jump_if_not.target] = 1;
-    }
-
-    opt_const_fold(proc, &locs, labels);
+    labels = get_labels(proc, labels);
 
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8));
@@ -445,6 +455,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
     proc_print(proc, &locs);
 #endif
 
+    write_cstr(stream, "global $");
+    write_str(stream, proc->name);
+    write_cstr(stream, "\n");
     write_cstr(stream, "$");
     write_str(stream, proc->name);
     write_cstr(stream, ":\n");
@@ -484,31 +497,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       Instr *instr = proc->instrs.items + j;
 
-      if (labels[j]) {
-        for (u32 k = 0; k < locs.cap; ++k) {
-          if (locs.items[k].end >= j) {
-            if (locs.items[k].imm_value == 0 && locs.items[k].value >= 0) {
-              locs.items[k].has_imm_value = false;
-              write_cstr(stream, "  xor ");
-              write_loc(stream, locs.items + k);
-              write_cstr(stream, ",");
-              write_loc(stream, locs.items + k);
-              write_cstr(stream, "\n");
-            } else {
-              write_cstr(stream, "  mov ");
-              locs.items[k].has_imm_value = false;
-              write_loc(stream, locs.items + k);
-              write_cstr(stream, ",");
-              locs.items[k].has_imm_value = true;
-              write_loc(stream, locs.items + k);
-              write_cstr(stream, "\n");
-              locs.items[k].has_imm_value = false;
-            }
-          }
-        }
-
+      if (labels[j])
         fprintf(stream, ".l%u:\n", j);
-      }
 
       switch (instr->kind) {
       case InstrKindAlloc: break;
@@ -516,14 +506,16 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
       case InstrKindStore: {
         locs.items[instr->as.store.index].kind = instr->as.store.value.kind;
 
-        locs.items[instr->as.store.index].has_imm_value = true;
+        write_cstr(stream, "  mov ");
+        write_loc(stream, locs.items + instr->as.copy.dest_index);
+        write_cstr(stream, ",");
         switch (instr->as.store.value.kind) {
         case ValueKindSigned: {
-          locs.items[instr->as.store.index].imm_value = instr->as.store.value.as._signed;
+          fprintf(stream, "%ld\n", instr->as.store.value.as._signed);
         } break;
 
         case ValueKindUnsigned: {
-          locs.items[instr->as.store.index].imm_value = instr->as.store.value.as._unsigned;
+          fprintf(stream, "%lu\n", instr->as.store.value.as._unsigned);
         } break;
         }
       } break;
@@ -959,10 +951,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
         if (!is_tail && aligned > 0)
           fprintf(stream, "  add rsp,%u\n", aligned);
 
-        if (!is_tail && instr->kind == InstrKindCallAssign) {
+        if (!is_tail &&
+            (instr->kind == InstrKindCallAssign ||
+             instr->kind == InstrKindCallRefAssign)) {
           VarLoc *loc = locs.items + instr->as.bin_op.dest_index;
 
-          if (loc->size <= 8 || loc->size == 16) {
+          if (!loc->is_ret && (loc->size <= 8 || loc->size == 16)) {
             u32 size = loc->size == 16 ? 8 : loc->size;
 
             write_cstr(stream, "  mov ");
