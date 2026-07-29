@@ -705,7 +705,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
                         instr[1].kind == InstrKindRet ||
                         instr[1].kind == InstrKindRetVal);
 
-        if (!is_tail) {
+        if (is_tail) {
+          if (j + 1 < proc->instrs.len)
+            DA_REMOVE_AT(proc->instrs, j + 1);
+        } else {
           if (instr->kind == InstrKindCallAssign) {
             VarLoc *loc = locs.items + instr->as.call_assign.dest_index;
             loc->size = instr->as.call_assign.return_size;
