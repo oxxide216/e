@@ -27,7 +27,7 @@ static char *get_bin_op_kind_cstr(BinOpKind kind) {
   return NULL;
 }
 
-void proc_print(Proc *proc, VarLocs *locs) {
+void proc_print(Proc *proc, VarLocs *locs, u8 *labels) {
   printf("proc "STR_FMT"(", STR_ARG(proc->name));
   for (u32 i = 0; i < proc->args.len; ++i) {
     if (i > 0)
@@ -41,6 +41,9 @@ void proc_print(Proc *proc, VarLocs *locs) {
 
   for (u32 i = 0; i < proc->instrs.len; ++i) {
     Instr *instr = proc->instrs.items + i;
+
+    if (labels[i])
+      printf("l%u:\n", i);
 
     switch (instr->kind) {
     case InstrKindAlloc: {

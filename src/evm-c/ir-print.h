@@ -4,6 +4,6 @@
 #include "evm/ir.h"
 #include "codegen/codegen.h"
 
-void proc_print(Proc *proc, VarLocs *locs);
+void proc_print(Proc *proc, VarLocs *locs, u8 *labels);
 
 #endif // IR_PRINT_H

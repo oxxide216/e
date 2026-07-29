@@ -228,19 +228,27 @@ void opt_copy_prop(Proc *proc, VarLocs *locs, u8 *labels) {
     while ((arg = get_nth_arg(instr, j++)))
       find_replacement(&replacements, locs, arg);
 
+    u32 *dest = get_dest(instr);
+    if (dest) {
+      for (u32 j = 0; j < replacements.len; ++j) {
+        if (replacements.items[j].dest_index == *dest) {
+          DA_REMOVE_AT(replacements, j);
+          --j;
+        }
+      }
+    }
+
     if (instr->kind == InstrKindCopy) {
       VarLoc *dest_loc = locs->items + instr->as.copy.dest_index;
       VarLoc *src_loc = locs->items + instr->as.copy.src_index;
       if (dest_loc->uses <= 2) {
         --dest_loc->uses;
         --src_loc->uses;
-        if (dest_loc->uses == 2) {
-          Replacement replacement = {
-            instr->as.copy.dest_index,
-            instr->as.copy.src_index,
-          };
-          DA_APPEND(replacements, replacement);
-        }
+        Replacement replacement = {
+          instr->as.copy.dest_index,
+          instr->as.copy.src_index,
+        };
+        DA_APPEND(replacements, replacement);
         DA_REMOVE_AT(proc->instrs, i);
         --i;
       }
