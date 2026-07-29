@@ -1,5 +1,25 @@
 #include "opt.h"
 
+#define DA_ARENA_INSERT(da, index, element, arena)                      \
+  do {                                                                  \
+    if ((da).cap <= (da).len) {                                         \
+      if ((da).cap != 0)                                                \
+        while ((da).cap <= (da).len)                                    \
+          (da).cap *= 2;                                                \
+      else                                                              \
+        (da).cap = 1;                                                   \
+      void *new_items = arena_alloc(arena, (da).cap * sizeof(element)); \
+      if ((da).items)                                                   \
+        memcpy(new_items, (da).items, (da).len * sizeof(element));      \
+      (da).items = new_items;                                           \
+    }                                                                   \
+    memmove((da).items + (index) + 1,                                   \
+            (da).items + (index),                                       \
+            ((da).len - (index)) * sizeof(element));                    \
+    (da).items[index] = element;                                        \
+    ++(da).len;                                                         \
+  } while (0)
+
 typedef struct {
   u32      dest_index;
   u32      src_index;
@@ -443,7 +463,7 @@ void opt_ret_val_prop(Proc *proc, VarLocs *locs, Arena *arena) {
           },
         },
       };
-      DA_INSERT(proc->instrs, i - 1, new_instr);
+      DA_ARENA_INSERT(proc->instrs, i - 1, new_instr, arena);
 
       ++locs->cap;
 
