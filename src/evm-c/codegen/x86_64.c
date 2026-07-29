@@ -415,12 +415,26 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
     }
 
     opt_merge_derefs(proc, arena);
+    opt_derefs_to_copies(proc);
 
     align_fixed_offsets(proc, alignment_func_x86_64);
     add_var_locs(&locs, proc);
 
     opt_copy_prop(proc, &locs);
-    opt_ret_val_prop(proc, &locs);
+    opt_ret_val_prop(proc, &locs, arena);
+
+    u8 *labels = malloc(proc->instrs.len);
+    memset(labels, 0, proc->instrs.len);
+    for (u32 j = 0; j < proc->instrs.len; ++j) {
+      Instr *instr = proc->instrs.items + j;
+
+      if (instr->kind == InstrKindJump && instr->as.jump.target < proc->instrs.len)
+        labels[instr->as.jump.target] = 1;
+      else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target < proc->instrs.len)
+        labels[instr->as.jump_if_not.target] = 1;
+    }
+
+    opt_const_fold(proc, &locs, labels);
 
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8));
@@ -434,8 +448,11 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
     write_cstr(stream, "$");
     write_str(stream, proc->name);
     write_cstr(stream, ":\n");
-    write_cstr(stream, "  push rbp\n");
-    write_cstr(stream, "  mov rbp,rsp\n");
+
+    if (space_used.stack_size > 0 || proc->args.len > ARRAY_LEN(arg_regs8)) {
+      write_cstr(stream, "  push rbp\n");
+      write_cstr(stream, "  mov rbp,rsp\n");
+    }
 
     if (space_used.stack_size > 0)
       fprintf(stream, "  sub rsp,%u\n", space_used.stack_size);
@@ -458,17 +475,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
         write_str(stream, arg_regs8[j]);
         write_cstr(stream, "\n");
       }
-    }
-
-    u8 *labels = malloc(proc->instrs.len);
-    memset(labels, 0, proc->instrs.len);
-    for (u32 j = 0; j < proc->instrs.len; ++j) {
-      Instr *instr = proc->instrs.items + j;
-
-      if (instr->kind == InstrKindJump && instr->as.jump.target < proc->instrs.len)
-        labels[instr->as.jump.target] = 1;
-      else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target < proc->instrs.len)
-        labels[instr->as.jump_if_not.target] = 1;
     }
 
     bool jump_optimization_applied = false;
@@ -1358,7 +1364,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
     if (space_used.stack_size > 0)
       fprintf(stream, "  add rsp,%u\n", space_used.stack_size);
 
-    write_cstr(stream, "  leave\n");
+    if (space_used.stack_size > 0 || proc->args.len > ARRAY_LEN(arg_regs8))
+      write_cstr(stream, "  leave\n");
+
     write_cstr(stream, "  ret\n");
 
     if (labels)
