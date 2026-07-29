@@ -1141,8 +1141,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
 
         if (deref) {
-          VarLoc *dest_loc = locs.items + instr->as.copy_to_ref_fixed.dest_index;
-          ensure_in_reg(stream, dest_loc, 0, dest_loc->size > 8);
+          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0, false);
           ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.src_index, 1, false);
         }
 
@@ -1177,10 +1176,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;
         bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
 
-        if (deref) {
-          VarLoc *src_loc = locs.items + instr->as.copy_from_ref_fixed.src_index;
-          ensure_in_reg(stream, src_loc, 0, src_loc->size > 8);
-        }
+        if (deref)
+          ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0, false);
 
         if (instr->as.copy_from_ref_fixed.take_ref)
           write_cstr(stream, "  lea ");
