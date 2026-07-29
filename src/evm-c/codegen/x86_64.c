@@ -487,17 +487,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
       if (labels[j]) {
         for (u32 k = 0; k < locs.cap; ++k) {
           if (locs.items[k].end >= j) {
-            if (locs.items[k].imm_value == 0) {
+            if (locs.items[k].imm_value == 0 && locs.items[k].value >= 0) {
               locs.items[k].has_imm_value = false;
-              if (locs.items[k].value < 0)
-                ensure_in_reg(stream, locs.items + k, 0, false);
               write_cstr(stream, "  xor ");
               write_loc(stream, locs.items + k);
               write_cstr(stream, ",");
-              if (locs.items[k].value < 0)
-                write_loc_ensure_in_reg(stream, locs.items + k, 0);
-              else
-                write_loc(stream, locs.items + k);
+              write_loc(stream, locs.items + k);
               write_cstr(stream, "\n");
             } else {
               write_cstr(stream, "  mov ");
