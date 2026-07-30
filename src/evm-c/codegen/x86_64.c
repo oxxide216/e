@@ -2,7 +2,7 @@
 
 #include "codegen.h"
 #include "utils.h"
-#include "opt.h"
+#include "../opt.h"
 #ifndef NDEBUG
 #include "../ir-print.h"
 #endif
@@ -435,7 +435,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
     }
 
     u8 *labels = get_labels(proc, NULL);
-    opt_merge_derefs(proc, labels, arena);
+    opt_merge_derefs(proc, arena);
     opt_derefs_to_copies(proc);
 
     align_fixed_offsets(proc, alignment_func_x86_64);

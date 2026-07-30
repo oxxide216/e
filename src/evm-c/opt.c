@@ -1,5 +1,5 @@
 #include "opt.h"
-#include "utils.h"
+#include "codegen/utils.h"
 
 typedef struct {
   u32      dest_index;
@@ -41,7 +41,7 @@ void find_replacement(Replacements *replacements, VarLocs *locs, u32 *src_index)
   }
 }
 
-void opt_merge_derefs(Proc *proc, u8 *labels, Arena *arena) {
+void opt_merge_derefs(Proc *proc, Arena *arena) {
   DestIndicesWithSegments indices = {0};
 
   for (u32 i = 0; i < proc->instrs.len; ++i) {
@@ -49,9 +49,6 @@ void opt_merge_derefs(Proc *proc, u8 *labels, Arena *arena) {
     u32 j = i + 1;
     Instr *next_instr = proc->instrs.items + j;
     bool removed = false;
-
-    if (labels[i] || is_jump(instr))
-      indices.len = 0;
 
     if (instr->kind == InstrKindCopyFromRefFixed &&
         instr->as.copy_from_ref_fixed.take_ref) {
