@@ -770,10 +770,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
           arg_indices = &instr->as.call_assign.arg_indices;
         } else if (instr->kind == InstrKindCallRef) {
           index = instr->as.call_ref.index;
-          arg_indices = &instr->as.call.arg_indices;
+          arg_indices = &instr->as.call_ref.arg_indices;
         } else if (instr->kind == InstrKindCallRefAssign) {
           index = instr->as.call_ref_assign.index;
-          arg_indices = &instr->as.call_assign.arg_indices;
+          arg_indices = &instr->as.call_ref_assign.arg_indices;
         }
 
         bool is_tail = str_eq(name, proc->name) &&
