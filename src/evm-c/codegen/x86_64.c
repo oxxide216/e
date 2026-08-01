@@ -343,13 +343,13 @@ static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
   write_cstr(stream, "\n");
 }
 
-u32 alignment_func_x86_64(u32 size) {
+static u32 alignment_func_x86_64(u32 size) {
   if (size <= 8)
     return size;
   return 8;
 }
 
-bool uses_return_reg_x86_64(Instr *instr) {
+static bool uses_return_reg_x86_64(Instr *instr) {
   return instr->kind == InstrKindCall || instr->kind == InstrKindCallAssign ||
          instr->kind == InstrKindCallRef || instr->kind == InstrKindCallRefAssign ||
          (instr->kind == InstrKindCopyToRef && instr->as.copy_to_ref.dest_offset_index != (u32) -1);
@@ -1088,7 +1088,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
 
     if (deref) {
-      ensure_in_reg_of_size(stream, locs->items + instr->as.copy_to_ref_fixed.dest_index, 8, 0, offset != 0);
+      bool ref = !instr->as.copy_to_ref_fixed.deref && offset != 0;
+      ensure_in_reg_of_size(stream, locs->items + instr->as.copy_to_ref_fixed.dest_index, 8, 0, ref);
       ensure_in_reg(stream, locs->items + instr->as.copy_to_ref_fixed.src_index, 1, false);
     }
 
@@ -1121,8 +1122,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
     bool deref = instr->as.copy_from_ref_fixed.deref || offset != 0;
 
-    if (deref)
-    ensure_in_reg_of_size(stream, locs->items + instr->as.copy_from_ref_fixed.src_index, 8, 0, offset != 0);
+    if (deref) {
+      bool ref = !instr->as.copy_from_ref_fixed.deref && offset != 0;
+      ensure_in_reg_of_size(stream, locs->items + instr->as.copy_from_ref_fixed.src_index, 8, 1, ref);
+    }
 
     if (instr->as.copy_from_ref_fixed.take_ref)
       write_cstr(stream, "  lea ");
@@ -1133,7 +1136,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, ",");
       write_str(stream, get_mem_prefix(locs->items[instr->as.copy_from_ref_fixed.dest_index].size));
       write_cstr(stream, "[");
-      write_loc_ensure_in_reg(stream, locs->items + instr->as.copy_from_ref_fixed.src_index, 0);
+      write_loc_ensure_in_reg(stream, locs->items + instr->as.copy_from_ref_fixed.src_index, 1);
       if (offset >= 0)
         fprintf(stream, "+%d]\n", offset);
       else
@@ -1147,7 +1150,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "\n");
     }
 
-    if (locs->items[instr->as.copy_from_ref_fixed.dest_index].value < 0) {
+    if (deref && locs->items[instr->as.copy_from_ref_fixed.dest_index].value < 0) {
       write_cstr(stream, "  mov ");
       write_loc(stream, locs->items + instr->as.copy_from_ref_fixed.dest_index);
       write_cstr(stream, ",");
@@ -1194,9 +1197,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     Proc *proc = ir->procs.items + i;
 
-    bool has_nested_call = get_have_function_call(&proc->instrs);
-
-    u32 target_cap = has_nested_call ? proc->args.len * 2 : proc->args.len;
+    u32 target_cap = proc->args.len;
     if (locs.cap < target_cap) {
       u32 new_cap = locs.cap;
       if (new_cap < target_cap)
@@ -1211,6 +1212,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     SpaceUsed args_space = {0};
     args_space.stack_size = ARGS_STACK_OFFSET;
+    bool has_nested_call = get_have_function_call(&proc->instrs);
 
     if (proc->return_size > 16)
       ++args_space.regs;
@@ -1294,11 +1296,28 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         if (loc->uses == 0)
           continue;
 
-        write_cstr(stream, "  mov ");
-        write_loc_of_size(stream, loc, 8);
-        write_cstr(stream, ",");
-        write_str(stream, arg_regs8[j]);
-        write_cstr(stream, "\n");
+        if (loc->size <= 8) {
+          write_cstr(stream, "  mov ");
+          write_loc_of_size(stream, loc, 8);
+          write_cstr(stream, ",");
+          write_str(stream, arg_regs8[j]);
+          write_cstr(stream, "\n");
+        } else {
+          u32 arg_size = 0;
+          while (arg_size < loc->size) {
+            u32 part_size = 8;
+            if (part_size + arg_size > loc->size)
+              part_size = loc->size - arg_size;
+
+            write_cstr(stream, "  mov ");
+            write_loc_part_of_size(stream, loc, arg_size, part_size);
+            write_cstr(stream, ",");
+            write_str(stream, get_arg_regs(part_size)[j + arg_size / part_size]);
+            write_cstr(stream, "\n");
+
+            arg_size += part_size;
+          }
+        }
       }
     }
 
@@ -1313,7 +1332,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     write_cstr(stream, ".end:\n");
 
-    bool last_instrs_clutter_return_reg = clutter_return_reg(&proc->last_instrs);
+    bool last_instrs_clutter_return_reg =
+      clutter_return_reg(&proc->last_instrs, uses_return_reg_x86_64);
     if (last_instrs_clutter_return_reg)
       write_cstr(stream, "  push rax\n");
 

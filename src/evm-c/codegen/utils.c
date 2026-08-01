@@ -214,3 +214,41 @@ u32 *get_nth_arg(Instr *instr, u32 n) {
 
   return NULL;
 }
+
+void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
+  for (u32 i = 0; i < proc->instrs.len; ++i) {
+    Instr *instr = proc->instrs.items + i;
+
+    Segments *offsets = NULL;
+    if (instr->kind == InstrKindCopyToRefFixed)
+      offsets = &instr->as.copy_to_ref_fixed.dest_segments;
+    else if (instr->kind == InstrKindCopyFromRefFixed)
+      offsets = &instr->as.copy_from_ref_fixed.src_segments;
+    else
+      continue;
+
+    i32 offset = 0;
+    for (u32 j = 0; j < offsets->len; ++j) {
+      i32 alignment = alignment_func(offsets->items[j].size);
+      offsets->items[j].offset = align(offsets->items[j].offset, alignment);
+      offset += offsets->items[j].size;
+    }
+  }
+}
+
+bool get_have_function_call(Instrs *instrs) {
+  for (u32 i = 0; i < instrs->len; ++i)
+    if (instrs->items[i].kind == InstrKindCall ||
+        instrs->items[i].kind == InstrKindCallAssign)
+      return true;
+
+  return false;
+}
+
+bool clutter_return_reg(Instrs *instrs, UsesReturnRegFunc uses_return_reg) {
+  for (u32 i = 0; i < instrs->len; ++i)
+    if (uses_return_reg(instrs->items + i))
+      return true;
+
+  return false;
+}

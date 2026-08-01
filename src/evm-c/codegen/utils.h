@@ -27,6 +27,9 @@
     ++(da).len;                                                         \
   } while (0)
 
+typedef u32 (*AlignmentFunc)(u32 size);
+typedef bool (*UsesReturnRegFunc)(Instr *instr);
+
 void write_cstr(FILE *stream, char *cstr);
 void write_str(FILE *stream, Str str);
 void write_value(FILE *stream, Value *value);
@@ -36,5 +39,8 @@ i32   align(i32 value, i32 base);
 bool  is_jump(Instr *instr);
 u32  *get_dest(Instr *instr);
 u32  *get_nth_arg(Instr *instr, u32 n);
+void  align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func);
+bool  get_have_function_call(Instrs *instrs);
+bool  clutter_return_reg(Instrs *instrs, UsesReturnRegFunc uses_return_reg);
 
 #endif // UTILS_H

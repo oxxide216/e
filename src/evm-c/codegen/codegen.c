@@ -194,7 +194,7 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
         for (u32 j = 1; j < instr->as.copy_to_ref_fixed.dest_segments.len; ++j)
           offset += instr->as.copy_to_ref_fixed.dest_segments.items[j].offset;
 
-        if (offset != 0)
+        if (!instr->as.copy_to_ref_fixed.deref && offset != 0)
           locs->items[instr->as.copy_to_ref_fixed.dest_index].is_stack_only = true;
       }
       if (instr->as.copy_to_ref_fixed.src_index < locs->cap) {
@@ -216,7 +216,8 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
         for (u32 j = 1; j < instr->as.copy_from_ref_fixed.src_segments.len; ++j)
           offset += instr->as.copy_from_ref_fixed.src_segments.items[j].offset;
 
-        if (instr->as.copy_from_ref_fixed.take_ref || offset != 0)
+        if (!instr->as.copy_from_ref_fixed.deref &&
+            (instr->as.copy_from_ref_fixed.take_ref || offset != 0))
           locs->items[instr->as.copy_from_ref_fixed.src_index].is_stack_only = true;
       }
     } break;
@@ -381,45 +382,4 @@ void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops_instrs(Instrs *instrs, 
 void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs) {
   promote_lifetimes_of_pre_loop_vars_to_ends_of_loops_instrs(&proc->instrs, 0, locs);
   promote_lifetimes_of_pre_loop_vars_to_ends_of_loops_instrs(&proc->last_instrs, proc->instrs.len, locs);
-}
-
-void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
-    Instr *instr = proc->instrs.items + i;
-
-    Segments *offsets = NULL;
-    if (instr->kind == InstrKindCopyToRefFixed)
-      offsets = &instr->as.copy_to_ref_fixed.dest_segments;
-    else if (instr->kind == InstrKindCopyFromRefFixed)
-      offsets = &instr->as.copy_from_ref_fixed.src_segments;
-    else
-      continue;
-
-    i32 offset = 0;
-    for (u32 j = 0; j < offsets->len; ++j) {
-      i32 alignment = alignment_func(offsets->items[j].size);
-      offsets->items[j].offset = align(offsets->items[j].offset, alignment);
-      offset += offsets->items[j].size;
-    }
-  }
-}
-
-bool get_have_function_call(Instrs *instrs) {
-  for (u32 i = 0; i < instrs->len; ++i)
-    if (instrs->items[i].kind == InstrKindCall ||
-        instrs->items[i].kind == InstrKindCallAssign)
-      return true;
-
-  return false;
-}
-
-bool clutter_return_reg(Instrs *instrs) {
-  if (get_have_function_call(instrs))
-    return true;
-
-  for (u32 i = 0; i < instrs->len; ++i)
-    if (instrs->items[i].kind == InstrKindCopyToRef)
-      return true;
-
-  return false;
 }
