@@ -4,7 +4,7 @@
 #include "codegen/codegen.h"
 
 // TODO: fixed version of opt_merge_derefs
-void opt_derefs_to_copies(Proc *proc, VarLocs *locs);
+void opt_derefs_to_copies(Instrs *instrs, VarLocs *locs);
 // TODO: fixed version of opt_copy_prop
 // TODO: fixed version of opt_ret_val_prop
 // TODO: fixed version of opt_const_fold

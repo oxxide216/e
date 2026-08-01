@@ -1,9 +1,9 @@
 #include "opt.h"
 #include "codegen/utils.h"
 
-void opt_derefs_to_copies(Proc *proc, VarLocs *locs) {
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
-    Instr *instr = proc->instrs.items + i;
+void opt_derefs_to_copies(Instrs *instrs, VarLocs *locs) {
+  for (u32 i = 0; i < instrs->len; ++i) {
+    Instr *instr = instrs->items + i;
 
     if (instr->kind == InstrKindCopyToRefFixed) {
       if (!instr->as.copy_to_ref_fixed.deref) {

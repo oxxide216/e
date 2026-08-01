@@ -393,10 +393,21 @@ void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
   }
 }
 
-bool get_has_function_call(Proc *proc) {
-  for (u32 i = 0; i < proc->instrs.len; ++i)
-    if (proc->instrs.items[i].kind == InstrKindCall ||
-        proc->instrs.items[i].kind == InstrKindCallAssign)
+bool get_have_function_call(Instrs *instrs) {
+  for (u32 i = 0; i < instrs->len; ++i)
+    if (instrs->items[i].kind == InstrKindCall ||
+        instrs->items[i].kind == InstrKindCallAssign)
+      return true;
+
+  return false;
+}
+
+bool clutter_return_reg(Instrs *instrs) {
+  if (get_have_function_call(instrs))
+    return true;
+
+  for (u32 i = 0; i < instrs->len; ++i)
+    if (instrs->items[i].kind == InstrKindCopyToRef)
       return true;
 
   return false;

@@ -590,6 +590,9 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
       } break;
       }
     }
+
+    u32 zero = 0;
+    fwrite(&zero, sizeof(zero), 1, stream);
   }
 }
 

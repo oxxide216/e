@@ -12,6 +12,12 @@
       return false;                     \
   } while (0)
 
+#define decode_instr(decoder, instr)        \
+  do {                                      \
+    if (!decode_instr_impl(decoder, instr)) \
+      return false;                         \
+  } while (0)
+
 typedef struct {
   Ir    *ir;
   Arena *arena;
@@ -35,6 +41,259 @@ static bool decode_str_impl(Decoder *decoder, Str *str) {
   decode_buffer(decoder, &str->len, sizeof(str->len));
   str->ptr = arena_alloc(decoder->arena, str->len);
   decode_buffer(decoder, str->ptr, str->len);
+
+  return true;
+}
+
+static bool decode_instr_impl(Decoder *decoder, Instr *instr) {
+  u8 kind;
+  decode_buffer(decoder, &kind, 1);
+  instr->kind = kind;
+
+  switch (instr->kind) {
+  case InstrKindAlloc: {
+    decode_buffer(decoder, &instr->as.alloc.index, sizeof(instr->as.alloc.index));
+
+    decode_buffer(decoder, &instr->as.alloc.segments.len, sizeof(instr->as.alloc.segments.len));
+    instr->as.alloc.segments.cap = instr->as.alloc.segments.len;
+    instr->as.alloc.segments.items = arena_alloc(decoder->arena, instr->as.alloc.segments.cap * sizeof(AlignedSegment));
+
+    for (u32 k = 0; k < instr->as.alloc.segments.len; ++k) {
+      AlignedSegment *segment = instr->as.alloc.segments.items + k;
+      decode_buffer(decoder, &segment->offset, sizeof(segment->offset));
+      decode_buffer(decoder, &segment->size, sizeof(segment->size));
+    }
+  } break;
+
+  case InstrKindStore: {
+    decode_buffer(decoder, &instr->as.store.index, sizeof(instr->as.store.index));
+    u8 value_kind;
+    decode_buffer(decoder, &value_kind, 1);
+    instr->as.store.value.kind = value_kind;
+    switch (instr->as.store.value.kind) {
+    case ValueKindSigned: {
+      decode_buffer(decoder, &instr->as.store.value.as._signed, sizeof(instr->as.store.value.as._signed));
+    } break;
+
+    case ValueKindUnsigned: {
+      decode_buffer(decoder, &instr->as.store.value.as._unsigned, sizeof(instr->as.store.value.as._unsigned));
+    } break;
+    }
+  } break;
+
+  case InstrKindCopy: {
+    decode_buffer(decoder, &instr->as.copy.dest_index, sizeof(instr->as.copy.dest_index));
+    decode_buffer(decoder, &instr->as.copy.src_index, sizeof(instr->as.copy.src_index));
+  } break;
+
+  case InstrKindBinOp: {
+    decode_buffer(decoder, &instr->as.bin_op.dest_index, sizeof(instr->as.bin_op.dest_index));
+    decode_buffer(decoder, &instr->as.bin_op.src0_index, sizeof(instr->as.bin_op.src0_index));
+    decode_buffer(decoder, &instr->as.bin_op.src1_index, sizeof(instr->as.bin_op.src1_index));
+
+    u8 op_kind;
+    decode_buffer(decoder, &op_kind, 1);
+    instr->as.bin_op.kind = op_kind;
+  } break;
+
+  case InstrKindCall: {
+    decode_str(decoder, &instr->as.call.name);
+
+    decode_buffer(decoder, &instr->as.call.arg_indices.len, sizeof(instr->as.call.arg_indices.len));
+    instr->as.call.arg_indices.cap = instr->as.call.arg_indices.len;
+    instr->as.call.arg_indices.items = arena_alloc(decoder->arena, instr->as.call.arg_indices.cap * sizeof(u32));
+    for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k) {
+      u32 *arg_index = instr->as.call.arg_indices.items + k;
+      decode_buffer(decoder, arg_index, sizeof(*arg_index));
+    }
+  } break;
+
+  case InstrKindCallAssign: {
+    decode_buffer(decoder, &instr->as.call_assign.dest_index, sizeof(instr->as.call_assign.dest_index));
+    decode_buffer(decoder, &instr->as.call_assign.return_size, sizeof(instr->as.call_assign.return_size));
+    u8 return_kind;
+    decode_buffer(decoder, &return_kind, 1);
+    instr->as.call_assign.return_kind = return_kind;
+
+    decode_str(decoder, &instr->as.call_assign.name);
+
+    decode_buffer(decoder, &instr->as.call_assign.arg_indices.len, sizeof(instr->as.call_assign.arg_indices.len));
+    instr->as.call_assign.arg_indices.cap = instr->as.call_assign.arg_indices.len;
+    instr->as.call_assign.arg_indices.items = arena_alloc(decoder->arena, instr->as.call_assign.arg_indices.cap * sizeof(u32));
+    for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k) {
+      u32 *arg_index = instr->as.call_assign.arg_indices.items + k;
+      decode_buffer(decoder, arg_index, sizeof(*arg_index));
+    }
+  } break;
+
+  case InstrKindRet: break;
+
+  case InstrKindRetVal: {
+    decode_buffer(decoder, &instr->as.ret_val.index, sizeof(instr->as.ret_val.index));
+  } break;
+
+  case InstrKindJump: {
+    decode_buffer(decoder, &instr->as.jump.target, sizeof(instr->as.jump.target));
+  } break;
+
+  case InstrKindJumpIfNot: {
+    decode_buffer(decoder, &instr->as.jump_if_not.cond_index, sizeof(instr->as.jump_if_not.cond_index));
+    decode_buffer(decoder, &instr->as.jump_if_not.target, sizeof(instr->as.jump_if_not.target));
+  } break;
+
+  case InstrKindRef: {
+    decode_buffer(decoder, &instr->as.ref.dest_index, sizeof(instr->as.ref.dest_index));
+    decode_buffer(decoder, &instr->as.ref.src_index, sizeof(instr->as.ref.src_index));
+  } break;
+
+  case InstrKindCopyToRef: {
+    decode_buffer(decoder, &instr->as.copy_to_ref.dest_index, sizeof(instr->as.copy_to_ref.dest_index));
+    u8 has_offset;
+    decode_buffer(decoder, &has_offset, 1);
+    if (has_offset)
+      decode_buffer(decoder, &instr->as.copy_to_ref.dest_offset_index, sizeof(instr->as.copy_to_ref.dest_offset_index));
+    else
+      instr->as.copy_to_ref.dest_offset_index = (u32) -1;
+    decode_buffer(decoder, &instr->as.copy_to_ref.src_index, sizeof(instr->as.copy_to_ref.src_index));
+  } break;
+
+  case InstrKindCopyFromRef: {
+    decode_buffer(decoder, &instr->as.copy_from_ref.dest_index, sizeof(instr->as.copy_from_ref.dest_index));
+    decode_buffer(decoder, &instr->as.copy_from_ref.src_index, sizeof(instr->as.copy_from_ref.src_index));
+    u8 has_offset;
+    decode_buffer(decoder, &has_offset, 1);
+    if (has_offset)
+      decode_buffer(decoder, &instr->as.copy_from_ref.src_offset_index, sizeof(instr->as.copy_from_ref.src_offset_index));
+    else
+      instr->as.copy_from_ref.src_offset_index = (u32) -1;
+
+    u8 src_target_kind;
+    decode_buffer(decoder, &src_target_kind, 1);
+    instr->as.copy_from_ref.src_target_kind = src_target_kind;
+    decode_buffer(decoder, &instr->as.copy_from_ref.src_target_size, sizeof(instr->as.copy_from_ref.src_target_size));
+
+    u8 take_ref;
+    decode_buffer(decoder, &take_ref, 1);
+    instr->as.copy_from_ref.take_ref = take_ref;
+  } break;
+
+  case InstrKindInlineAsm: {
+    decode_buffer(decoder, &instr->as.inline_asm.segments.len, sizeof(instr->as.inline_asm.segments.len));
+    instr->as.inline_asm.segments.cap = instr->as.inline_asm.segments.len;
+    instr->as.inline_asm.segments.items = arena_alloc(decoder->arena, instr->as.inline_asm.segments.cap * sizeof(AsmSegment));
+
+    for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
+      AsmSegment *segment = instr->as.inline_asm.segments.items + k;
+
+      u8 segment_kind;
+      decode_buffer(decoder, &segment_kind, 1);
+      segment->kind = segment_kind;
+
+      if (segment->kind == AsmSegmentKindStr)
+        decode_str(decoder, &segment->value);
+      else
+        decode_buffer(decoder, &segment->index, sizeof(segment->index));
+    }
+  } break;
+
+  case InstrKindStoreData: {
+    decode_buffer(decoder, &instr->as.store_data.index, sizeof(instr->as.store_data.index));
+    decode_buffer(decoder, &instr->as.store_data.data_index, sizeof(instr->as.store_data.data_index));
+  } break;
+
+  case InstrKindConvert: {
+    decode_buffer(decoder, &instr->as.convert.dest_index, sizeof(instr->as.convert.dest_index));
+
+    u8 dest_kind;
+    decode_buffer(decoder, &dest_kind, 1);
+    instr->as.convert.dest_kind = dest_kind;
+    decode_buffer(decoder, &instr->as.convert.dest_size, sizeof(instr->as.convert.dest_size));
+
+    decode_buffer(decoder, &instr->as.convert.src_index, sizeof(instr->as.convert.src_index));
+  } break;
+
+  case InstrKindCopyToRefFixed: {
+    decode_buffer(decoder, &instr->as.copy_to_ref_fixed.dest_index, sizeof(instr->as.copy_to_ref_fixed.dest_index));
+
+    decode_buffer(decoder, &instr->as.copy_to_ref_fixed.dest_segments.len, sizeof(instr->as.copy_to_ref_fixed.dest_segments.len));
+    instr->as.copy_to_ref_fixed.dest_segments.cap = instr->as.copy_to_ref_fixed.dest_segments.len;
+    instr->as.copy_to_ref_fixed.dest_segments.items = arena_alloc(decoder->arena, instr->as.copy_to_ref_fixed.dest_segments.cap * sizeof(AlignedSegment));
+
+    for (u32 k = 0; k < instr->as.copy_to_ref_fixed.dest_segments.len; ++k) {
+      AlignedSegment *segment = instr->as.copy_to_ref_fixed.dest_segments.items + k;
+      decode_buffer(decoder, &segment->offset, sizeof(segment->offset));
+      decode_buffer(decoder, &segment->size, sizeof(segment->size));
+    }
+
+    decode_buffer(decoder, &instr->as.copy_to_ref_fixed.src_index, sizeof(instr->as.copy_to_ref_fixed.src_index));
+
+    u8 deref;
+    decode_buffer(decoder, &deref, 1);
+    instr->as.copy_to_ref_fixed.deref = deref;
+  } break;
+
+  case InstrKindCopyFromRefFixed: {
+    decode_buffer(decoder, &instr->as.copy_from_ref_fixed.dest_index, sizeof(instr->as.copy_from_ref_fixed.dest_index));
+    decode_buffer(decoder, &instr->as.copy_from_ref_fixed.src_index, sizeof(instr->as.copy_from_ref_fixed.src_index));
+
+    decode_buffer(decoder, &instr->as.copy_from_ref_fixed.src_segments.len, sizeof(instr->as.copy_from_ref_fixed.src_segments.len));
+    instr->as.copy_from_ref_fixed.src_segments.cap = instr->as.copy_from_ref_fixed.src_segments.len;
+    instr->as.copy_from_ref_fixed.src_segments.items = arena_alloc(decoder->arena, instr->as.copy_from_ref_fixed.src_segments.cap * sizeof(AlignedSegment));
+
+    for (u32 k = 0; k < instr->as.copy_from_ref_fixed.src_segments.len; ++k) {
+      AlignedSegment *segment = instr->as.copy_from_ref_fixed.src_segments.items + k;
+      decode_buffer(decoder, &segment->offset, sizeof(segment->offset));
+      decode_buffer(decoder, &segment->size, sizeof(segment->size));
+    }
+
+    u8 src_target_kind;
+    decode_buffer(decoder, &src_target_kind, 1);
+    instr->as.copy_from_ref_fixed.src_target_kind = src_target_kind;
+    decode_buffer(decoder, &instr->as.copy_from_ref_fixed.src_target_size, sizeof(instr->as.copy_from_ref_fixed.src_target_size));
+
+    u8 deref;
+    decode_buffer(decoder, &deref, 1);
+    instr->as.copy_from_ref_fixed.deref = deref;
+
+    u8 take_ref;
+    decode_buffer(decoder, &take_ref, 1);
+    instr->as.copy_from_ref_fixed.take_ref = take_ref;
+  } break;
+
+  case InstrKindRefProc: {
+    decode_buffer(decoder, &instr->as.ref_proc.dest_index, sizeof(instr->as.ref_proc.dest_index));
+    decode_str(decoder, &instr->as.ref_proc.proc_name);
+  } break;
+
+  case InstrKindCallRef: {
+    decode_buffer(decoder, &instr->as.call_ref.index, sizeof(instr->as.call_ref.index));
+
+    decode_buffer(decoder, &instr->as.call_ref.arg_indices.len, sizeof(instr->as.call_ref.arg_indices.len));
+    instr->as.call_ref.arg_indices.cap = instr->as.call_ref.arg_indices.len;
+    instr->as.call_ref.arg_indices.items = arena_alloc(decoder->arena, instr->as.call_ref.arg_indices.cap * sizeof(u32));
+    for (u32 k = 0; k < instr->as.call_ref.arg_indices.len; ++k) {
+      u32 *arg_index = instr->as.call_ref.arg_indices.items + k;
+      decode_buffer(decoder, arg_index, sizeof(*arg_index));
+    }
+  } break;
+
+  case InstrKindCallRefAssign: {
+    decode_buffer(decoder, &instr->as.call_ref_assign.dest_index, sizeof(instr->as.call_ref_assign.dest_index));
+    decode_buffer(decoder, &instr->as.call_ref_assign.return_size, sizeof(instr->as.call_ref_assign.return_size));
+    u8 return_kind;
+    decode_buffer(decoder, &return_kind, 1);
+    instr->as.call_ref_assign.return_kind = return_kind;
+
+    decode_buffer(decoder, &instr->as.call_ref_assign.index, sizeof(instr->as.call_ref_assign.index));
+    decode_buffer(decoder, &instr->as.call_ref_assign.arg_indices.len, sizeof(instr->as.call_ref_assign.arg_indices.len));
+    instr->as.call_ref_assign.arg_indices.cap = instr->as.call_ref_assign.arg_indices.len;
+    instr->as.call_ref_assign.arg_indices.items = arena_alloc(decoder->arena, instr->as.call_ref_assign.arg_indices.cap * sizeof(u32));
+    for (u32 k = 0; k < instr->as.call_ref_assign.arg_indices.len; ++k) {
+      u32 *arg_index = instr->as.call_ref_assign.arg_indices.items + k;
+      decode_buffer(decoder, arg_index, sizeof(*arg_index));
+    }
+  } break;
+  }
 
   return true;
 }
@@ -73,255 +332,16 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       Instr *instr = proc->instrs.items + j;
+      decode_instr(&decoder, instr);
+    }
 
-      u8 kind;
-      decode_buffer(&decoder, &kind, 1);
-      instr->kind = kind;
+    decode_buffer(&decoder, &proc->last_instrs.len, sizeof(proc->last_instrs.len));
+    proc->last_instrs.cap = proc->last_instrs.len;
+    proc->last_instrs.items = arena_alloc(arena, proc->last_instrs.cap * sizeof(Instr));
 
-      switch (instr->kind) {
-      case InstrKindAlloc: {
-        decode_buffer(&decoder, &instr->as.alloc.index, sizeof(instr->as.alloc.index));
-
-        decode_buffer(&decoder, &instr->as.alloc.segments.len, sizeof(instr->as.alloc.segments.len));
-        instr->as.alloc.segments.cap = instr->as.alloc.segments.len;
-        instr->as.alloc.segments.items = arena_alloc(arena, instr->as.alloc.segments.cap * sizeof(AlignedSegment));
-
-        for (u32 k = 0; k < instr->as.alloc.segments.len; ++k) {
-          AlignedSegment *segment = instr->as.alloc.segments.items + k;
-          decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
-          decode_buffer(&decoder, &segment->size, sizeof(segment->size));
-        }
-      } break;
-
-      case InstrKindStore: {
-        decode_buffer(&decoder, &instr->as.store.index, sizeof(instr->as.store.index));
-        u8 value_kind;
-        decode_buffer(&decoder, &value_kind, 1);
-        instr->as.store.value.kind = value_kind;
-        switch (instr->as.store.value.kind) {
-        case ValueKindSigned: {
-          decode_buffer(&decoder, &instr->as.store.value.as._signed, sizeof(instr->as.store.value.as._signed));
-        } break;
-
-        case ValueKindUnsigned: {
-          decode_buffer(&decoder, &instr->as.store.value.as._unsigned, sizeof(instr->as.store.value.as._unsigned));
-        } break;
-        }
-      } break;
-
-      case InstrKindCopy: {
-        decode_buffer(&decoder, &instr->as.copy.dest_index, sizeof(instr->as.copy.dest_index));
-        decode_buffer(&decoder, &instr->as.copy.src_index, sizeof(instr->as.copy.src_index));
-      } break;
-
-      case InstrKindBinOp: {
-        decode_buffer(&decoder, &instr->as.bin_op.dest_index, sizeof(instr->as.bin_op.dest_index));
-        decode_buffer(&decoder, &instr->as.bin_op.src0_index, sizeof(instr->as.bin_op.src0_index));
-        decode_buffer(&decoder, &instr->as.bin_op.src1_index, sizeof(instr->as.bin_op.src1_index));
-
-        u8 op_kind;
-        decode_buffer(&decoder, &op_kind, 1);
-        instr->as.bin_op.kind = op_kind;
-      } break;
-
-      case InstrKindCall: {
-        decode_str(&decoder, &instr->as.call.name);
-
-        decode_buffer(&decoder, &instr->as.call.arg_indices.len, sizeof(instr->as.call.arg_indices.len));
-        instr->as.call.arg_indices.cap = instr->as.call.arg_indices.len;
-        instr->as.call.arg_indices.items = arena_alloc(arena, instr->as.call.arg_indices.cap * sizeof(u32));
-        for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k) {
-          u32 *arg_index = instr->as.call.arg_indices.items + k;
-          decode_buffer(&decoder, arg_index, sizeof(*arg_index));
-        }
-      } break;
-
-      case InstrKindCallAssign: {
-        decode_buffer(&decoder, &instr->as.call_assign.dest_index, sizeof(instr->as.call_assign.dest_index));
-        decode_buffer(&decoder, &instr->as.call_assign.return_size, sizeof(instr->as.call_assign.return_size));
-        u8 return_kind;
-        decode_buffer(&decoder, &return_kind, 1);
-        instr->as.call_assign.return_kind = return_kind;
-
-        decode_str(&decoder, &instr->as.call_assign.name);
-
-        decode_buffer(&decoder, &instr->as.call_assign.arg_indices.len, sizeof(instr->as.call_assign.arg_indices.len));
-        instr->as.call_assign.arg_indices.cap = instr->as.call_assign.arg_indices.len;
-        instr->as.call_assign.arg_indices.items = arena_alloc(arena, instr->as.call_assign.arg_indices.cap * sizeof(u32));
-        for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k) {
-          u32 *arg_index = instr->as.call_assign.arg_indices.items + k;
-          decode_buffer(&decoder, arg_index, sizeof(*arg_index));
-        }
-      } break;
-
-      case InstrKindRet: break;
-
-      case InstrKindRetVal: {
-        decode_buffer(&decoder, &instr->as.ret_val.index, sizeof(instr->as.ret_val.index));
-      } break;
-
-      case InstrKindJump: {
-        decode_buffer(&decoder, &instr->as.jump.target, sizeof(instr->as.jump.target));
-      } break;
-
-      case InstrKindJumpIfNot: {
-        decode_buffer(&decoder, &instr->as.jump_if_not.cond_index, sizeof(instr->as.jump_if_not.cond_index));
-        decode_buffer(&decoder, &instr->as.jump_if_not.target, sizeof(instr->as.jump_if_not.target));
-      } break;
-
-      case InstrKindRef: {
-        decode_buffer(&decoder, &instr->as.ref.dest_index, sizeof(instr->as.ref.dest_index));
-        decode_buffer(&decoder, &instr->as.ref.src_index, sizeof(instr->as.ref.src_index));
-      } break;
-
-      case InstrKindCopyToRef: {
-        decode_buffer(&decoder, &instr->as.copy_to_ref.dest_index, sizeof(instr->as.copy_to_ref.dest_index));
-        u8 has_offset;
-        decode_buffer(&decoder, &has_offset, 1);
-        if (has_offset)
-          decode_buffer(&decoder, &instr->as.copy_to_ref.dest_offset_index, sizeof(instr->as.copy_to_ref.dest_offset_index));
-        else
-          instr->as.copy_to_ref.dest_offset_index = (u32) -1;
-        decode_buffer(&decoder, &instr->as.copy_to_ref.src_index, sizeof(instr->as.copy_to_ref.src_index));
-      } break;
-
-      case InstrKindCopyFromRef: {
-        decode_buffer(&decoder, &instr->as.copy_from_ref.dest_index, sizeof(instr->as.copy_from_ref.dest_index));
-        decode_buffer(&decoder, &instr->as.copy_from_ref.src_index, sizeof(instr->as.copy_from_ref.src_index));
-        u8 has_offset;
-        decode_buffer(&decoder, &has_offset, 1);
-        if (has_offset)
-          decode_buffer(&decoder, &instr->as.copy_from_ref.src_offset_index, sizeof(instr->as.copy_from_ref.src_offset_index));
-        else
-          instr->as.copy_from_ref.src_offset_index = (u32) -1;
-
-        u8 src_target_kind;
-        decode_buffer(&decoder, &src_target_kind, 1);
-        instr->as.copy_from_ref.src_target_kind = src_target_kind;
-        decode_buffer(&decoder, &instr->as.copy_from_ref.src_target_size, sizeof(instr->as.copy_from_ref.src_target_size));
-
-        u8 take_ref;
-        decode_buffer(&decoder, &take_ref, 1);
-        instr->as.copy_from_ref.take_ref = take_ref;
-      } break;
-
-      case InstrKindInlineAsm: {
-        decode_buffer(&decoder, &instr->as.inline_asm.segments.len, sizeof(instr->as.inline_asm.segments.len));
-        instr->as.inline_asm.segments.cap = instr->as.inline_asm.segments.len;
-        instr->as.inline_asm.segments.items = arena_alloc(arena, instr->as.inline_asm.segments.cap * sizeof(AsmSegment));
-
-        for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
-          AsmSegment *segment = instr->as.inline_asm.segments.items + k;
-
-          u8 segment_kind;
-          decode_buffer(&decoder, &segment_kind, 1);
-          segment->kind = segment_kind;
-
-          if (segment->kind == AsmSegmentKindStr)
-            decode_str(&decoder, &segment->value);
-          else
-            decode_buffer(&decoder, &segment->index, sizeof(segment->index));
-        }
-      } break;
-
-      case InstrKindStoreData: {
-        decode_buffer(&decoder, &instr->as.store_data.index, sizeof(instr->as.store_data.index));
-        decode_buffer(&decoder, &instr->as.store_data.data_index, sizeof(instr->as.store_data.data_index));
-      } break;
-
-      case InstrKindConvert: {
-        decode_buffer(&decoder, &instr->as.convert.dest_index, sizeof(instr->as.convert.dest_index));
-
-        u8 dest_kind;
-        decode_buffer(&decoder, &dest_kind, 1);
-        instr->as.convert.dest_kind = dest_kind;
-        decode_buffer(&decoder, &instr->as.convert.dest_size, sizeof(instr->as.convert.dest_size));
-
-        decode_buffer(&decoder, &instr->as.convert.src_index, sizeof(instr->as.convert.src_index));
-      } break;
-
-      case InstrKindCopyToRefFixed: {
-        decode_buffer(&decoder, &instr->as.copy_to_ref_fixed.dest_index, sizeof(instr->as.copy_to_ref_fixed.dest_index));
-
-        decode_buffer(&decoder, &instr->as.copy_to_ref_fixed.dest_segments.len, sizeof(instr->as.copy_to_ref_fixed.dest_segments.len));
-        instr->as.copy_to_ref_fixed.dest_segments.cap = instr->as.copy_to_ref_fixed.dest_segments.len;
-        instr->as.copy_to_ref_fixed.dest_segments.items = arena_alloc(arena, instr->as.copy_to_ref_fixed.dest_segments.cap * sizeof(AlignedSegment));
-
-        for (u32 k = 0; k < instr->as.copy_to_ref_fixed.dest_segments.len; ++k) {
-          AlignedSegment *segment = instr->as.copy_to_ref_fixed.dest_segments.items + k;
-          decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
-          decode_buffer(&decoder, &segment->size, sizeof(segment->size));
-        }
-
-        decode_buffer(&decoder, &instr->as.copy_to_ref_fixed.src_index, sizeof(instr->as.copy_to_ref_fixed.src_index));
-
-        u8 deref;
-        decode_buffer(&decoder, &deref, 1);
-        instr->as.copy_to_ref_fixed.deref = deref;
-      } break;
-
-      case InstrKindCopyFromRefFixed: {
-        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.dest_index, sizeof(instr->as.copy_from_ref_fixed.dest_index));
-        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_index, sizeof(instr->as.copy_from_ref_fixed.src_index));
-
-        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_segments.len, sizeof(instr->as.copy_from_ref_fixed.src_segments.len));
-        instr->as.copy_from_ref_fixed.src_segments.cap = instr->as.copy_from_ref_fixed.src_segments.len;
-        instr->as.copy_from_ref_fixed.src_segments.items = arena_alloc(arena, instr->as.copy_from_ref_fixed.src_segments.cap * sizeof(AlignedSegment));
-
-        for (u32 k = 0; k < instr->as.copy_from_ref_fixed.src_segments.len; ++k) {
-          AlignedSegment *segment = instr->as.copy_from_ref_fixed.src_segments.items + k;
-          decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
-          decode_buffer(&decoder, &segment->size, sizeof(segment->size));
-        }
-
-        u8 src_target_kind;
-        decode_buffer(&decoder, &src_target_kind, 1);
-        instr->as.copy_from_ref_fixed.src_target_kind = src_target_kind;
-        decode_buffer(&decoder, &instr->as.copy_from_ref_fixed.src_target_size, sizeof(instr->as.copy_from_ref_fixed.src_target_size));
-
-        u8 deref;
-        decode_buffer(&decoder, &deref, 1);
-        instr->as.copy_from_ref_fixed.deref = deref;
-
-        u8 take_ref;
-        decode_buffer(&decoder, &take_ref, 1);
-        instr->as.copy_from_ref_fixed.take_ref = take_ref;
-      } break;
-
-      case InstrKindRefProc: {
-        decode_buffer(&decoder, &instr->as.ref_proc.dest_index, sizeof(instr->as.ref_proc.dest_index));
-        decode_str(&decoder, &instr->as.ref_proc.proc_name);
-      } break;
-
-      case InstrKindCallRef: {
-        decode_buffer(&decoder, &instr->as.call_ref.index, sizeof(instr->as.call_ref.index));
-
-        decode_buffer(&decoder, &instr->as.call_ref.arg_indices.len, sizeof(instr->as.call_ref.arg_indices.len));
-        instr->as.call_ref.arg_indices.cap = instr->as.call_ref.arg_indices.len;
-        instr->as.call_ref.arg_indices.items = arena_alloc(arena, instr->as.call_ref.arg_indices.cap * sizeof(u32));
-        for (u32 k = 0; k < instr->as.call_ref.arg_indices.len; ++k) {
-          u32 *arg_index = instr->as.call_ref.arg_indices.items + k;
-          decode_buffer(&decoder, arg_index, sizeof(*arg_index));
-        }
-      } break;
-
-      case InstrKindCallRefAssign: {
-        decode_buffer(&decoder, &instr->as.call_ref_assign.dest_index, sizeof(instr->as.call_ref_assign.dest_index));
-        decode_buffer(&decoder, &instr->as.call_ref_assign.return_size, sizeof(instr->as.call_ref_assign.return_size));
-        u8 return_kind;
-        decode_buffer(&decoder, &return_kind, 1);
-        instr->as.call_ref_assign.return_kind = return_kind;
-
-        decode_buffer(&decoder, &instr->as.call_ref_assign.index, sizeof(instr->as.call_ref_assign.index));
-        decode_buffer(&decoder, &instr->as.call_ref_assign.arg_indices.len, sizeof(instr->as.call_ref_assign.arg_indices.len));
-        instr->as.call_ref_assign.arg_indices.cap = instr->as.call_ref_assign.arg_indices.len;
-        instr->as.call_ref_assign.arg_indices.items = arena_alloc(arena, instr->as.call_ref_assign.arg_indices.cap * sizeof(u32));
-        for (u32 k = 0; k < instr->as.call_ref_assign.arg_indices.len; ++k) {
-          u32 *arg_index = instr->as.call_ref_assign.arg_indices.items + k;
-          decode_buffer(&decoder, arg_index, sizeof(*arg_index));
-        }
-      } break;
-      }
+    for (u32 j = 0; j < proc->last_instrs.len; ++j) {
+      Instr *instr = proc->last_instrs.items + j;
+      decode_instr(&decoder, instr);
     }
   }
 

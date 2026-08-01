@@ -246,6 +246,7 @@ typedef struct {
   u32       return_size;
   ValueKind return_kind;
   Instrs    instrs;
+  Instrs    last_instrs;
 } Proc;
 
 typedef Da(Proc) Procs;
