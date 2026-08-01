@@ -45,6 +45,6 @@ void      promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLoc
 void      align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func);
 bool      get_has_function_call(Proc *proc);
 
-void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena);
+void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir);
 
 #endif // CODEGEN_H

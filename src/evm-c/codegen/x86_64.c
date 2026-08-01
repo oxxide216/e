@@ -366,7 +366,7 @@ u8 *get_labels(Proc *proc, u8 *prev) {
   return labels;
 }
 
-void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
+void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
   write_cstr(stream, "section '.text'\n");
   write_cstr(stream, "global _start\n");
   write_cstr(stream, "_start:\n");
@@ -435,9 +435,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
     }
 
     u8 *labels = get_labels(proc, NULL);
-    opt_merge_derefs(proc, arena);
     opt_derefs_to_copies(proc);
-    labels = get_labels(proc, labels);
 
     align_fixed_offsets(proc, alignment_func_x86_64);
     add_var_locs(&locs, proc);
@@ -476,6 +474,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
 
         if (loc->is_arg)
           break;
+
+        if (loc->uses == 0)
+          continue;
 
         write_cstr(stream, "  mov ");
         write_loc_of_size(stream, loc, 8);
@@ -519,9 +520,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
         VarLoc *dest_loc = locs.items + instr->as.copy.dest_index;
         VarLoc *src_loc = locs.items + instr->as.copy.src_index;
 
-        dest_loc->kind = src_loc->kind;
-        dest_loc->size = src_loc->size;
-
         dest_loc->has_imm_value = src_loc->has_imm_value;
         if (dest_loc->has_imm_value) {
           dest_loc->imm_value = src_loc->imm_value;
@@ -531,14 +529,14 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
         if (dest_loc->value != src_loc->value || dest_loc->is_arg != src_loc->is_arg) {
           if (dest_loc->size <= 8) {
             if (dest_loc->value < 0)
-              ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0, false);
+              ensure_in_reg(stream, src_loc, 0, false);
             write_cstr(stream, "  mov ");
-            write_loc(stream, locs.items + instr->as.copy.dest_index);
+            write_loc(stream, dest_loc);
             write_cstr(stream, ",");
             if (dest_loc->value < 0)
-              write_loc_ensure_in_reg(stream, locs.items + instr->as.copy.src_index, 0);
+              write_loc_ensure_in_reg(stream, src_loc, 0);
             else
-              write_loc(stream, locs.items + instr->as.copy.src_index);
+              write_loc(stream, src_loc);
             write_cstr(stream, "\n");
           } else {
             u32 size = 0;
@@ -550,7 +548,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
               fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
               write_loc_part_of_size(stream, src_loc, size, part_size);
               write_cstr(stream, "\n");
+              write_cstr(stream, "  mov ");
               write_loc_part_of_size(stream, dest_loc, size, part_size);
+              write_cstr(stream, ",");
               write_str(stream, get_temp_regs(8)[0]);
               write_cstr(stream, "\n");
 
@@ -1248,7 +1248,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
         bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
 
         if (deref) {
-          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0, false);
+          ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.dest_index, 0, offset != 0);
           ensure_in_reg(stream, locs.items + instr->as.copy_to_ref_fixed.src_index, 1, false);
         }
 
@@ -1289,7 +1289,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir, Arena *arena) {
         bool deref = instr->as.copy_from_ref_fixed.deref || offset != 0;
 
         if (deref)
-          ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0, false);
+          ensure_in_reg(stream, locs.items + instr->as.copy_from_ref_fixed.src_index, 0, offset != 0);
 
         if (instr->as.copy_from_ref_fixed.take_ref)
           write_cstr(stream, "  lea ");
