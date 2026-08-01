@@ -1,9 +1,9 @@
 #include "codegen.h"
 #include "utils.h"
 
-void add_var_locs(VarLocs *locs, Proc *proc) {
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
-    Instr *instr = proc->instrs.items + i;
+static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
+  for (u32 i = 0; i < instrs->len; ++i) {
+    Instr *instr = instrs->items + i;
 
     switch (instr->kind) {
     case InstrKindAlloc: {
@@ -24,10 +24,11 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
 
       AlignedSegment *last_segment = instr->as.alloc.segments.items + instr->as.alloc.segments.len - 1;
       u32 size = last_segment->offset + last_segment->size;
+      u32 begin = i + offset;
       bool is_stack_only = size > 8 || (size != 1 && size != 2 && size != 4 && size != 8);
       VarLoc loc = {
         0, ValueKindSigned, size,
-        0, i, 0, is_stack_only,
+        0, begin, begin, is_stack_only,
         false, false, 0, false,
       };
       locs->items[instr->as.alloc.index] = loc;
@@ -36,33 +37,33 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindStore: {
       if (instr->as.store.index < locs->cap) {
         ++locs->items[instr->as.store.index].uses;
-        locs->items[instr->as.store.index].end = i;
+        locs->items[instr->as.store.index].end = i + offset;
       }
     } break;
 
     case InstrKindCopy: {
       if (instr->as.copy.dest_index < locs->cap) {
         ++locs->items[instr->as.copy.dest_index].uses;
-        locs->items[instr->as.copy.dest_index].end = i;
+        locs->items[instr->as.copy.dest_index].end = i + offset;
       }
       if (instr->as.copy.src_index < locs->cap) {
         ++locs->items[instr->as.copy.src_index].uses;
-        locs->items[instr->as.copy.src_index].end = i;
+        locs->items[instr->as.copy.src_index].end = i + offset;
       }
     } break;
 
     case InstrKindBinOp: {
       if (instr->as.bin_op.dest_index < locs->cap) {
         ++locs->items[instr->as.bin_op.dest_index].uses;
-        locs->items[instr->as.bin_op.dest_index].end = i;
+        locs->items[instr->as.bin_op.dest_index].end = i + offset;
       }
       if (instr->as.bin_op.src0_index < locs->cap) {
         ++locs->items[instr->as.bin_op.src0_index].uses;
-        locs->items[instr->as.bin_op.src0_index].end = i;
+        locs->items[instr->as.bin_op.src0_index].end = i + offset;
       }
       if (instr->as.bin_op.src1_index < locs->cap) {
         ++locs->items[instr->as.bin_op.src1_index].uses;
-        locs->items[instr->as.bin_op.src1_index].end = i;
+        locs->items[instr->as.bin_op.src1_index].end = i + offset;
       }
     } break;
 
@@ -71,7 +72,7 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         u32 arg_index = instr->as.call.arg_indices.items[j];
         if (arg_index < locs->cap) {
           ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i;
+          locs->items[arg_index].end = i + offset;
         }
       }
     } break;
@@ -79,14 +80,14 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindCallAssign: {
       if (instr->as.call_assign.dest_index < locs->cap) {
         ++locs->items[instr->as.call_assign.dest_index].uses;
-        locs->items[instr->as.call_assign.dest_index].end = i;
+        locs->items[instr->as.call_assign.dest_index].end = i + offset;
       }
 
       for (u32 j = 0; j < instr->as.call_assign.arg_indices.len; ++j) {
         u32 arg_index = instr->as.call_assign.arg_indices.items[j];
         if (arg_index < locs->cap) {
           ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i;
+          locs->items[arg_index].end = i + offset;
         }
       }
     } break;
@@ -96,7 +97,7 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindRetVal: {
       if (instr->as.ret_val.index < locs->cap) {
         ++locs->items[instr->as.ret_val.index].uses;
-          locs->items[instr->as.ret_val.index].end = i;
+          locs->items[instr->as.ret_val.index].end = i + offset;
       }
     } break;
 
@@ -105,18 +106,18 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindJumpIfNot: {
       if (instr->as.jump_if_not.cond_index < locs->cap) {
         ++locs->items[instr->as.jump_if_not.cond_index].uses;
-          locs->items[instr->as.jump_if_not.cond_index].end = i;
+          locs->items[instr->as.jump_if_not.cond_index].end = i + offset;
       }
     } break;
 
     case InstrKindRef: {
       if (instr->as.ref.dest_index < locs->cap) {
         ++locs->items[instr->as.ref.dest_index].uses;
-        locs->items[instr->as.ref.dest_index].end = i;
+        locs->items[instr->as.ref.dest_index].end = i + offset;
       }
       if (instr->as.ref.src_index < locs->cap) {
         ++locs->items[instr->as.ref.src_index].uses;
-        locs->items[instr->as.ref.src_index].end = i;
+        locs->items[instr->as.ref.src_index].end = i + offset;
         locs->items[instr->as.ref.src_index].is_stack_only = true;
       }
     } break;
@@ -124,32 +125,32 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindCopyToRef: {
       if (instr->as.copy_to_ref.dest_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref.dest_index].uses;
-        locs->items[instr->as.copy_to_ref.dest_index].end = i;
+        locs->items[instr->as.copy_to_ref.dest_index].end = i + offset;
         locs->items[instr->as.copy_to_ref.dest_index].is_stack_only = true;
       }
       if (instr->as.copy_to_ref.dest_offset_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref.dest_offset_index].uses;
-        locs->items[instr->as.copy_to_ref.dest_offset_index].end = i;
+        locs->items[instr->as.copy_to_ref.dest_offset_index].end = i + offset;
       }
       if (instr->as.copy_to_ref.src_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref.src_index].uses;
-        locs->items[instr->as.copy_to_ref.src_index].end = i;
+        locs->items[instr->as.copy_to_ref.src_index].end = i + offset;
       }
     } break;
 
     case InstrKindCopyFromRef: {
       if (instr->as.copy_from_ref.dest_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref.dest_index].uses;
-        locs->items[instr->as.copy_from_ref.dest_index].end = i;
+        locs->items[instr->as.copy_from_ref.dest_index].end = i + offset;
       }
       if (instr->as.copy_from_ref.src_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref.src_index].uses;
-        locs->items[instr->as.copy_from_ref.src_index].end = i;
+        locs->items[instr->as.copy_from_ref.src_index].end = i + offset;
         locs->items[instr->as.copy_from_ref.src_index].is_stack_only = true;
       }
       if (instr->as.copy_from_ref.src_offset_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref.src_offset_index].uses;
-        locs->items[instr->as.copy_from_ref.src_offset_index].end = i;
+        locs->items[instr->as.copy_from_ref.src_offset_index].end = i + offset;
       }
     } break;
 
@@ -160,7 +161,7 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         if (segment->kind == AsmSegmentKindVar) {
           if (segment->index < locs->cap) {
             ++locs->items[segment->index].uses;
-            locs->items[segment->index].end = i;
+            locs->items[segment->index].end = i + offset;
           }
         }
       }
@@ -169,25 +170,25 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindStoreData: {
       if (instr->as.store_data.index < locs->cap) {
         ++locs->items[instr->as.store_data.index].uses;
-        locs->items[instr->as.store_data.index].end = i;
+        locs->items[instr->as.store_data.index].end = i + offset;
       }
     } break;
 
     case InstrKindConvert: {
       if (instr->as.convert.dest_index < locs->cap) {
         ++locs->items[instr->as.convert.dest_index].uses;
-        locs->items[instr->as.convert.dest_index].end = i;
+        locs->items[instr->as.convert.dest_index].end = i + offset;
       }
       if (instr->as.convert.src_index < locs->cap) {
         ++locs->items[instr->as.convert.src_index].uses;
-        locs->items[instr->as.convert.src_index].end = i;
+        locs->items[instr->as.convert.src_index].end = i + offset;
       }
     } break;
 
     case InstrKindCopyToRefFixed: {
       if (instr->as.copy_to_ref_fixed.dest_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref_fixed.dest_index].uses;
-        locs->items[instr->as.copy_to_ref_fixed.dest_index].end = i;
+        locs->items[instr->as.copy_to_ref_fixed.dest_index].end = i + offset;
 
         i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[0].offset;
         for (u32 j = 1; j < instr->as.copy_to_ref_fixed.dest_segments.len; ++j)
@@ -198,18 +199,18 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
       }
       if (instr->as.copy_to_ref_fixed.src_index < locs->cap) {
         ++locs->items[instr->as.copy_to_ref_fixed.src_index].uses;
-        locs->items[instr->as.copy_to_ref_fixed.src_index].end = i;
+        locs->items[instr->as.copy_to_ref_fixed.src_index].end = i + offset;
       }
     } break;
 
     case InstrKindCopyFromRefFixed: {
       if (instr->as.copy_from_ref_fixed.dest_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref_fixed.dest_index].uses;
-        locs->items[instr->as.copy_from_ref_fixed.dest_index].end = i;
+        locs->items[instr->as.copy_from_ref_fixed.dest_index].end = i + offset;
       }
       if (instr->as.copy_from_ref_fixed.src_index < locs->cap) {
         ++locs->items[instr->as.copy_from_ref_fixed.src_index].uses;
-        locs->items[instr->as.copy_from_ref_fixed.src_index].end = i;
+        locs->items[instr->as.copy_from_ref_fixed.src_index].end = i + offset;
 
         i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[0].offset;
         for (u32 j = 1; j < instr->as.copy_from_ref_fixed.src_segments.len; ++j)
@@ -223,21 +224,21 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindRefProc: {
       if (instr->as.ref_proc.dest_index < locs->cap) {
         ++locs->items[instr->as.ref_proc.dest_index].uses;
-        locs->items[instr->as.ref_proc.dest_index].end = i;
+        locs->items[instr->as.ref_proc.dest_index].end = i + offset;
       }
     } break;
 
     case InstrKindCallRef: {
       if (instr->as.call_ref.index < locs->cap) {
         ++locs->items[instr->as.call_ref.index].uses;
-        locs->items[instr->as.call_ref.index].end = i;
+        locs->items[instr->as.call_ref.index].end = i + offset;
       }
 
       for (u32 j = 0; j < instr->as.call_ref.arg_indices.len; ++j) {
         u32 arg_index = instr->as.call_ref.arg_indices.items[j];
         if (arg_index < locs->cap) {
           ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i;
+          locs->items[arg_index].end = i + offset;
         }
       }
     } break;
@@ -245,27 +246,27 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
     case InstrKindCallRefAssign: {
       if (instr->as.call_ref_assign.dest_index < locs->cap) {
         ++locs->items[instr->as.call_ref_assign.dest_index].uses;
-        locs->items[instr->as.call_ref_assign.dest_index].end = i;
+        locs->items[instr->as.call_ref_assign.dest_index].end = i + offset;
       }
 
       if (instr->as.call_ref_assign.index < locs->cap) {
         ++locs->items[instr->as.call_ref_assign.index].uses;
-        locs->items[instr->as.call_ref_assign.index].end = i;
+        locs->items[instr->as.call_ref_assign.index].end = i + offset;
       }
 
       for (u32 j = 0; j < instr->as.call_ref_assign.arg_indices.len; ++j) {
         u32 arg_index = instr->as.call_ref_assign.arg_indices.items[j];
         if (arg_index < locs->cap) {
           ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i;
+          locs->items[arg_index].end = i + offset;
         }
       }
     } break;
     }
   }
 
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
-    Instr *instr = proc->instrs.items + i;
+  for (u32 i = 0; i < instrs->len; ++i) {
+    Instr *instr = instrs->items + i;
 
     if (instr->kind == InstrKindCopyToRef) {
       if (locs->items[instr->as.copy_to_ref.src_index].is_stack_only)
@@ -275,6 +276,11 @@ void add_var_locs(VarLocs *locs, Proc *proc) {
         locs->items[instr->as.copy_to_ref_fixed.dest_index].is_stack_only = true;
     }
   }
+}
+
+void add_var_locs(VarLocs *locs, Proc *proc) {
+  add_var_locs_instrs(locs, &proc->instrs, 0);
+  add_var_locs_instrs(locs, &proc->last_instrs, proc->instrs.len);
 }
 
 static bool var_loc_collides_at_reg_index(VarLocRefs *refs, VarLoc *loc, i32 reg_index, u32 max) {
@@ -346,10 +352,9 @@ SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len) {
   return allocator.space_used;
 }
 
-// Fixes a bug when a variable that is defined before loop and used in it is overwritten by an in-loop variable
-void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs) {
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
-    Instr *instr = proc->instrs.items + i;
+void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops_instrs(Instrs *instrs, u32 offset, VarLocs *locs) {
+  for (u32 i = 0; i < instrs->len; ++i) {
+    Instr *instr = instrs->items + i;
 
     if (instr->kind == InstrKindJump ||
         instr->kind == InstrKindJumpIfNot) {
@@ -364,12 +369,18 @@ void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *lo
         for (u32 j = 0; j < locs->cap; ++j) {
           if (locs->items[j].begin > target)
             break;
-          if (locs->items[j].end < i)
-            locs->items[j].end = i;
+          if (locs->items[j].end < i + offset)
+            locs->items[j].end = i + offset;
         }
       }
     }
   }
+}
+
+// Fixes a bug when a variable that is defined before loop and used in it is overwritten by an in-loop variable
+void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs) {
+  promote_lifetimes_of_pre_loop_vars_to_ends_of_loops_instrs(&proc->instrs, 0, locs);
+  promote_lifetimes_of_pre_loop_vars_to_ends_of_loops_instrs(&proc->last_instrs, proc->instrs.len, locs);
 }
 
 void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
