@@ -435,10 +435,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     }
 
     u8 *labels = get_labels(proc, NULL);
-    opt_derefs_to_copies(proc);
 
     align_fixed_offsets(proc, alignment_func_x86_64);
     add_var_locs(&locs, proc);
+
+    opt_derefs_to_copies(proc, &locs);
+
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8));
     u32 total_space_used = DEFAULT_STACK_SIZE + space_used.regs * 8 +

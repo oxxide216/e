@@ -1,7 +1,7 @@
 #include "opt.h"
 #include "codegen/utils.h"
 
-void opt_derefs_to_copies(Proc *proc) {
+void opt_derefs_to_copies(Proc *proc, VarLocs *locs) {
   for (u32 i = 0; i < proc->instrs.len; ++i) {
     Instr *instr = proc->instrs.items + i;
 
@@ -11,7 +11,10 @@ void opt_derefs_to_copies(Proc *proc) {
         for (u32 j = 1; j < instr->as.copy_to_ref_fixed.dest_segments.len; ++j)
           offset += instr->as.copy_to_ref_fixed.dest_segments.items[j].offset;
 
-        if (offset == 0) {
+        VarLoc *dest_loc = locs->items + instr->as.copy_to_ref_fixed.dest_index;
+        VarLoc *src_loc = locs->items + instr->as.copy_to_ref_fixed.src_index;
+
+        if (offset == 0 && dest_loc->size == src_loc->size) {
           Instr new_instr = {
             InstrKindCopy,
             {
@@ -30,7 +33,10 @@ void opt_derefs_to_copies(Proc *proc) {
         for (u32 j = 1; j < instr->as.copy_from_ref_fixed.src_segments.len; ++j)
           offset += instr->as.copy_from_ref_fixed.src_segments.items[j].offset;
 
-        if (offset == 0) {
+        VarLoc *dest_loc = locs->items + instr->as.copy_from_ref_fixed.dest_index;
+        VarLoc *src_loc = locs->items + instr->as.copy_from_ref_fixed.src_index;
+
+        if (offset == 0 && dest_loc->size == src_loc->size) {
           Instr new_instr = {
             InstrKindCopy,
             {
