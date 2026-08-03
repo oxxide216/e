@@ -587,23 +587,19 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         jump_opt->bin_op_kind = instr->as.bin_op.kind;
         jump_opt->value_kind = locs->items[instr->as.bin_op.dest_index].kind;
       } else {
-        ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 0, false);
-
-        write_cstr(stream, "  mov ");
-        write_loc(stream, locs->items + instr->as.bin_op.src0_index);
-        write_cstr(stream, ",");
-        write_loc_ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 0);
-        write_cstr(stream, "\n");
-
-        write_cstr(stream, "  mov ");
-        write_str(stream, temp_regs8[0]);
-        write_cstr(stream, ",1\n");
-
         u32 index = (instr->as.bin_op.kind - BinOpKindEqInt) *
                     ((locs->items[instr->as.bin_op.dest_index].kind == ValueKindUnsigned) + 1);
         u32 size = locs->items[instr->as.bin_op.dest_index].size;
         if (size == 1)
           size = 2;
+
+        write_cstr(stream, "  mov ");
+        write_loc_of_size(stream, locs->items + instr->as.bin_op.dest_index, size);
+        write_cstr(stream, ",0\n");
+
+        write_cstr(stream, "  mov ");
+        write_str(stream, temp_regs8[0]);
+        write_cstr(stream, ",1\n");
 
         write_cstr(stream, "  ");
         write_cstr(stream, cmp_mnemonics[index]);
@@ -1241,9 +1237,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       }
 
       bool is_arg = !has_nested_call || j >= ARRAY_LEN(arg_regs8);
+      bool is_stack_only = !is_arg && size > 8;
       VarLoc loc = {
         value, proc->args.items[j].kind, size,
-        0, 0, 0, false, is_arg, false, 0, false,
+        0, 0, 0, is_stack_only, is_arg, false, 0, false,
       };
       locs.items[j] = loc;
     }
@@ -1287,36 +1284,36 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     write_cstr(stream, ".begin:\n");
 
     if (has_nested_call) {
+      u32 arg_reg = 0;
       for (u32 j = 0; j < proc->args.len; ++j) {
         VarLoc *loc = locs.items + j;
 
         if (loc->is_arg)
           break;
 
-        if (loc->uses == 0)
+        if (loc->uses == 0) {
+          arg_reg++;
           continue;
+        }
 
         if (loc->size <= 8) {
           write_cstr(stream, "  mov ");
           write_loc_of_size(stream, loc, 8);
           write_cstr(stream, ",");
-          write_str(stream, arg_regs8[j]);
+          write_str(stream, arg_regs8[arg_reg++]);
           write_cstr(stream, "\n");
-        } else {
-          u32 arg_size = 0;
-          while (arg_size < loc->size) {
-            u32 part_size = 8;
-            if (part_size + arg_size > loc->size)
-              part_size = loc->size - arg_size;
+        } else if (loc->size == 16) {
+          write_cstr(stream, "  mov ");
+          write_loc_part_of_size(stream, loc, 0, 8);
+          write_cstr(stream, ",");
+          write_str(stream, get_arg_regs(8)[arg_reg++]);
+          write_cstr(stream, "\n");
 
-            write_cstr(stream, "  mov ");
-            write_loc_part_of_size(stream, loc, arg_size, part_size);
-            write_cstr(stream, ",");
-            write_str(stream, get_arg_regs(part_size)[j + arg_size / part_size]);
-            write_cstr(stream, "\n");
-
-            arg_size += part_size;
-          }
+          write_cstr(stream, "  mov ");
+          write_loc_part_of_size(stream, loc, 8, 8);
+          write_cstr(stream, ",");
+          write_str(stream, get_arg_regs(8)[arg_reg++]);
+          write_cstr(stream, "\n");
         }
       }
     }
