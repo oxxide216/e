@@ -604,10 +604,18 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         write_cstr(stream, "  ");
         write_cstr(stream, cmp_mnemonics[index]);
         write_cstr(stream, " ");
-        write_loc_of_size(stream, locs->items + instr->as.bin_op.dest_index, size);
+        write_loc_of_size_ensure_in_reg(stream, locs->items + instr->as.bin_op.dest_index, size, 0);
         write_cstr(stream, ",");
         write_str(stream, get_temp_regs(size)[0]);
         write_cstr(stream, "\n");
+
+        if (locs->items[instr->as.bin_op.dest_index].value < 0) {
+          write_cstr(stream, "  mov ");
+          write_loc_of_size(stream, locs->items + instr->as.bin_op.dest_index, size);
+          write_cstr(stream, ",");
+          write_str(stream, get_temp_regs(size)[0]);
+          write_cstr(stream, "\n");
+        }
       }
     } break;
     }
