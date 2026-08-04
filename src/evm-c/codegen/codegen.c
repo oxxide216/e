@@ -24,242 +24,32 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
 
       AlignedSegment *last_segment = instr->as.alloc.segments.items + instr->as.alloc.segments.len - 1;
       u32 size = last_segment->offset + last_segment->size;
-      u32 begin = i + offset;
       bool is_stack_only = size > 8 || (size != 1 && size != 2 && size != 4 && size != 8);
       VarLoc loc = {
         0, ValueKindSigned, size,
-        0, begin, begin, is_stack_only,
+        0, (u32) -1, (u32) -1, is_stack_only,
         false, false, 0, false,
       };
       locs->items[instr->as.alloc.index] = loc;
     } break;
 
-    case InstrKindStore: {
-      if (instr->as.store.index < locs->cap) {
-        ++locs->items[instr->as.store.index].uses;
-        locs->items[instr->as.store.index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindCopy: {
-      if (instr->as.copy.dest_index < locs->cap) {
-        ++locs->items[instr->as.copy.dest_index].uses;
-        locs->items[instr->as.copy.dest_index].end = i + offset;
-      }
-      if (instr->as.copy.src_index < locs->cap) {
-        ++locs->items[instr->as.copy.src_index].uses;
-        locs->items[instr->as.copy.src_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindBinOp: {
-      if (instr->as.bin_op.dest_index < locs->cap) {
-        ++locs->items[instr->as.bin_op.dest_index].uses;
-        locs->items[instr->as.bin_op.dest_index].end = i + offset;
-      }
-      if (instr->as.bin_op.src0_index < locs->cap) {
-        ++locs->items[instr->as.bin_op.src0_index].uses;
-        locs->items[instr->as.bin_op.src0_index].end = i + offset;
-      }
-      if (instr->as.bin_op.src1_index < locs->cap) {
-        ++locs->items[instr->as.bin_op.src1_index].uses;
-        locs->items[instr->as.bin_op.src1_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindCall: {
-      for (u32 j = 0; j < instr->as.call.arg_indices.len; ++j) {
-        u32 arg_index = instr->as.call.arg_indices.items[j];
-        if (arg_index < locs->cap) {
-          ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i + offset;
-        }
-      }
-    } break;
-
-    case InstrKindCallAssign: {
-      if (instr->as.call_assign.dest_index < locs->cap) {
-        ++locs->items[instr->as.call_assign.dest_index].uses;
-        locs->items[instr->as.call_assign.dest_index].end = i + offset;
+    default: {
+      u32 *dest = get_dest(instr);
+      if (dest && *dest < locs->cap) {
+        ++locs->items[*dest].uses;
+        locs->items[*dest].end = i + offset;
+        if (locs->items[*dest].begin == (u32) -1)
+          locs->items[*dest].begin = i + offset;
       }
 
-      for (u32 j = 0; j < instr->as.call_assign.arg_indices.len; ++j) {
-        u32 arg_index = instr->as.call_assign.arg_indices.items[j];
-        if (arg_index < locs->cap) {
-          ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i + offset;
-        }
-      }
-    } break;
-
-    case InstrKindRet: break;
-
-    case InstrKindRetVal: {
-      if (instr->as.ret_val.index < locs->cap) {
-        ++locs->items[instr->as.ret_val.index].uses;
-          locs->items[instr->as.ret_val.index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindJump: break;
-
-    case InstrKindJumpIfNot: {
-      if (instr->as.jump_if_not.cond_index < locs->cap) {
-        ++locs->items[instr->as.jump_if_not.cond_index].uses;
-          locs->items[instr->as.jump_if_not.cond_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindRef: {
-      if (instr->as.ref.dest_index < locs->cap) {
-        ++locs->items[instr->as.ref.dest_index].uses;
-        locs->items[instr->as.ref.dest_index].end = i + offset;
-      }
-      if (instr->as.ref.src_index < locs->cap) {
-        ++locs->items[instr->as.ref.src_index].uses;
-        locs->items[instr->as.ref.src_index].end = i + offset;
-        locs->items[instr->as.ref.src_index].is_stack_only = true;
-      }
-    } break;
-
-    case InstrKindCopyToRef: {
-      if (instr->as.copy_to_ref.dest_index < locs->cap) {
-        ++locs->items[instr->as.copy_to_ref.dest_index].uses;
-        locs->items[instr->as.copy_to_ref.dest_index].end = i + offset;
-        locs->items[instr->as.copy_to_ref.dest_index].is_stack_only = true;
-      }
-      if (instr->as.copy_to_ref.dest_offset_index < locs->cap) {
-        ++locs->items[instr->as.copy_to_ref.dest_offset_index].uses;
-        locs->items[instr->as.copy_to_ref.dest_offset_index].end = i + offset;
-      }
-      if (instr->as.copy_to_ref.src_index < locs->cap) {
-        ++locs->items[instr->as.copy_to_ref.src_index].uses;
-        locs->items[instr->as.copy_to_ref.src_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindCopyFromRef: {
-      if (instr->as.copy_from_ref.dest_index < locs->cap) {
-        ++locs->items[instr->as.copy_from_ref.dest_index].uses;
-        locs->items[instr->as.copy_from_ref.dest_index].end = i + offset;
-      }
-      if (instr->as.copy_from_ref.src_index < locs->cap) {
-        ++locs->items[instr->as.copy_from_ref.src_index].uses;
-        locs->items[instr->as.copy_from_ref.src_index].end = i + offset;
-        locs->items[instr->as.copy_from_ref.src_index].is_stack_only = true;
-      }
-      if (instr->as.copy_from_ref.src_offset_index < locs->cap) {
-        ++locs->items[instr->as.copy_from_ref.src_offset_index].uses;
-        locs->items[instr->as.copy_from_ref.src_offset_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindInlineAsm: {
-      for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
-        AsmSegment *segment = instr->as.inline_asm.segments.items + k;
-
-        if (segment->kind == AsmSegmentKindVar) {
-          if (segment->index < locs->cap) {
-            ++locs->items[segment->index].uses;
-            locs->items[segment->index].end = i + offset;
-          }
-        }
-      }
-    } break;
-
-    case InstrKindStoreData: {
-      if (instr->as.store_data.index < locs->cap) {
-        ++locs->items[instr->as.store_data.index].uses;
-        locs->items[instr->as.store_data.index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindConvert: {
-      if (instr->as.convert.dest_index < locs->cap) {
-        ++locs->items[instr->as.convert.dest_index].uses;
-        locs->items[instr->as.convert.dest_index].end = i + offset;
-      }
-      if (instr->as.convert.src_index < locs->cap) {
-        ++locs->items[instr->as.convert.src_index].uses;
-        locs->items[instr->as.convert.src_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindCopyToRefFixed: {
-      if (instr->as.copy_to_ref_fixed.dest_index < locs->cap) {
-        ++locs->items[instr->as.copy_to_ref_fixed.dest_index].uses;
-        locs->items[instr->as.copy_to_ref_fixed.dest_index].end = i + offset;
-
-        i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[0].offset;
-        for (u32 j = 1; j < instr->as.copy_to_ref_fixed.dest_segments.len; ++j)
-          offset += instr->as.copy_to_ref_fixed.dest_segments.items[j].offset;
-
-        if (!instr->as.copy_to_ref_fixed.deref && offset != 0)
-          locs->items[instr->as.copy_to_ref_fixed.dest_index].is_stack_only = true;
-      }
-      if (instr->as.copy_to_ref_fixed.src_index < locs->cap) {
-        ++locs->items[instr->as.copy_to_ref_fixed.src_index].uses;
-        locs->items[instr->as.copy_to_ref_fixed.src_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindCopyFromRefFixed: {
-      if (instr->as.copy_from_ref_fixed.dest_index < locs->cap) {
-        ++locs->items[instr->as.copy_from_ref_fixed.dest_index].uses;
-        locs->items[instr->as.copy_from_ref_fixed.dest_index].end = i + offset;
-      }
-      if (instr->as.copy_from_ref_fixed.src_index < locs->cap) {
-        ++locs->items[instr->as.copy_from_ref_fixed.src_index].uses;
-        locs->items[instr->as.copy_from_ref_fixed.src_index].end = i + offset;
-
-        i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[0].offset;
-        for (u32 j = 1; j < instr->as.copy_from_ref_fixed.src_segments.len; ++j)
-          offset += instr->as.copy_from_ref_fixed.src_segments.items[j].offset;
-
-        if (!instr->as.copy_from_ref_fixed.deref &&
-            (instr->as.copy_from_ref_fixed.take_ref || offset != 0))
-          locs->items[instr->as.copy_from_ref_fixed.src_index].is_stack_only = true;
-      }
-    } break;
-
-    case InstrKindRefProc: {
-      if (instr->as.ref_proc.dest_index < locs->cap) {
-        ++locs->items[instr->as.ref_proc.dest_index].uses;
-        locs->items[instr->as.ref_proc.dest_index].end = i + offset;
-      }
-    } break;
-
-    case InstrKindCallRef: {
-      if (instr->as.call_ref.index < locs->cap) {
-        ++locs->items[instr->as.call_ref.index].uses;
-        locs->items[instr->as.call_ref.index].end = i + offset;
-      }
-
-      for (u32 j = 0; j < instr->as.call_ref.arg_indices.len; ++j) {
-        u32 arg_index = instr->as.call_ref.arg_indices.items[j];
-        if (arg_index < locs->cap) {
-          ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i + offset;
-        }
-      }
-    } break;
-
-    case InstrKindCallRefAssign: {
-      if (instr->as.call_ref_assign.dest_index < locs->cap) {
-        ++locs->items[instr->as.call_ref_assign.dest_index].uses;
-        locs->items[instr->as.call_ref_assign.dest_index].end = i + offset;
-      }
-
-      if (instr->as.call_ref_assign.index < locs->cap) {
-        ++locs->items[instr->as.call_ref_assign.index].uses;
-        locs->items[instr->as.call_ref_assign.index].end = i + offset;
-      }
-
-      for (u32 j = 0; j < instr->as.call_ref_assign.arg_indices.len; ++j) {
-        u32 arg_index = instr->as.call_ref_assign.arg_indices.items[j];
-        if (arg_index < locs->cap) {
-          ++locs->items[arg_index].uses;
-          locs->items[arg_index].end = i + offset;
+      u32 *arg;
+      u32 j = 0;
+      while ((arg = get_nth_arg(instr, j++))) {
+        if (*arg < locs->cap) {
+          ++locs->items[*arg].uses;
+          locs->items[*arg].end = i + offset;
+          if (locs->items[*arg].begin == (u32) -1)
+            locs->items[*arg].begin = i + offset;
         }
       }
     } break;
@@ -313,7 +103,8 @@ static i32 get_var_loc_reg_index(Allocator *allocator, VarLoc *loc,
 SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len) {
   Allocator allocator = {0};
   for (u32 i = 0; i < locs->cap; ++i)
-    if (locs->items[i].uses > 0 && !locs->items[i].is_arg)
+    if (locs->items[i].uses > 0 && !locs->items[i].is_arg &&
+        locs->items[i].begin != (u32) -1 && locs->items[i].end != (u32) -1)
       DA_APPEND(allocator.refs, locs->items + i);
 
   for (u32 i = 0; i + 1 < allocator.refs.len; ++i) {
