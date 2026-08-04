@@ -318,6 +318,8 @@ static void ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_index, bool re
 
 static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
                            u32 src0_index, u32 src1_index, char *op) {
+  locs->items[dest_index].kind = locs->items[src0_index].kind;
+
   if (locs->items[dest_index].value !=
       locs->items[src0_index].value) {
     if (locs->items[dest_index].value < 0)
@@ -378,8 +380,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   case InstrKindAlloc: break;
 
   case InstrKindStore: {
+    locs->items[instr->as.store.index].kind = instr->as.store.value.kind;
+
     write_cstr(stream, "  mov ");
-    write_loc(stream, locs->items + instr->as.copy.dest_index);
+    write_loc(stream, locs->items + instr->as.store.index);
     write_cstr(stream, ",");
     switch (instr->as.store.value.kind) {
     case ValueKindSigned: {
@@ -396,6 +400,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *dest_loc = locs->items + instr->as.copy.dest_index;
     VarLoc *src_loc = locs->items + instr->as.copy.src_index;
 
+    dest_loc->kind = src_loc->kind;
     dest_loc->has_imm_value = src_loc->has_imm_value;
     if (dest_loc->has_imm_value) {
       dest_loc->imm_value = src_loc->imm_value;
@@ -453,6 +458,9 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     } break;
 
     case BinOpKindMulInt: {
+      locs->items[instr->as.bin_op.dest_index].kind =
+        locs->items[instr->as.bin_op.src0_index].kind;
+
       write_cstr(stream, "  mov ");
       write_str(stream, get_return_reg(locs->items[instr->as.bin_op.dest_index].size));
       write_cstr(stream, ",");
@@ -475,6 +483,9 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
     case BinOpKindDivInt:
     case BinOpKindRem: {
+      locs->items[instr->as.bin_op.dest_index].kind =
+        locs->items[instr->as.bin_op.src0_index].kind;
+
       write_cstr(stream, "  mov ");
       write_str(stream, get_return_reg(locs->items[instr->as.bin_op.dest_index].size));
       write_cstr(stream, ",");
@@ -518,6 +529,9 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
     case BinOpKindLShift:
     case BinOpKindRShift: {
+      locs->items[instr->as.bin_op.dest_index].kind =
+        locs->items[instr->as.bin_op.src0_index].kind;
+
       if (locs->items[instr->as.bin_op.dest_index].value !=
           locs->items[instr->as.bin_op.src0_index].value ||
           locs->items[instr->as.bin_op.dest_index].is_arg !=
@@ -559,6 +573,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     case BinOpKindLeInt:
     case BinOpKindGtInt:
     case BinOpKindGeInt: {
+      locs->items[instr->as.bin_op.dest_index].kind = ValueKindUnsigned;
+
       static char *cmp_mnemonics[] = {
         "cmove",
         "cmovne",
@@ -634,12 +650,16 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     } else if (instr->kind == InstrKindCallAssign) {
       name = instr->as.call_assign.name;
       arg_indices = &instr->as.call_assign.arg_indices;
+      locs->items[instr->as.call_assign.dest_index].kind =
+        instr->as.call_assign.return_kind;
     } else if (instr->kind == InstrKindCallRef) {
       index = instr->as.call_ref.index;
       arg_indices = &instr->as.call_ref.arg_indices;
     } else if (instr->kind == InstrKindCallRefAssign) {
       index = instr->as.call_ref_assign.index;
       arg_indices = &instr->as.call_ref_assign.arg_indices;
+      locs->items[instr->as.call_ref_assign.dest_index].kind =
+        instr->as.call_ref_assign.return_kind;
     }
 
     bool is_tail = str_eq(name, proc_name) &&
@@ -920,6 +940,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   } break;
 
   case InstrKindRef: {
+    locs->items[instr->as.ref.dest_index].kind = ValueKindUnsigned;
     locs->items[instr->as.ref.dest_index].has_imm_value = false;
 
     write_cstr(stream, "  lea ");
@@ -958,6 +979,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   } break;
 
   case InstrKindCopyFromRef: {
+    locs->items[instr->as.copy_from_ref.dest_index].kind =
+      instr->as.copy_from_ref.src_target_kind;
     locs->items[instr->as.copy_from_ref.dest_index].has_imm_value = false;
 
     ensure_in_reg(stream, locs->items + instr->as.copy_from_ref.src_index, 0, false);
@@ -1003,6 +1026,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   } break;
 
   case InstrKindStoreData: {
+    locs->items[instr->as.store_data.index].kind = ValueKindUnsigned;
     locs->items[instr->as.store_data.index].has_imm_value = false;
 
     write_cstr(stream, "  lea ");
@@ -1021,6 +1045,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   } break;
 
   case InstrKindConvert: {
+    locs->items[instr->as.convert.dest_index].kind = instr->as.convert.dest_kind;
     locs->items[instr->as.convert.dest_index].has_imm_value = false;
 
     u32 dest_size = instr->as.convert.dest_size;
@@ -1118,6 +1143,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   } break;
 
   case InstrKindCopyFromRefFixed: {
+    locs->items[instr->as.copy_from_ref.dest_index].kind =
+      instr->as.copy_from_ref.src_target_kind;
     locs->items[instr->as.copy_from_ref_fixed.dest_index].has_imm_value = false;
 
     i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[0].offset;
@@ -1164,6 +1191,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   } break;
 
   case InstrKindRefProc: {
+    locs->items[instr->as.ref_proc.dest_index].kind = ValueKindUnsigned;
     locs->items[instr->as.ref_proc.dest_index].has_imm_value = false;
 
     write_cstr(stream, "  lea ");
