@@ -375,7 +375,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
                         VarLocs *locs, JumpOpt *jump_opt,
                         Str proc_name, u32 total_space_used) {
   Instr *instr = instrs->items + index;
-
   switch (instr->kind) {
   case InstrKindAlloc: break;
 
@@ -401,11 +400,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *src_loc = locs->items + instr->as.copy.src_index;
 
     dest_loc->kind = src_loc->kind;
-    dest_loc->has_imm_value = src_loc->has_imm_value;
-    if (dest_loc->has_imm_value) {
-      dest_loc->imm_value = src_loc->imm_value;
-      break;
-    }
 
     if (dest_loc->value != src_loc->value || dest_loc->is_arg != src_loc->is_arg) {
       if (dest_loc->size <= 8) {
@@ -491,6 +485,20 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, ",");
       write_loc(stream, locs->items + instr->as.bin_op.src0_index);
       write_cstr(stream, "\n");
+
+      switch (locs->items[instr->as.bin_op.dest_index].size) {
+      case 2: {
+        write_cstr(stream, "  cwd\n");
+      } break;
+
+      case 4: {
+        write_cstr(stream, "  cdq\n");
+      } break;
+
+      case 8: {
+        write_cstr(stream, "  cqo\n");
+      } break;
+      }
 
       if (locs->items[instr->as.bin_op.dest_index].kind == ValueKindSigned)
         write_cstr(stream, "  idiv ");
@@ -693,8 +701,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     }
 
     SpaceUsed args_space = {0};
-    for (u32 k = 0; k < arg_indices->len; ++k) {
-      VarLoc *loc = locs->items + arg_indices->items[k];
+    for (u32 i = 0; i < arg_indices->len; ++i) {
+      VarLoc *loc = locs->items + arg_indices->items[i];
 
       if (loc->size <= 8) {
         if (args_space.regs < ARRAY_LEN(arg_regs8))
@@ -719,8 +727,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       fprintf(stream, "  sub rsp,%u\n", aligned);
 
     args_space.regs = 0;
-    for (u32 k = 0; k < arg_indices->len; ++k) {
-      VarLoc *loc = locs->items + arg_indices->items[k];
+    for (u32 i = 0; i < arg_indices->len; ++i) {
+      VarLoc *loc = locs->items + arg_indices->items[i];
 
       if (loc->size <= 8) {
         if (args_space.regs < ARRAY_LEN(arg_regs8)) {
@@ -734,7 +742,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
           write_cstr(stream, "  mov ");
           if (is_tail) {
-            write_loc(stream, locs->items + k);
+            write_loc(stream, locs->items + i);
           } else {
             write_str(stream, get_mem_prefix(loc->size));
             fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
@@ -763,7 +771,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           write_cstr(stream, "\n");
           write_cstr(stream, "  mov ");
           if (is_tail) {
-            write_loc(stream, locs->items + k);
+            write_loc(stream, locs->items + i);
           } else {
             write_str(stream, get_mem_prefix(8));
             fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
@@ -778,7 +786,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           write_cstr(stream, "\n");
           write_cstr(stream, "  mov ");
           if (is_tail)
-            write_loc(stream, locs->items + k);
+            write_loc(stream, locs->items + i);
           else
             fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
           write_cstr(stream, ",");
@@ -798,7 +806,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           write_cstr(stream, "\n");
           write_cstr(stream, "  mov ");
           if (is_tail) {
-            write_loc(stream, locs->items + k);
+            write_loc(stream, locs->items + i);
           } else {
             write_str(stream, get_mem_prefix(part_size));
             fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
@@ -1014,8 +1022,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindInlineAsm: {
     write_cstr(stream, "  ");
-    for (u32 k = 0; k < instr->as.inline_asm.segments.len; ++k) {
-      AsmSegment *segment = instr->as.inline_asm.segments.items + k;
+    for (u32 i = 0; i < instr->as.inline_asm.segments.len; ++i) {
+      AsmSegment *segment = instr->as.inline_asm.segments.items + i;
 
       if (segment->kind == AsmSegmentKindStr)
         write_str(stream, segment->value);
@@ -1111,8 +1119,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindCopyToRefFixed: {
     i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[0].offset;
-    for (u32 k = 1; k < instr->as.copy_to_ref_fixed.dest_segments.len; ++k)
-      offset += instr->as.copy_to_ref_fixed.dest_segments.items[k].offset;
+    for (u32 i = 1; i < instr->as.copy_to_ref_fixed.dest_segments.len; ++i)
+      offset += instr->as.copy_to_ref_fixed.dest_segments.items[i].offset;
 
     bool deref = instr->as.copy_to_ref_fixed.deref || offset != 0;
 
@@ -1148,8 +1156,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     locs->items[instr->as.copy_from_ref_fixed.dest_index].has_imm_value = false;
 
     i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[0].offset;
-    for (u32 k = 1; k < instr->as.copy_from_ref_fixed.src_segments.len; ++k)
-      offset += instr->as.copy_from_ref_fixed.src_segments.items[k].offset;
+    for (u32 i = 1; i < instr->as.copy_from_ref_fixed.src_segments.len; ++i)
+      offset += instr->as.copy_from_ref_fixed.src_segments.items[i].offset;
 
     bool deref = instr->as.copy_from_ref_fixed.deref || offset != 0;
 
@@ -1359,8 +1367,11 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       if (labels[j])
         fprintf(stream, ".l%u:\n", j);
+      if (labels[j] || is_jump(proc->instrs.items + j))
+        for (u32 k = 0; k < locs.cap; ++k)
+          locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->instrs, j, &locs, &jump_opt,
-                    proc->name, total_space_used);
+                  proc->name, total_space_used);
     }
 
     write_cstr(stream, ".end:\n");
@@ -1375,8 +1386,11 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     for (u32 j = 0; j < proc->last_instrs.len; ++j) {
       if (last_labels[j])
         fprintf(stream, ".l%u:\n", j + proc->instrs.len);
+      if (labels[j] || is_jump(proc->last_instrs.items + j))
+        for (u32 k = 0; k < locs.cap; ++k)
+          locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->last_instrs, j, &locs, &jump_opt,
-                    proc->name, total_space_used);
+                  proc->name, total_space_used);
     }
 
     if (last_instrs_clutter_return_reg)
