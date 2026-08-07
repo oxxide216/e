@@ -1322,8 +1322,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     for (u32 j = 0; j < space_used.regs; ++j)
       fprintf(stream, "  push "STR_FMT"\n", STR_ARG(scratch_regs8[j]));
 
-    write_cstr(stream, ".begin:\n");
-
     if (has_nested_call) {
       u32 arg_reg = 0;
       for (u32 j = 0; j < proc->args.len; ++j) {
@@ -1358,6 +1356,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         }
       }
     }
+
+    write_cstr(stream, ".begin:\n");
 
     JumpOpt jump_opt = {0};
 
