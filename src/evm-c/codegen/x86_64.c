@@ -609,7 +609,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       jump_opt->applied = index + 1 < instrs->len && instr[1].kind == InstrKindJumpIfNot;
       if (jump_opt->applied) {
         jump_opt->bin_op_kind = instr->as.bin_op.kind;
-        jump_opt->value_kind = locs->items[instr->as.bin_op.dest_index].kind;
+        jump_opt->value_kind = locs->items[instr->as.bin_op.src0_index].kind;
       } else {
         u32 index = (instr->as.bin_op.kind - BinOpKindEqInt) *
                     ((locs->items[instr->as.bin_op.dest_index].kind == ValueKindUnsigned) + 1);
