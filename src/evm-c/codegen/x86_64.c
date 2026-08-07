@@ -358,8 +358,8 @@ static bool uses_return_reg_x86_64(Instr *instr) {
 }
 
 u8 *get_labels(Instrs *instrs, u8 *prev) {
-  u8 *labels = realloc(prev, instrs->len);
-  memset(labels, 0, instrs->len);
+  u8 *labels = realloc(prev, instrs->len + 1);
+  memset(labels, 0, instrs->len + 1);
   for (u32 j = 0; j < instrs->len; ++j) {
     Instr *instr = instrs->items + j;
 
@@ -675,10 +675,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
                     instr[1].kind == InstrKindRet ||
                     instr[1].kind == InstrKindRetVal);
 
-    if (is_tail) {
-      if (index + 1 < instrs->len)
-        DA_REMOVE_AT(*instrs, index + 1);
-    } else {
+    if (!is_tail) {
       if (instr->kind == InstrKindCallAssign) {
         VarLoc *loc = locs->items + instr->as.call_assign.dest_index;
         loc->has_imm_value = false;
@@ -806,7 +803,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           write_cstr(stream, "\n");
           write_cstr(stream, "  mov ");
           if (is_tail) {
-            write_loc(stream, locs->items + i);
+            write_loc_part_of_size(stream, locs->items + i, arg_size, part_size);
           } else {
             write_str(stream, get_mem_prefix(part_size));
             fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
@@ -1374,6 +1371,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
                   proc->name, total_space_used);
     }
 
+    if (labels[proc->instrs.len])
+      fprintf(stream, ".l%u:\n", proc->instrs.len);
+
     write_cstr(stream, ".end:\n");
 
     bool last_instrs_clutter_return_reg =
@@ -1392,6 +1392,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       write_instr(stream, &proc->last_instrs, j, &locs, &jump_opt,
                   proc->name, total_space_used);
     }
+
+    if (labels[proc->last_instrs.len])
+      fprintf(stream, ".l%u:\n", proc->last_instrs.len);
 
     if (last_instrs_clutter_return_reg)
       write_cstr(stream, "  pop rax\n");
