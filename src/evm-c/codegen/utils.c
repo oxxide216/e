@@ -245,9 +245,9 @@ bool get_have_function_call(Instrs *instrs) {
   return false;
 }
 
-bool clutter_return_reg(Instrs *instrs, UsesReturnRegFunc uses_return_reg) {
+bool clutter_reg(Instrs *instrs, CluttersRegFunc clutters_reg) {
   for (u32 i = 0; i < instrs->len; ++i)
-    if (uses_return_reg(instrs->items + i))
+    if (clutters_reg(instrs->items + i))
       return true;
 
   return false;

@@ -78,8 +78,8 @@ static bool var_loc_collides_at_reg_index(VarLocRefs *refs, VarLoc *loc, i32 reg
   for (u32 i = 0; i < max; ++i) {
     VarLoc *temp_loc = refs->items[i];
     if (temp_loc->value == reg_index &&
-        temp_loc->end > loc->begin &&
-        temp_loc->begin < loc->end)
+        temp_loc->end >= loc->begin &&
+        temp_loc->begin <= loc->end)
       return true;
   }
 

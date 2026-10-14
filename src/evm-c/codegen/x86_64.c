@@ -351,10 +351,17 @@ static u32 alignment_func_x86_64(u32 size) {
   return 8;
 }
 
-static bool uses_return_reg_x86_64(Instr *instr) {
+static bool clutters_first_return_reg_x86_64(Instr *instr) {
   return instr->kind == InstrKindCall || instr->kind == InstrKindCallAssign ||
          instr->kind == InstrKindCallRef || instr->kind == InstrKindCallRefAssign ||
          (instr->kind == InstrKindCopyToRef && instr->as.copy_to_ref.dest_offset_index != (u32) -1);
+}
+
+static bool clutters_second_return_reg_x86_64(Instr *instr) {
+  return instr->kind == InstrKindBinOp &&
+    (instr->as.bin_op.kind == BinOpKindMulInt ||
+     instr->as.bin_op.kind == BinOpKindDivInt ||
+     instr->as.bin_op.kind == BinOpKindRem);
 }
 
 u8 *get_labels(Instrs *instrs, u8 *prev) {
@@ -1286,6 +1293,14 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       locs.items[j] = loc;
     }
 
+    bool instrs_clutter_second_return_reg = false;
+    if (proc->args.len >= 3) {
+      instrs_clutter_second_return_reg =
+        clutter_reg(&proc->instrs, clutters_second_return_reg_x86_64);
+      if (instrs_clutter_second_return_reg)
+        locs.items[2].is_arg = false;
+    }
+
     u8 *labels = get_labels(&proc->instrs, NULL);
     u8 *last_labels = get_labels(&proc->last_instrs, NULL);
 
@@ -1324,15 +1339,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     write_cstr(stream, ".begin:\n");
 
-    if (has_nested_call) {
+    if (has_nested_call || instrs_clutter_second_return_reg) {
       u32 arg_reg = 0;
       for (u32 j = 0; j < proc->args.len; ++j) {
         VarLoc *loc = locs.items + j;
 
-        if (loc->is_arg)
-          break;
-
-        if (loc->uses == 0) {
+        if (loc->is_arg || loc->uses == 0) {
           arg_reg++;
           continue;
         }
@@ -1376,9 +1388,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     write_cstr(stream, ".end:\n");
 
-    bool last_instrs_clutter_return_reg =
-      clutter_return_reg(&proc->last_instrs, uses_return_reg_x86_64);
-    if (last_instrs_clutter_return_reg)
+    bool last_instrs_clutter_first_return_reg =
+      clutter_reg(&proc->last_instrs, clutters_first_return_reg_x86_64);
+    if (last_instrs_clutter_first_return_reg)
       write_cstr(stream, "  push rax\n");
 
     jump_opt = (JumpOpt) {0};
@@ -1396,7 +1408,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     if (labels[proc->last_instrs.len])
       fprintf(stream, ".l%u:\n", proc->last_instrs.len);
 
-    if (last_instrs_clutter_return_reg)
+    if (last_instrs_clutter_first_return_reg)
       write_cstr(stream, "  pop rax\n");
 
     for (u32 i = space_used.regs; i > 0; --i)
