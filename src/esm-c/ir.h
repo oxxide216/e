@@ -1058,10 +1058,10 @@ typedef enum {
   EsmRegKindRCX,
   EsmRegKindRDX,
   EsmRegKindRBX,
-  EsmRegKindRSI,
-  EsmRegKindRDI,
   EsmRegKindRSP,
   EsmRegKindRBP,
+  EsmRegKindRSI,
+  EsmRegKindRDI,
   EsmRegKindR8,
   EsmRegKindR9,
   EsmRegKindR10,
@@ -1080,12 +1080,16 @@ typedef struct {
       EsmRegKind kind;
       u8         size;
     } reg;
+    struct {
+      u8 size;
+    } mem;
   } as;
 } EsmInstrArg;
 
 typedef struct {
   EsmInstrKind kind;
   EsmInstrArg  args[3];
+  u8           args_len;
 } EsmInstr;
 
 typedef struct {
@@ -1104,6 +1108,7 @@ typedef struct {
     EsmInstr     instr;
     EsmDataEntry data;
   } as;
+  u32 row;
 } EsmEntry;
 
 typedef Da(EsmEntry) EsmEntries;

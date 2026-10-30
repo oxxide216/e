@@ -9,6 +9,7 @@
 #include <stddef.h>
 
 #include "assembler.h"
+#include "shl/shl-log.h"
 
 typedef struct {
   u8  e_ident[EI_NIDENT];
@@ -49,6 +50,9 @@ typedef struct {
   u64 st_size;
 } __attribute__((packed)) Symbol;
 
+extern InstrMapping mappings_x86_64[];
+extern u32 mappings_len_x86_64;
+
 static u32 section_kind_to_sh_type(EsmSectionKind kind) {
   switch (kind) {
   case EsmSectionKindText:   return SHT_PROGBITS;
@@ -79,7 +83,7 @@ static char *section_kind_to_name(EsmSectionKind kind) {
   return NULL;
 }
 
-bool esm_assemble_elf_x86_64(FILE *stream, EsmIr *ir) {
+bool esm_assemble_elf_x86_64(FILE *stream, char *file_path, EsmIr *ir) {
   ExecutableHeader eh = {
     .e_ident = {
       [EI_MAG0] = 0x7F,
@@ -166,10 +170,59 @@ bool esm_assemble_elf_x86_64(FILE *stream, EsmIr *ir) {
   for (u32 i = 0; i < EsmSectionKindsCount; ++i) {
     section_offsets[i + 2] = ftell(stream);
 
-    if (ir->sections[i].entries.len > 0) {
-      // TODO: generate actual x86_64 machine code here
-      u8 ret = 0xC3;
-      fwrite(&ret, 1, 1, stream);
+    for (u32 j = 0; j < ir->sections[i].entries.len; ++j) {
+      EsmEntry *entry = ir->sections[i].entries.items + j;
+
+      switch (entry->kind) {
+      case EsmEntryKindInstr: {
+        InstrMapping *mapping = NULL;
+
+        for (u32 k = 0; k < mappings_len_x86_64; ++k) {
+          InstrMapping *_mapping = mappings_x86_64 + k;
+
+          if (_mapping->instr_kind == entry->as.instr.kind &&
+              _mapping->args_len == entry->as.instr.args_len) {
+            bool all = true;
+
+            for (u32 l = 0; l < entry->as.instr.args_len; ++l) {
+              if (_mapping->arg_kinds[l] != entry->as.instr.args[l].kind) {
+                all = false;
+                break;
+              }
+
+              if (entry->as.instr.args[l].kind == EsmInstrArgKindReg) {
+                if (_mapping->arg_sizes[l] != entry->as.instr.args[l].as.reg.size) {
+                  all = false;
+                  break;
+                }
+              } else if (entry->as.instr.args[l].kind == EsmInstrArgKindMem) {
+                if (entry->as.instr.args[l].as.mem.size != 0 &&
+                    _mapping->arg_sizes[l] != entry->as.instr.args[l].as.mem.size) {
+                  all = false;
+                  break;
+                }
+              }
+            }
+
+            if (all) {
+              mapping = _mapping;
+              break;
+            }
+          }
+        }
+
+        if (!mapping ||
+            !mapping->gen(stream, entry->as.instr.args)) {
+          ERROR("%s:%u: invalid combination of mnemonic and operands\n", file_path, entry->row);
+          return false;
+        }
+      } break;
+
+      case EsmEntryKindData: {
+        ERROR("TODO: codegen for EsmEntryKindData\n");
+        exit(1);
+      } break;
+      }
     }
 
     section_sizes[i + 2] = ftell(stream) - section_offsets[i + 2];

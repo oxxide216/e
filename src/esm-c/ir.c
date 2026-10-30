@@ -1045,10 +1045,10 @@ static Str regs[] = {
   STR_LIT("rcx"), STR_LIT("ecx"),  STR_LIT("cx"),   STR_LIT("cl"),
   STR_LIT("rdx"), STR_LIT("edx"),  STR_LIT("dx"),   STR_LIT("dl"),
   STR_LIT("rbx"), STR_LIT("ebx"),  STR_LIT("bx"),   STR_LIT("bl"),
-  STR_LIT("rsi"), STR_LIT("esi"),  STR_LIT("si"),   STR_LIT("sil"),
-  STR_LIT("rdi"), STR_LIT("edi"),  STR_LIT("di"),   STR_LIT("dil"),
   STR_LIT("rsp"), STR_LIT("esp"),  STR_LIT("sp"),   STR_LIT("spl"),
   STR_LIT("rbp"), STR_LIT("ebp"),  STR_LIT("bp"),   STR_LIT("bpl"),
+  STR_LIT("rsi"), STR_LIT("esi"),  STR_LIT("si"),   STR_LIT("sil"),
+  STR_LIT("rdi"), STR_LIT("edi"),  STR_LIT("di"),   STR_LIT("dil"),
   STR_LIT("r8"),  STR_LIT("r8d"),  STR_LIT("r8w"),  STR_LIT("r8b"),
   STR_LIT("r9"),  STR_LIT("r9d"),  STR_LIT("r9w"),  STR_LIT("r9b"),
   STR_LIT("r10"), STR_LIT("r10d"), STR_LIT("r10w"), STR_LIT("r10b"),
@@ -1136,7 +1136,7 @@ static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
       arg->kind = EsmInstrArgKindReg;
       arg->as.reg.kind = i / 4;
       arg->as.reg.size = 1;
-      for (u32 j = 0; j < i % 4; ++j)
+      for (u32 j = 0; j < 3 - i % 4; ++j)
         arg->as.reg.size *= 2;
       return true;
     }
@@ -1180,6 +1180,8 @@ bool str_to_esm_ir(Str str, char *file_path, EsmIr *ir) {
 
       EsmExport export = { directive, section_kind, 0 };
       DA_APPEND(ir->exports, export);
+
+      ++row;
     } else {
       Str instruction_str = str_chop_until(&str, '\n');
       if (instruction_str.len == (u32) -1) {
@@ -1232,9 +1234,14 @@ bool str_to_esm_ir(Str str, char *file_path, EsmIr *ir) {
                 file_path, row, STR_ARG(arg_str));
           return false;
         }
+        ++instr.args_len;
       }
 
-      EsmEntry entry = { EsmEntryKindInstr, { .instr = instr } };
+      EsmEntry entry = {
+        EsmEntryKindInstr,
+        { .instr = instr },
+        row,
+      };
       DA_APPEND(section->entries, entry);
 
       ++row;

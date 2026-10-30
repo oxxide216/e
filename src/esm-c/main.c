@@ -139,7 +139,7 @@ i32 main(i32 argc, char **argv) {
 
   switch (config.format) {
   case FormatELF64: {
-    if (!esm_assemble_elf_x86_64(output_file, &ir)) {
+    if (!esm_assemble_elf_x86_64(output_file, config.input_path, &ir)) {
       fclose(output_file);
       esm_ir_free(&ir);
       config_destroy(&config);
