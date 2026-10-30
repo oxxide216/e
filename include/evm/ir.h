@@ -1,5 +1,5 @@
-#ifndef IR_H
-#define IR_H
+#ifndef EVM_IR_H
+#define EVM_IR_H
 
 #include "shl/shl-defs.h"
 #include "shl/shl-str.h"
@@ -266,4 +266,4 @@ typedef struct {
   Imports imports;
 } Ir;
 
-#endif // IR_H
+#endif // EVM_IR_H

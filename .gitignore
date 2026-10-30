@@ -4,6 +4,7 @@
 /liblexgen.a
 /ec
 /evm
+/esm
 /hello
 /pointers
 /asm
@@ -14,3 +15,4 @@
 /tail-call
 /nested-structs
 /temp-ref
+/test*

@@ -13,6 +13,11 @@ src = src/evm-c/**.c src/common-c/**.c
 cflags = $cflags
 incpath = $build_dir
 
+[esm]
+src = src/esm-c/**.c src/common-c/**.c
+cflags = $cflags
+incpath = $build_dir
+
 [lexgen]
 type = static_lib
 src = libs/lexgen/src/common/wstr.c libs/lexgen/src/runtime/runtime.c
