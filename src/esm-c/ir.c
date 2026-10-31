@@ -1151,18 +1151,18 @@ bool str_to_esm_ir(Str str, char *file_path, EsmIr *ir) {
 
   while (str.len > 0) {
     if (str_begins_with(str, STR_LIT("section "))) {
-      if (str_begins_with(str, STR_LIT("section .text\n"))) {
+      if (str_begins_with(str, STR_LIT("section '.text'\n"))) {
         section_kind = EsmSectionKindText;
-        str_chop(&str, STR_LIT("section .text\n").len);
-      } else if (str_eq(str, STR_LIT("section .text"))) {
+        str_chop(&str, STR_LIT("section '.text'\n").len);
+      } else if (str_eq(str, STR_LIT("section '.text'"))) {
         section_kind = EsmSectionKindText;
-        str_chop(&str, STR_LIT("section .text").len);
-      } else if (str_begins_with(str, STR_LIT("section .data\n"))) {
+        str_chop(&str, STR_LIT("section '.text'").len);
+      } else if (str_begins_with(str, STR_LIT("section '.data'\n"))) {
         section_kind = EsmSectionKindData;
-        str_chop(&str, STR_LIT("section .data\n").len);
-      } else if (str_eq(str, STR_LIT("section .data"))) {
+        str_chop(&str, STR_LIT("section '.data'\n").len);
+      } else if (str_eq(str, STR_LIT("section '.data'"))) {
         section_kind = EsmSectionKindData;
-        str_chop(&str, STR_LIT("section .data").len);
+        str_chop(&str, STR_LIT("section '.data'").len);
       } else {
         ERROR("%s:%u: invalid `section` directive\n", file_path, row);
         return false;
