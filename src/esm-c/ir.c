@@ -1119,12 +1119,30 @@ static bool mnemonic_to_instr_kind(Str mnemonic, EsmInstrKind *kind) {
   return false;
 }
 
-static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
-  if (str.ptr[0] == '[') {
-    INFO("TODO: parse EsmInstrArgKindMem\n");
+static bool str_to_offset(Str str, EsmInstrArgOffset *offset) {
+  if (str_is_number(str)) {
+    offset->kind = EsmInstrArgOffsetKindImm;
+    offset->as.imm = strtol(str.ptr, NULL, 10);
+
+    return true;
+  } else {
+    for (u32 i = 0; i < ARRAY_LEN(regs); ++i) {
+      if (str_ieq(str, regs[i])) {
+        if (i % 4 != 0)
+          return false;
+
+        offset->kind = EsmInstrArgOffsetKindReg;
+        offset->as.reg = i / 4;
+
+        return true;
+      }
+    }
+
     return false;
   }
+}
 
+static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
   if (str_is_number(str)) {
     arg->kind = EsmInstrArgKindImm;
     arg->as.imm = str_to_i64(str);
@@ -1142,7 +1160,111 @@ static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
     }
   }
 
-  return false;
+  if (str.ptr[0] != '[') {
+    Str prefix = str_chop_until(&str, '[');
+    if (prefix.len == (u32) -1) {
+      arg->kind = EsmInstrArgKindLabel;
+      arg->as.label = str;
+
+      return true;
+    }
+
+    --str.ptr;
+    ++str.len;
+
+    if (str_ieq(prefix, STR_LIT("qword")))
+      arg->as.mem.size = 8;
+    else if (str_ieq(prefix, STR_LIT("dword")))
+      arg->as.mem.size = 4;
+    else if (str_ieq(prefix, STR_LIT("word")))
+      arg->as.mem.size = 2;
+    else if (str_ieq(prefix, STR_LIT("byte")))
+      arg->as.mem.size = 1;
+    else
+      return false;
+  }
+
+  if (str.ptr[0] != '[')
+    return false;
+
+  ++str.ptr;
+  --str.len;
+
+  Str base = str_chop_until(&str, '+');
+  if (base.len == (u32) -1) {
+    base = str_chop_until(&str, ']');
+    if (base.len == (u32) -1)
+      return false;
+  } else {
+    ++str.ptr;
+    --str.len;
+  }
+
+  arg->as.mem.base.kind = EsmInstrArgBaseKindLabel;
+  arg->as.mem.base.as.label = base;
+
+  for (u32 i = 0; i < ARRAY_LEN(regs); ++i) {
+    if (str_ieq(base, regs[i])) {
+      if (i % 4 != 0)
+        return false;
+
+      arg->as.mem.base.kind = EsmInstrArgBaseKindReg;
+      arg->as.mem.base.as.reg = i / 4;
+    }
+  }
+
+  arg->as.mem.index.kind = EsmInstrArgOffsetKindImm;
+  arg->as.mem.index.as.imm = 0;
+  arg->as.mem.scale = 1;
+  arg->as.mem.displacement.kind = EsmInstrArgOffsetKindImm;
+  arg->as.mem.displacement.as.imm = 0;
+
+  if (str.len > 0 && str.ptr[0] != ']') {
+    bool is_index = true;
+    Str value = str_chop_until(&str, '*');
+    if (value.len == (u32) -1) {
+      is_index = false;
+      value = str_chop_until(&str, '+');
+      if (value.len == (u32) -1) {
+        value = str_chop_until(&str, ']');
+        if (value.len == (u32) -1)
+          return false;
+      }
+    }
+
+    if (is_index) {
+      if (!str_to_offset(value, &arg->as.mem.index))
+        return false;
+
+      bool is_end = false;
+      Str scale = str_chop_until(&str, '+');
+      if (scale.len == (u32) -1) {
+        is_end = true;
+        scale = str_chop_until(&str, ']');
+      }
+      if (scale.len != (u32) -1) {
+        if (!str_is_number(scale))
+          return false;
+        arg->as.mem.scale = strtol(scale.ptr, NULL, 10);
+      }
+
+      if (!is_end) {
+        Str displacement = str_chop_until(&str, ']');
+        if (displacement.len == (u32) -1)
+          return false;
+
+        if (!str_to_offset(displacement, &arg->as.mem.displacement))
+          return false;
+      }
+    } else {
+      if (!str_to_offset(value, &arg->as.mem.displacement))
+        return false;
+    }
+  }
+
+  arg->kind = EsmInstrArgKindMem;
+
+  return true;
 }
 
 bool str_to_esm_ir(Str str, char *file_path, EsmIr *ir) {

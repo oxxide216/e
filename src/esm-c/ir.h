@@ -1051,6 +1051,7 @@ typedef enum {
   EsmInstrArgKindImm = 0,
   EsmInstrArgKindReg,
   EsmInstrArgKindMem,
+  EsmInstrArgKindLabel,
 } EsmInstrArgKind;
 
 typedef enum {
@@ -1072,6 +1073,32 @@ typedef enum {
   EsmRegKindR15,
 } EsmRegKind;
 
+typedef enum {
+  EsmInstrArgBaseKindLabel = 0,
+  EsmInstrArgBaseKindReg,
+} EsmInstrArgBaseKind;
+
+typedef struct {
+  EsmInstrArgBaseKind kind;
+  union {
+    Str        label;
+    EsmRegKind reg;
+  } as;
+} EsmInstrArgBase;
+
+typedef enum {
+  EsmInstrArgOffsetKindImm = 0,
+  EsmInstrArgOffsetKindReg,
+} EsmInstrArgOffsetKind;
+
+typedef struct {
+  EsmInstrArgOffsetKind kind;
+  union {
+    u8         imm;
+    EsmRegKind reg;
+  } as;
+} EsmInstrArgOffset;
+
 typedef struct {
   EsmInstrArgKind kind;
   union {
@@ -1081,8 +1108,13 @@ typedef struct {
       u8         size;
     } reg;
     struct {
-      u8 size;
+      u8                size;
+      EsmInstrArgBase   base;
+      EsmInstrArgOffset index;
+      u16               scale;
+      EsmInstrArgOffset displacement;
     } mem;
+    Str label;
   } as;
 } EsmInstrArg;
 
