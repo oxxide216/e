@@ -223,6 +223,11 @@ bool esm_assemble_elf_x86_64(FILE *stream, char *file_path, EsmIr *ir) {
         exit(1);
       } break;
       }
+
+      for (u32 k = 0; k < ir->sections[i].labels.len; ++k)
+        if (ir->sections[i].labels.items[k].entry_index == j)
+          ir->sections[i].labels.items[k].offset =
+            ftell(stream) - section_offsets[i + 2];
     }
 
     section_sizes[i + 2] = ftell(stream) - section_offsets[i + 2];
@@ -234,6 +239,13 @@ bool esm_assemble_elf_x86_64(FILE *stream, char *file_path, EsmIr *ir) {
   fwrite(&symbol, sizeof(symbol), 1, stream);
 
   for (u32 i = 0; i < ir->exports.len; ++i) {
+    u32 index = ir->exports.items[i].section_index;
+    for (u32 j = 0; j < ir->sections[index].labels.len; ++j)
+      if (str_eq(ir->sections[index].labels.items[j].name,
+                 ir->exports.items[i].name))
+        ir->exports.items[i].section_offset =
+          ir->sections[index].labels.items[j].offset;
+
     Symbol symbol = {
       .st_name = name_offsets[eh.e_shnum + i - 1],
       .st_info = ELF64_ST_INFO(STB_GLOBAL, STT_NOTYPE),

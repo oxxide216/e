@@ -1086,19 +1086,6 @@ typedef struct {
   } as;
 } EsmInstrArgBase;
 
-typedef enum {
-  EsmInstrArgOffsetKindImm = 0,
-  EsmInstrArgOffsetKindReg,
-} EsmInstrArgOffsetKind;
-
-typedef struct {
-  EsmInstrArgOffsetKind kind;
-  union {
-    u8         imm;
-    EsmRegKind reg;
-  } as;
-} EsmInstrArgOffset;
-
 typedef struct {
   EsmInstrArgKind kind;
   union {
@@ -1110,9 +1097,10 @@ typedef struct {
     struct {
       u8                size;
       EsmInstrArgBase   base;
-      EsmInstrArgOffset index;
+      EsmRegKind        index;
+      bool              has_index;
       u16               scale;
-      EsmInstrArgOffset displacement;
+      i32               displacement;
     } mem;
     Str label;
   } as;
@@ -1148,6 +1136,7 @@ typedef Da(EsmEntry) EsmEntries;
 typedef struct {
   Str name;
   u32 entry_index;
+  u64 offset;
 } EsmLabel;
 
 typedef Da(EsmLabel) EsmLabels;

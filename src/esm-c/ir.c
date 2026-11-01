@@ -1119,29 +1119,6 @@ static bool mnemonic_to_instr_kind(Str mnemonic, EsmInstrKind *kind) {
   return false;
 }
 
-static bool str_to_offset(Str str, EsmInstrArgOffset *offset) {
-  if (str_is_number(str)) {
-    offset->kind = EsmInstrArgOffsetKindImm;
-    offset->as.imm = strtol(str.ptr, NULL, 10);
-
-    return true;
-  } else {
-    for (u32 i = 0; i < ARRAY_LEN(regs); ++i) {
-      if (str_ieq(str, regs[i])) {
-        if (i % 4 != 0)
-          return false;
-
-        offset->kind = EsmInstrArgOffsetKindReg;
-        offset->as.reg = i / 4;
-
-        return true;
-      }
-    }
-
-    return false;
-  }
-}
-
 static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
   if (str_is_number(str)) {
     arg->kind = EsmInstrArgKindImm;
@@ -1213,11 +1190,9 @@ static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
     }
   }
 
-  arg->as.mem.index.kind = EsmInstrArgOffsetKindImm;
-  arg->as.mem.index.as.imm = 0;
-  arg->as.mem.scale = 1;
-  arg->as.mem.displacement.kind = EsmInstrArgOffsetKindImm;
-  arg->as.mem.displacement.as.imm = 0;
+  arg->as.mem.has_index = false;
+  arg->as.mem.scale = 0;
+  arg->as.mem.displacement = 0;
 
   if (str.len > 0 && str.ptr[0] != ']') {
     bool is_index = true;
@@ -1233,7 +1208,18 @@ static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
     }
 
     if (is_index) {
-      if (!str_to_offset(value, &arg->as.mem.index))
+      bool found = false;
+
+      for (u32 i = 0; i < ARRAY_LEN(regs); ++i) {
+        if (str_ieq(value, regs[i])) {
+          if (i % 4 != 0)
+            return false;
+
+          arg->as.mem.index = i / 4;
+        }
+      }
+
+      if (!found)
         return false;
 
       bool is_end = false;
@@ -1246,6 +1232,20 @@ static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
         if (!str_is_number(scale))
           return false;
         arg->as.mem.scale = strtol(scale.ptr, NULL, 10);
+
+        bool found = false;
+
+        static u8 array[] = { 1, 2, 4, 8 };
+        for (u32 i = 0; i < ARRAY_LEN(array); ++i) {
+          if (arg->as.mem.scale == array[i]) {
+            arg->as.mem.scale = i;
+            found = true;
+            break;
+          }
+        }
+
+        if (!found)
+          return false;
       }
 
       if (!is_end) {
@@ -1253,12 +1253,16 @@ static bool str_to_instr_arg(Str str, EsmInstrArg *arg) {
         if (displacement.len == (u32) -1)
           return false;
 
-        if (!str_to_offset(displacement, &arg->as.mem.displacement))
+        if (!str_is_number(displacement))
           return false;
+
+        arg->as.mem.displacement = strtol(displacement.ptr, NULL, 10);
       }
     } else {
-      if (!str_to_offset(value, &arg->as.mem.displacement))
+      if (!str_is_number(value))
         return false;
+
+      arg->as.mem.displacement = strtol(value.ptr, NULL, 10);
     }
   }
 
@@ -1319,7 +1323,7 @@ bool str_to_esm_ir(Str str, char *file_path, EsmIr *ir) {
       if (label_str.len != (u32) -1) {
         str_trim_left(&instruction_str);
 
-        EsmLabel label = { label_str, section->entries.len };
+        EsmLabel label = { label_str, section->entries.len, 0 };
         DA_APPEND(section->labels, label);
       }
 
