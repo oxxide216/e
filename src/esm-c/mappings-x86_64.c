@@ -27,6 +27,57 @@ static bool syscall(FILE *stream, EsmInstrArg *args) {
   return true;
 }
 
+static void gen_modrm_sib_disp(u8 *opcode, u32 *len, EsmInstrArg *args) {
+  bool has_sib =
+    args[1].as.mem.has_index ||
+    args[1].as.mem.base.as.reg == EsmRegKindRSP ||
+    args[1].as.mem.base.as.reg == EsmRegKindR12;
+
+  if (has_sib) {
+    if (args[1].as.mem.base.as.reg >= EsmRegKindR8)
+      opcode[0] |= 1;
+    if (args[1].as.mem.has_index && args[1].as.mem.index >= EsmRegKindR8)
+      opcode[0] |= 2;
+
+    opcode[2] |= 4;
+
+    if (args[1].as.mem.has_index) {
+      opcode[*len] |= args[1].as.mem.scale << 6;
+      opcode[*len] |= (args[1].as.mem.index % EsmRegKindR8) << 3;
+    } else {
+      opcode[*len] |= 4 << 3;
+    }
+    opcode[*len] |= args[1].as.mem.base.as.reg % EsmRegKindR8;
+
+    ++*len;
+  } else {
+    if (args[1].as.mem.base.as.reg >= EsmRegKindR8)
+      opcode[0] |= 1;
+
+    opcode[2] |= args[1].as.mem.base.as.reg % EsmRegKindR8;
+  }
+
+  if (args[1].as.mem.displacement != 0) {
+    if (args[1].as.mem.displacement >= -128 &&
+        args[1].as.mem.displacement <= 127) {
+      opcode[2] |= 1 << 6;
+
+      opcode[(*len)++] = ((u8 *) &args[1].as.mem.displacement)[0];
+    } else {
+      opcode[2] |= 2 << 6;
+
+      for (u32 i = 0; i < 4; ++i)
+        opcode[(*len)++] = ((u8 *) &args[1].as.mem.displacement)[i];
+    }
+  } else if (!has_sib &&
+             (args[1].as.mem.base.as.reg == EsmRegKindRBP ||
+              args[1].as.mem.base.as.reg == EsmRegKindR13)) {
+      opcode[2] |= 1 << 6;
+
+      opcode[(*len)++] = 0;
+  }
+}
+
 static bool lea_r64m64(FILE *stream, EsmInstrArg *args) {
   if (args[1].as.mem.has_index &&
       (args[1].as.mem.index == EsmRegKindRSP ||
@@ -49,54 +100,36 @@ static bool lea_r64m64(FILE *stream, EsmInstrArg *args) {
   if (args[0].as.reg.kind >= EsmRegKindR8)
     opcode[0] |= 4;
 
-  bool has_sib =
-    args[1].as.mem.has_index ||
-    args[1].as.mem.base.as.reg == EsmRegKindRSP ||
-    args[1].as.mem.base.as.reg == EsmRegKindR12;
+  gen_modrm_sib_disp(opcode, &len, args);
 
-  if (has_sib) {
-    if (args[1].as.mem.base.as.reg >= EsmRegKindR8)
-      opcode[0] |= 1;
-    if (args[1].as.mem.has_index && args[1].as.mem.index >= EsmRegKindR8)
-      opcode[0] |= 2;
+  fwrite(opcode, 1, len, stream);
 
-    opcode[2] |= 4;
+  return true;
+}
 
-    if (args[1].as.mem.has_index) {
-      opcode[len] |= args[1].as.mem.scale << 6;
-      opcode[len] |= (args[1].as.mem.index % EsmRegKindR8) << 3;
-    } else {
-      opcode[len] |= 4 << 3;
-    }
-    opcode[len] |= args[1].as.mem.base.as.reg % EsmRegKindR8;
+static bool mov_r64m64(FILE *stream, EsmInstrArg *args) {
+  if (args[1].as.mem.has_index &&
+      (args[1].as.mem.index == EsmRegKindRSP ||
+       args[1].as.mem.index == EsmRegKindR12))
+    return false;
 
-    ++len;
-  } else {
-    if (args[1].as.mem.base.as.reg >= EsmRegKindR8)
-      opcode[0] |= 1;
-
-    opcode[2] |= args[1].as.mem.base.as.reg % EsmRegKindR8;
+  if (args[1].as.mem.base.kind == EsmInstrArgBaseKindLabel) {
+    ERROR("TODO: support for label as a base\n");
+    return false;
   }
 
-  if (args[1].as.mem.displacement != 0) {
-    if (args[1].as.mem.displacement >= -128 &&
-        args[1].as.mem.displacement <= 127) {
-      opcode[2] |= 1 << 6;
+  u8 opcode[8] = {
+    (4 << 4) | 8,
+    0x8B,
+    (args[0].as.reg.kind % EsmRegKindR8) << 3, // ModRM
+    0,
+  };
+  u32 len = 3;
 
-      opcode[len++] = ((u8 *) &args[1].as.mem.displacement)[0];
-    } else {
-      opcode[2] |= 2 << 6;
+  if (args[0].as.reg.kind >= EsmRegKindR8)
+    opcode[0] |= 4;
 
-      for (u32 i = 0; i < 4; ++i)
-        opcode[len++] = ((u8 *) &args[1].as.mem.displacement)[i];
-    }
-  } else if (!has_sib &&
-             (args[1].as.mem.base.as.reg == EsmRegKindRBP ||
-              args[1].as.mem.base.as.reg == EsmRegKindR13)) {
-      opcode[2] |= 1 << 6;
-
-      opcode[len++] = 0;
-  }
+  gen_modrm_sib_disp(opcode, &len, args);
 
   fwrite(opcode, 1, len, stream);
 
@@ -124,6 +157,13 @@ InstrMapping mappings_x86_64[] = {
     { EsmInstrArgKindReg, EsmInstrArgKindMem },
     { 8, 8 },
     lea_r64m64,
+  },
+  {
+    EsmInstrKind_mov,
+    2,
+    { EsmInstrArgKindReg, EsmInstrArgKindMem },
+    { 8, 8 },
+    mov_r64m64,
   },
 };
 
