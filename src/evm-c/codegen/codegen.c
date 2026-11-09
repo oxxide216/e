@@ -1,7 +1,8 @@
 #include "codegen.h"
 #include "utils.h"
 
-static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
+static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
+                                GetSegmentsSizeFunc get_segments_size) {
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
 
@@ -22,10 +23,7 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
         locs->cap = new_cap;
       }
 
-      AlignedSegment *last_segment = instr->as.alloc.segments.items + instr->as.alloc.segments.len - 1;
-      // TODO: here and in all similar places use platform-dependant
-      // Size computing function
-      u32 size = last_segment->offset + last_segment->size;
+      u32 size = get_segments_size(&instr->as.alloc.segments);
       bool is_stack_only = size > 8 || (size != 1 && size != 2 && size != 4 && size != 8);
       VarLoc loc = {
         0, ValueKindSigned, size,
@@ -77,9 +75,10 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
   }
 }
 
-void add_var_locs(VarLocs *locs, Proc *proc) {
-  add_var_locs_instrs(locs, &proc->instrs, 0);
-  add_var_locs_instrs(locs, &proc->last_instrs, proc->instrs.len);
+void add_var_locs(VarLocs *locs, Proc *proc,
+                  GetSegmentsSizeFunc get_segments_size) {
+  add_var_locs_instrs(locs, &proc->instrs, 0, get_segments_size);
+  add_var_locs_instrs(locs, &proc->last_instrs, proc->instrs.len, get_segments_size);
 }
 
 static bool var_loc_collides_at_reg_index(VarLocRefs *refs, VarLoc *loc, i32 reg_index, u32 max) {

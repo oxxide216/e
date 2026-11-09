@@ -37,7 +37,10 @@ typedef struct {
   VarLocRefs refs;
 } Allocator;
 
-void      add_var_locs(VarLocs *locs, Proc *proc);
+typedef u32 (*GetSegmentsSizeFunc)(Segments *segments);
+
+void      add_var_locs(VarLocs *locs, Proc *proc,
+                       GetSegmentsSizeFunc get_segments_size);
 SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len);
 void      promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs);
 

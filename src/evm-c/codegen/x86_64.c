@@ -351,6 +351,23 @@ static u32 alignment_func_x86_64(u32 size) {
   return 8;
 }
 
+static u32 get_segments_size_x86_64(Segments *segments) {
+  if (segments->len == 0)
+    return 0;
+
+  u32 max_size = 0;
+
+  for (u32 i = 0; i < segments->len; ++i)
+    if (max_size < segments->items[i].size)
+      max_size = segments->items[i].size;
+
+  u32 size =
+    segments->items[segments->len - 1].offset +
+    segments->items[segments->len - 1].size -
+    segments->items[0].offset;
+  return align(size, alignment_func_x86_64(max_size));
+}
+
 static bool clutters_first_return_reg_x86_64(Instr *instr) {
   return instr->kind == InstrKindCall || instr->kind == InstrKindCallAssign ||
          instr->kind == InstrKindCallRef || instr->kind == InstrKindCallRefAssign ||
@@ -1475,7 +1492,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     u8 *last_labels = get_labels(&proc->last_instrs, NULL);
 
     align_fixed_offsets(proc, alignment_func_x86_64);
-    add_var_locs(&locs, proc);
+    add_var_locs(&locs, proc, get_segments_size_x86_64);
 
     opt_derefs_to_copies(&proc->instrs, &locs);
     opt_derefs_to_copies(&proc->last_instrs, &locs);
