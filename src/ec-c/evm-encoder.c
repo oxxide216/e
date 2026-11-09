@@ -228,6 +228,36 @@ static void encode_type_fields_as_aligned_segments(FILE *stream, EType *type,
   encode_type_fields_as_aligned_segments_until(stream, type, end, structs);
 }
 
+static void encode_type_fields_as_aligned_segments_until_for_field_access(FILE *stream,
+                                                                          EType *type,
+                                                                          u32 end,
+                                                                          EStructs *structs) {
+  EType *last = NULL;
+  if (type->kind == ETypeKindStruct) {
+    EStruct *_struct = get_struct(structs, type->name);
+    last = &_struct->fields.items[end - 1].type;
+  } else if (type->kind == ETypeKindTuple) {
+    last = type->tuple_types.items + end - 1;
+  }
+
+  if (last)
+    --end;
+
+  u32 len = 0;
+  get_type_fields_len_until_rec(type, end, structs, &len);
+
+  if (last)
+    ++len;
+
+  fwrite(&len, sizeof(len), 1, stream);
+  u32 offset = 0;
+  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, structs, &offset);
+
+  u32 size = get_type_size(structs, last);
+  fwrite(&offset, sizeof(offset), 1, stream);
+  fwrite(&size, sizeof(size), 1, stream);
+}
+
 static void encode_procs_no_len(FILE *stream, EProcs *procs,
                                 EStructs *structs, Varss *varss,
                                 u32 data_base) {
@@ -466,7 +496,7 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         ++index;
 
 
-        encode_type_fields_as_aligned_segments_until(stream, dest_type, index, structs);
+        encode_type_fields_as_aligned_segments_until_for_field_access(stream, dest_type, index, structs);
 
         fwrite(&instr->as.copy_to_field.src_index, sizeof(instr->as.copy_to_field.src_index), 1, stream);
 
@@ -491,7 +521,7 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
           ++index;
         ++index;
 
-        encode_type_fields_as_aligned_segments_until(stream, src_type, index, structs);
+        encode_type_fields_as_aligned_segments_until_for_field_access(stream, src_type, index, structs);
 
         EField *field = _struct->fields.items + index - 1;
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(field->type.kind);
@@ -521,9 +551,9 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
           fwrite(&offset, sizeof(offset), 1, stream);
           fwrite(&size, sizeof(size), 1, stream);
         } else {
-          encode_type_fields_as_aligned_segments_until(stream, &dest->type,
-                                                       instr->as.copy_to_offset.dest_offset + 1,
-                                                       structs);
+          encode_type_fields_as_aligned_segments_until_for_field_access(stream, &dest->type,
+                                                                        instr->as.copy_to_offset.dest_offset + 1,
+                                                                        structs);
         }
 
         fwrite(&instr->as.copy_to_offset.src_index, sizeof(instr->as.copy_to_offset.src_index), 1, stream);
@@ -562,9 +592,9 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
           fwrite(&src_target_kind, 1, 1, stream);
           fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
         } else {
-          encode_type_fields_as_aligned_segments_until(stream, &src->type,
-                                                       instr->as.copy_from_offset.src_offset + 1,
-                                                       structs);
+          encode_type_fields_as_aligned_segments_until_for_field_access(stream, &src->type,
+                                                                        instr->as.copy_from_offset.src_offset + 1,
+                                                                        structs);
 
           ValueKind src_target_kind = ValueKindUnsigned;
           u32 src_target_size = 0;

@@ -4,22 +4,24 @@ struct A
 end
 
 struct B
+  foo: s64,
   field: A,
 end
 
-# TODO: there is a bug if you add one s64 field before `field`
 proc main() -> s64
   let b0 = B:
+    foo = 0,
     field = A: 
       x = 2,
       y = 4,
-    end
+    end,
   end
   let b1 = B:
+    foo = 0,
     field = A: 
       x = 3,
       y = 7,
-    end
+    end,
   end
 
   let arr = [A; b0.field, b1.field]

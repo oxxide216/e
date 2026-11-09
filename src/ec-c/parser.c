@@ -812,11 +812,12 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
         parser_next_token(parser, NULL);
 
         u32 i = 0;
-        u32 element_index = alloc_var(parser, (Str) {0}, token);
 
         Token temp_token;
         while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
                temp_token.id != TT_END) {
+          u32 element_index = alloc_var(parser, (Str) {0}, token);
+
           parser_peek_token(parser, &temp_token);
           parser_expect_token(parser, MASK(TT_IDENT), "identifier");
           parser_expect_token(parser, MASK(TT_SET), "`=`");
@@ -1733,65 +1734,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
           break;
         }
       }
-    // } else if (token.id == TT_OBRACE) {
-    //   u32 index_index = alloc_var(parser, (Str) {0}, token);
-    //   u32 temp_index = alloc_var(parser, (Str) {0}, token);
-
-    //   parser_parse_expr(parser, (Str) {0}, index_index);
-    //   parser_expect_token(parser, MASK(TT_CBRACE), "`]`");
-    //   parser_expect_token(parser, MASK(TT_COLONSET), "`:=`");
-    //   parser_parse_expr(parser, (Str) {0}, temp_index);
-
-    //   emit_instr(
-    //     &parser->ir->procs,
-    //     token,
-    //     EInstrKindCopyToRef,
-    //     .copy_to_ref = {
-    //       name_token.lexeme,
-    //       get_var_index(parser->varss, name_token.lexeme),
-    //       true,
-    //       {},
-    //       index_index,
-    //       {},
-    //       temp_index,
-    //     },
-    //   );
-    // } else if (token.id == TT_DOT) {
-    //   Token field_name_token;
-    //   u32 temp_index = alloc_var(parser, (Str) {0}, token);
-
-    //   parser_peek_token(parser, &field_name_token);
-    //   parser_expect_token(parser, MASK(TT_IDENT) | MASK(TT_INT), "identifier or integer");
-    //   parser_expect_token(parser, MASK(TT_SET), "`=`");
-    //   parser_parse_expr(parser, (Str) {0}, temp_index);
-
-    //   if (field_name_token.id == TT_IDENT) {
-    //     emit_instr(
-    //       &parser->ir->procs,
-    //       token,
-    //       EInstrKindCopyToField,
-    //       .copy_to_field = {
-    //         name_token.lexeme,
-    //         get_var_index(parser->varss, name_token.lexeme),
-    //         field_name_token.lexeme,
-    //         {},
-    //         temp_index,
-    //       },
-    //     );
-    //   } else {
-    //     emit_instr(
-    //       &parser->ir->procs,
-    //       token,
-    //       EInstrKindCopyToOffset,
-    //       .copy_to_offset = {
-    //         name_token.lexeme,
-    //         get_var_index(parser->varss, name_token.lexeme),
-    //         str_to_u32(field_name_token.lexeme),
-    //         {},
-    //         temp_index,
-    //       },
-    //     );
-    //   }
     }
   } else if (token.id == TT_RET) {
     emit_instr(&parser->ir->procs, token, EInstrKindRet,);
