@@ -28,7 +28,8 @@ void opt_derefs_to_copies(Instrs *instrs, VarLocs *locs) {
         }
       }
     } else if (instr->kind == InstrKindCopyFromRefFixed) {
-      if (!instr->as.copy_from_ref_fixed.deref) {
+      if (!instr->as.copy_from_ref_fixed.deref &&
+          !instr->as.copy_from_ref_fixed.take_ref) {
         i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[0].offset;
         for (u32 j = 1; j < instr->as.copy_from_ref_fixed.src_segments.len; ++j)
           offset += instr->as.copy_from_ref_fixed.src_segments.items[j].offset;
