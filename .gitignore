@@ -15,4 +15,5 @@
 /tail-call
 /nested-structs
 /temp-ref
+/struct-field-copy
 /test*

@@ -23,6 +23,8 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
       }
 
       AlignedSegment *last_segment = instr->as.alloc.segments.items + instr->as.alloc.segments.len - 1;
+      // TODO: here and in all similar places use platform-dependant
+      // Size computing function
       u32 size = last_segment->offset + last_segment->size;
       bool is_stack_only = size > 8 || (size != 1 && size != 2 && size != 4 && size != 8);
       VarLoc loc = {
