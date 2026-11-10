@@ -10,7 +10,7 @@ incpath = $build_dir
 
 [evm]
 src = src/evm-c/**.c src/common-c/**.c
-cflags = $cflags
+cflags = $cflags -DNDEBUG
 incpath = $build_dir
 
 [esm]

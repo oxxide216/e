@@ -161,10 +161,11 @@ typedef struct {
 } EInstrJumpIfNot;
 
 typedef struct {
-  Str dest_name;
-  u32 dest_index;
-  Str src_name;
-  u32 src_index;
+  Str  dest_name;
+  u32  dest_index;
+  Str  src_name;
+  u32  src_index;
+  bool is_implicit_drop_arg;
 } EInstrRef;
 
 typedef struct {
@@ -370,6 +371,7 @@ typedef struct {
   bool      moved;
   EInstrLoc moved_loc;
   u32       scope_end_instr;
+  bool      returned;
 } Var;
 
 typedef Da(Var) Vars;

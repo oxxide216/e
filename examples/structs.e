@@ -1,7 +1,13 @@
+use libe::io
+
 struct IVec3
   x: s64,
   y: s64,
-  z: s64
+  z: s64,
+end
+
+proc drop(self: &IVec3)
+  println("drop!")
 end
 
 proc main() -> s64

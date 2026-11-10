@@ -553,6 +553,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
       case EInstrKindCall: {
         ETypeRefs arg_types = {0};
         for (u32 k = 0; k < instr->as.call.arg_indices.len; ++k) {
+          CHECK_VAR(instr->as.call.arg_indices.items[k], (Str) {0}, k, true);
+
           Var *arg = varss->items[i].items + instr->as.call.arg_indices.items[k];
           if (arg->type.kind == ETypeKindStruct ||
               arg->type.kind == ETypeKindArray ||
@@ -562,7 +564,15 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         }
 
         EProc *callee = get_proc(ir, instr->as.call.name, &arg_types);
-        if (!callee) {
+        if (str_eq(instr->as.call.name, STR_LIT("drop"))) {
+          if (!callee ||
+              varss->items[i].items[instr[-1].as.ref.src_index].moved ||
+              varss->items[i].items[instr[-1].as.ref.src_index].returned) {
+            for (u32 k = 0; k < 3; ++k)
+              DA_REMOVE_AT(proc->instrs, j - 2);
+            j -= 3;
+          }
+        } else if (!callee) {
           CERROR("Procedure ");
           fprintf_proc_signature(stderr, instr->as.call.name, &arg_types);
           fprintf(stderr, " was not declared or defined\n");
@@ -580,6 +590,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
 
         ETypeRefs arg_types = {0};
         for (u32 k = 0; k < instr->as.call_assign.arg_indices.len; ++k) {
+          CHECK_VAR(instr->as.call_assign.arg_indices.items[k], (Str) {0}, k, true);
+
           Var *arg = varss->items[i].items + instr->as.call_assign.arg_indices.items[k];
           if (arg->type.kind == ETypeKindStruct ||
               arg->type.kind == ETypeKindArray ||
@@ -629,6 +641,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
       } break;
 
       case EInstrKindRetVal: {
+        CHECK_VAR(instr->as.ret_val.index, (Str) {0}, 0, true);
+
         Var *var = varss->items[i].items + instr->as.ret_val.index;
         if (!type_eq(&var->type, &proc->return_type)) {
           Str var_type_str = get_type_str(&var->type);
@@ -639,6 +653,11 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(return_type_str, &proc->return_type);
           goto fail;
         }
+
+        if (var->type.kind == ETypeKindStruct ||
+            var->type.kind == ETypeKindArray ||
+            var->type.kind == ETypeKindTuple)
+          var->moved = true;
       } break;
 
       case EInstrKindJump: break;
@@ -655,8 +674,10 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
       } break;
 
       case EInstrKindRef: {
-        CHECK_VAR(instr->as.ref.dest_index, instr->as.ref.dest_name, 0, false);
-        CHECK_VAR(instr->as.ref.src_index, instr->as.ref.src_name, 1, true);
+        if (!instr->as.ref.is_implicit_drop_arg) {
+          CHECK_VAR(instr->as.ref.dest_index, instr->as.ref.dest_name, 0, false);
+          CHECK_VAR(instr->as.ref.src_index, instr->as.ref.src_name, 1, true);
+        }
 
         Var *dest = varss->items[i].items + instr->as.ref.dest_index;
         dest->moved = false;
@@ -1076,6 +1097,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
               false,
               {},
               0,
+              false,
             };
             DA_APPEND(varss->items[i], new_var);
             EInstr new_instr0 = {

@@ -89,11 +89,7 @@ void proc_print(EProc *proc) {
     EInstr *instr = proc->instrs.items + i;
 
     switch (instr->kind) {
-    case EInstrKindAlloc: {
-      printf("  ");
-      var_print(instr->as.alloc.index, instr->as.alloc.name);
-      printf(" = alloc\n");
-    } break;
+    case EInstrKindAlloc: break;
 
     case EInstrKindStore: {
       printf("  ");

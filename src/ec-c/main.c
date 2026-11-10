@@ -288,11 +288,6 @@ i32 main(i32 argc, char **argv) {
     return 1;
   }
 
-#ifndef NDEBUG
-  for (u32 i = 0; i < ir.procs.len; ++i)
-    proc_print(ir.procs.items + i);
-#endif
-
   if (!check_ir(&ir, &varss, !config.link_only)) {
     if (included_hashes.items)
       free(included_hashes.items);
@@ -303,6 +298,11 @@ i32 main(i32 argc, char **argv) {
     config_destroy(&config);
     return 1;
   }
+
+#ifndef NDEBUG
+  for (u32 i = 0; i < ir.procs.len; ++i)
+    proc_print(ir.procs.items + i);
+#endif
 
   remove(config.ir_path);
   FILE *ir_file = fopen(config.ir_path, "wb");

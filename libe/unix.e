@@ -31,18 +31,18 @@ struct FileStat      # Linux x86-64 ABI Layout
   st_ctim: Timespec, # Last status change time
 
   # Reserved fields (must remain in the ABI layout)
-  __reserved: [s64; 3]
+  __reserved: [s64;; 3]
 end
 
-#let SEEK_SET = 0  # Seek from the beginning of the file
-#let SEEK_CUR = 1  # Seek from the current file position
-#let SEEK_END = 2  # Seek from the end of the file
+const SEEK_SET = 0  # Seek from the beginning of the file
+const SEEK_CUR = 1  # Seek from the current file position
+const SEEK_END = 2  # Seek from the end of the file
 
-#let POLLIN = 0x001
-#let POLLOUT = 0x004
-#let POLLERR = 0x008
-#let POLLHUP = 0x010
-#let POLLNVAL = 0x020
+const POLLIN = 1
+const POLLOUT = 4
+const POLLERR = 8
+const POLLHUP = 16
+const POLLNVAL = 32
 
 struct PollFd
   fd: s32,

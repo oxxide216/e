@@ -108,6 +108,7 @@ typedef struct {
   TokenStatus  status;
   Token        token;
   Str          file_path;
+  u32          scope_begin;
   bool         has_error;
 } Parser;
 
@@ -203,6 +204,7 @@ static void parser_parse_type_impl(Parser *parser) {
 
     parser_parse_type(parser);
     parser_expect_token(parser, MASK(TT_SEMI), "`;`");
+    parser_expect_token(parser, MASK(TT_SEMI), "`;`");
     parser_peek_token(parser, &token);
     parser_expect_token(parser, MASK(TT_INT), "integer");
     parser_expect_token(parser, MASK(TT_CBRACE), "`]`");
@@ -224,7 +226,7 @@ static void parser_parse_type_impl(Parser *parser) {
 static u32 alloc_var(Parser *parser, Str name, Token token) {
   Vars *vars = parser->varss->items + parser->varss->len - 1;
 
-  Var var = { name, {}, false, {}, 0 };
+  Var var = { name, {}, false, {}, 0, false };
   DA_APPEND(*vars, var);
 
   emit_instr(
@@ -252,12 +254,55 @@ static Var *get_var_by_index(Varss *varss, u32 index) {
   return varss->items[varss->len - 1].items + index;
 }
 
-static void end_vars_scope(Parser *parser, u32 begin) {
+static void end_vars_scope(Parser *parser, u32 prev_begin) {
   Vars *vars = parser->varss->items + parser->varss->len - 1;
   EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
 
-  for (u32 i = begin; i < vars->len; ++i)
-    vars->items[i].scope_end_instr = proc->instrs.len;
+  u32 len = vars->len;
+  for (u32 i = len; i > parser->scope_begin; --i) {
+    if (vars->items[i - 1].name.len > 0 &&
+        vars->items[i - 1].scope_end_instr == 0) {
+      Indices arg_indices = {0};
+
+      u32 ptr = alloc_var(parser, (Str) {0}, (Token) {0});
+      emit_instr(
+        &parser->ir->procs,
+        (Token) {},
+        EInstrKindRef,
+        .ref = {
+          {},
+          ptr,
+          vars->items[i - 1].name,
+          i - 1,
+          true,
+        },
+      );
+
+      DA_APPEND(arg_indices, ptr);
+
+      emit_instr(
+        &parser->ir->procs,
+        (Token) {},
+        EInstrKindCall,
+        .call = { STR_LIT("drop"), arg_indices },
+      );
+    }
+
+    if (prev_begin != (u32) -1)
+      vars->items[i - 1].scope_end_instr = proc->instrs.len;
+  }
+
+  if (prev_begin != (u32) -1)
+    parser->scope_begin = prev_begin;
+}
+
+static void make_last_copy_returned(Parser *parser) {
+  EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+  Vars *vars = parser->varss->items + parser->varss->len - 1;
+
+  if (instrs->len > 0 &&
+      instrs->items[instrs->len - 1].kind == EInstrKindCopy)
+    vars->items[instrs->items[instrs->len - 1].as.copy.src_index].returned = true;
 }
 
 static void backpatch_dest(EProc *proc, u32 starting_index, Str new_dest_name,
@@ -500,6 +545,7 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
       new_dest_index,
       instr->as.copy.src_name,
       instr->as.copy.src_index,
+      false,
     };
     instr->as.ref = ref;
   } else if (instr->kind == EInstrKindCopyFromRef) {
@@ -809,6 +855,9 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           DA_APPEND(arg_indices, arg_index);
 
           parser_parse_expr(parser, (Str) {0}, arg_index);
+
+          make_last_copy_returned(parser);
+
           if (parser_peek_token(parser, &token) == TokenStatusEOF || token.id != TT_CPAREN)
             parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
         }
@@ -1402,6 +1451,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
       parser_expect_token(parser, MASK(TT_SET), "`=`");
       parser_parse_expr(parser, (Str) {0}, index);
 
+      make_last_copy_returned(parser);
+
       EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
 
       get_var_by_index(parser->varss, index)->name = name_token.lexeme;
@@ -1430,6 +1481,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
       parser_expect_token(parser, MASK(TT_CPAREN), "`,` or `)`");
       parser_expect_token(parser, MASK(TT_SET), "`=`");
       parser_parse_expr(parser, (Str) {0}, index);
+
+      make_last_copy_returned(parser);
 
       for (u32 i = 0; i < name_tokens.len; ++i) {
         Token *name_token = name_tokens.items + i;
@@ -1463,6 +1516,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
       parser_parse_expr(parser, name_token.lexeme, index);
 
+      make_last_copy_returned(parser);
+
       EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
       EInstr *instr = proc->instrs.items + proc->instrs.len - 1;
       if (instr->kind == EInstrKindCopy)
@@ -1471,6 +1526,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
       u32 temp_index = alloc_var(parser, (Str) {0}, token);
       parser_parse_expr(parser, (Str) {0}, temp_index);
+
+      make_last_copy_returned(parser);
 
       emit_instr(
         &parser->ir->procs,
@@ -1496,6 +1553,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
         DA_APPEND(arg_indices, arg_index);
 
         parser_parse_expr(parser, (Str) {0}, arg_index);
+
+        make_last_copy_returned(parser);
+
         if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
             temp_token.id != TT_CPAREN)
           parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
@@ -1555,6 +1615,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
           u32 new_index = alloc_var(parser, (Str) {0}, token);
           parser_parse_expr(parser, (Str) {0}, new_index);
 
+          make_last_copy_returned(parser);
+
           if (field_name_token.id == TT_IDENT) {
             emit_instr(
               &parser->ir->procs,
@@ -1613,6 +1675,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
           u32 new_index = alloc_var(parser, (Str) {0}, token);
           parser_parse_expr(parser, (Str) {0}, new_index);
+
+          make_last_copy_returned(parser);
 
           emit_instr(
             &parser->ir->procs,
@@ -1707,6 +1771,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
           u32 new_index = alloc_var(parser, (Str) {0}, temp_token);
           parser_parse_expr(parser, (Str) {0}, new_index);
 
+          make_last_copy_returned(parser);
+
           if (token.id == TT_DOT) {
             if (field_name_token.id == TT_IDENT) {
               emit_instr(
@@ -1756,10 +1822,15 @@ static void parser_parse_stmt_impl(Parser *parser) {
       }
     }
   } else if (token.id == TT_RET) {
+    end_vars_scope(parser, (u32) -1);
+
     emit_instr(&parser->ir->procs, token, EInstrKindRet,);
   } else if (token.id == TT_RETVAL) {
     u32 ret_val_index = alloc_var(parser, (Str) {0}, token);
     parser_parse_expr(parser, (Str) {0}, ret_val_index);
+
+    make_last_copy_returned(parser);
+    end_vars_scope(parser, (u32) -1);
 
     emit_instr(
       &parser->ir->procs,
@@ -1770,7 +1841,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
   } else if (token.id == TT_WHILE) {
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
 
-    u32 scope_begin = instrs->len;
+    u32 prev_scope_begin = parser->scope_begin;
+    parser->scope_begin = instrs->len;
 
     u32 label_index = instrs->len;
 
@@ -1801,11 +1873,12 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     instrs->items[jump_index].as.jump_if_not.target = instrs->len;
 
-    end_vars_scope(parser, scope_begin);
+    end_vars_scope(parser, prev_scope_begin);
   } else if (token.id == TT_IF) {
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
 
-    u32 scope_begin = instrs->len;
+    u32 prev_scope_begin = parser->scope_begin;
+    parser->scope_begin = instrs->len;
 
     u32 cond_index = alloc_var(parser, (Str) {0}, token);
     parser_parse_expr(parser, (Str) {0}, cond_index);
@@ -1829,11 +1902,12 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     emit_instr(&parser->ir->procs, token, EInstrKindJump, .jump = { 0 });
 
-    end_vars_scope(parser, scope_begin);
+    end_vars_scope(parser, prev_scope_begin);
 
     while (parser_peek_token(parser, &token) != TokenStatusEOF &&
            token.id != TT_ELSE && token.id != TT_END) {
-      scope_begin = instrs->len;
+      prev_scope_begin = parser->scope_begin;
+      parser->scope_begin = instrs->len;
 
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
 
@@ -1862,14 +1936,15 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
 
-      end_vars_scope(parser, scope_begin);
+      end_vars_scope(parser, prev_scope_begin);
     }
     parser_expect_token(parser,
                         MASK(TT_ELIF) | MASK(TT_ELSE) | MASK(TT_END),
                         "`elif`, `else` or `end`");
 
     if (token.id == TT_ELSE) {
-      scope_begin = instrs->len;
+      prev_scope_begin = parser->scope_begin;
+      parser->scope_begin = instrs->len;
 
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
       jump_index = instrs->len - 1;
@@ -1882,7 +1957,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
       instrs->items[jump_index].as.jump.target = instrs->len;
 
-      end_vars_scope(parser, scope_begin);
+      end_vars_scope(parser, prev_scope_begin);
     } else {
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
     }
@@ -1974,6 +2049,7 @@ static void parser_parse_proc_impl(Parser *parser) {
       false,
       {},
       0,
+      false,
     };
     DA_APPEND(*vars, var);
   }
@@ -1982,6 +2058,12 @@ static void parser_parse_proc_impl(Parser *parser) {
          token.id != TT_END) {
     parser_parse_stmt(parser);
   }
+
+  EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+  if (instrs->len == 0 ||
+      (instrs->items[instrs->len - 1].kind != EInstrKindRet &&
+       instrs->items[instrs->len - 1].kind != EInstrKindRetVal))
+  end_vars_scope(parser, 0);
 
   parser_expect_token(parser, MASK(TT_END), "`end`");
 }
@@ -2064,6 +2146,7 @@ bool parse(EIr *ir, Varss *varss, Str code, Str file_path) {
     TokenStatusOk,
     {},
     file_path,
+    0,
     false,
   };
 
