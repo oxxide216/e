@@ -369,6 +369,7 @@ typedef struct {
   EType     type;
   bool      moved;
   EInstrLoc moved_loc;
+  u32       scope_end_instr;
 } Var;
 
 typedef Da(Var) Vars;

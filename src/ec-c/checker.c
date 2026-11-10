@@ -1075,6 +1075,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
               { ETypeKindU64, {}, {}, false },
               false,
               {},
+              0,
             };
             DA_APPEND(varss->items[i], new_var);
             EInstr new_instr0 = {
