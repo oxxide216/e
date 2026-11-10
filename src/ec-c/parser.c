@@ -1864,47 +1864,47 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     for (u32 i = 0; i < jumps_to_end_indices.len; ++i)
       instrs->items[jumps_to_end_indices.items[i]].as.jump.target = instrs->len;
-    } else if (token.id == TT_ASM) {
-      EAsmSegments asm_segments = {0};
+  } else if (token.id == TT_ASM) {
+    EAsmSegments asm_segments = {0};
 
-      Token temp_token = {0};
-      do {
-        if (temp_token.id == TT_COMMA)
-          parser_next_token(parser, NULL);
+    Token temp_token = {0};
+    do {
+      if (temp_token.id == TT_COMMA)
+        parser_next_token(parser, NULL);
 
-        parser_peek_token(parser, &temp_token);
-        parser_expect_token(parser,
-                            MASK(TT_STR) | MASK(TT_IDENT),
-                            "string literal or identifier");
+      parser_peek_token(parser, &temp_token);
+      parser_expect_token(parser,
+                          MASK(TT_STR) | MASK(TT_IDENT),
+                          "string literal or identifier");
 
-        if (temp_token.id == TT_STR) {
-          EAsmSegment asm_segment = {
-            EAsmSegmentKindStr,
-            {
-              temp_token.lexeme.ptr + 1,
-              temp_token.lexeme.len - 2,
-            },
-            0,
-          };
-          DA_APPEND(asm_segments, asm_segment);
-        } else {
-          EAsmSegment asm_segment = {
-            EAsmSegmentKindVar,
-            temp_token.lexeme,
-            get_var_index(parser->varss, temp_token.lexeme),
-          };
-          DA_APPEND(asm_segments, asm_segment);
-        }
-      } while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
-               temp_token.id == TT_COMMA);
+      if (temp_token.id == TT_STR) {
+        EAsmSegment asm_segment = {
+          EAsmSegmentKindStr,
+          {
+            temp_token.lexeme.ptr + 1,
+            temp_token.lexeme.len - 2,
+          },
+          0,
+        };
+        DA_APPEND(asm_segments, asm_segment);
+      } else {
+        EAsmSegment asm_segment = {
+          EAsmSegmentKindVar,
+          temp_token.lexeme,
+          get_var_index(parser->varss, temp_token.lexeme),
+        };
+        DA_APPEND(asm_segments, asm_segment);
+      }
+    } while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+             temp_token.id == TT_COMMA);
 
-      emit_instr(
-        &parser->ir->procs,
-        token,
-        EInstrKindInlineAsm,
-        .inline_asm = { asm_segments },
-      );
-    }
+    emit_instr(
+      &parser->ir->procs,
+      token,
+      EInstrKindInlineAsm,
+      .inline_asm = { asm_segments },
+    );
+  }
 }
 
 static void parser_parse_proc_impl(Parser *parser) {
