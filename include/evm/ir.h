@@ -1,5 +1,5 @@
-#ifndef IR_H
-#define IR_H
+#ifndef EVM_IR_H
+#define EVM_IR_H
 
 #include "shl/shl-defs.h"
 #include "shl/shl-str.h"
@@ -44,7 +44,7 @@ typedef enum {
 } InstrKind;
 
 typedef struct {
-  u32 offset;
+  i32 offset;
   u32 size;
 } AlignedSegment;
 
@@ -100,7 +100,6 @@ typedef struct {
 
 typedef struct {
   u32       dest_index;
-  u32       return_size;
   ValueKind return_kind;
   Str       name;
   Indices   arg_indices;
@@ -125,9 +124,9 @@ typedef struct {
 } InstrRef;
 
 typedef struct {
-  u32 dest_index;
-  u32 dest_offset_index;
-  u32 src_index;
+  u32  dest_index;
+  u32  dest_offset_index;
+  u32  src_index;
 } InstrCopyToRef;
 
 typedef struct {
@@ -135,7 +134,7 @@ typedef struct {
   u32       src_index;
   u32       src_offset_index;
   ValueKind src_target_kind;
-  u32       src_target_size;
+  bool      take_ref;
 } InstrCopyFromRef;
 
 typedef enum {
@@ -163,7 +162,7 @@ typedef struct {
 typedef struct {
   u32       dest_index;
   ValueKind dest_kind;
-  u32       dest_size;
+  Segments  dest_segments;
   u32       src_index;
 } InstrConvert;
 
@@ -171,6 +170,7 @@ typedef struct {
   u32      dest_index;
   Segments dest_segments;
   u32      src_index;
+  bool     deref; // Basically true for pointers and false for structures
 } InstrCopyToRefFixed;
 
 typedef struct {
@@ -178,7 +178,8 @@ typedef struct {
   u32       src_index;
   Segments  src_segments;
   ValueKind src_target_kind;
-  u32       src_target_size;
+  bool      deref; // Basically true for pointers and false for structures
+  bool      take_ref;
 } InstrCopyFromRefFixed;
 
 typedef struct {
@@ -193,7 +194,6 @@ typedef struct {
 
 typedef struct {
   u32       dest_index;
-  u32       return_size;
   ValueKind return_kind;
   u32       index;
   Indices   arg_indices;
@@ -230,8 +230,8 @@ typedef struct {
 typedef Da(Instr) Instrs;
 
 typedef struct {
-  u32       size;
   ValueKind kind;
+  Segments  segments;
 } Arg;
 
 typedef Da(Arg) Args;
@@ -239,9 +239,10 @@ typedef Da(Arg) Args;
 typedef struct {
   Str       name;
   Args      args;
-  u32       return_size;
   ValueKind return_kind;
+  Segments  return_segments;
   Instrs    instrs;
+  Instrs    last_instrs;
 } Proc;
 
 typedef Da(Proc) Procs;
@@ -261,4 +262,4 @@ typedef struct {
   Imports imports;
 } Ir;
 
-#endif // IR_H
+#endif // EVM_IR_H

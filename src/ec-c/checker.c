@@ -70,7 +70,7 @@ static bool check_struct_existence(EStructs *structs, EType *type) {
 }
 
 static EType make_type_from_kind(ETypeKind kind) {
-  return (EType) { kind, {}, {} };
+  return (EType) { kind, {}, {}, false };
 }
 
 static void free_type_str(Str str, EType *type) {
@@ -524,7 +524,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         EType dest_type;
         if (instr->as.bin_op.kind >= EBinOpKindEq &&
             instr->as.bin_op.kind <= EBinOpKindGe)
-          dest_type = (EType) { ETypeKindBool, {}, {} };
+          dest_type = (EType) { ETypeKindBool, {}, {}, false };
         else
           dest_type = type_clone(&src0->type);
 
@@ -668,6 +668,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             .ptr_target = malloc(sizeof(EType)),
           },
           {},
+          false,
         };
         *ptr_type.ptr_target = type_clone(&src->type);
 
@@ -771,6 +772,16 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(ptr_target_type_str, src->type.ptr_target);
           goto fail;
         }
+
+        if (instr->as.copy_from_ref.is_ref_explicit) {
+          EType new_type;
+          new_type.kind = ETypeKindPtr;
+          new_type.ptr_target = malloc(sizeof(EType));
+          *new_type.ptr_target = dest->type;
+          dest->type = new_type;
+        } else {
+          dest->type.is_implicit_ptr |= instr->as.copy_from_ref.take_ref;
+        }
       } break;
 
       case EInstrKindStoreNull: {
@@ -857,6 +868,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             ETypeKindU64,
             {},
             {},
+            false,
           };
         } else if (src->type.kind != ETypeKindArray) {
           Str src_type_str = get_type_str(&src->type);
@@ -937,7 +949,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             goto fail;
           }
 
-          EType type = { ETypeKindU32, {}, {} };
+          EType type = { ETypeKindU32, {}, {}, false };
           if (!type_eq(&src->type, &type)) {
             Str field_type_str = get_type_str(&type);
             Str src_type_str = get_type_str(&src->type);
@@ -954,7 +966,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
               .copy_to_offset = {
                 instr->as.copy_to_field.dest_name,
                 instr->as.copy_to_field.dest_index,
-                is_ptr ? 4 : 0,
+                0,
                 instr->as.copy_to_field.src_name,
                 instr->as.copy_to_field.src_index,
               },
@@ -1028,10 +1040,11 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                 .ptr_target = malloc(sizeof(EType)),
               },
               {},
+              false,
             };
-            *type.ptr_target = (EType) { ETypeKindU8, {}, {} };
+            *type.ptr_target = (EType) { ETypeKindU8, {}, {}, false };
           } else {
-            type = (EType) { ETypeKindU32, {}, {} };
+            type = (EType) { ETypeKindU32, {}, {}, false };
           }
 
           if (dest->type.kind == ETypeKindUnit) {
@@ -1052,9 +1065,14 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           }
 
           if (is_ptr) {
+            if (instr->as.copy_from_field.take_ref) {
+              CERROR("Cannot take a reference to field ptr of type field\n");
+              goto fail;
+            }
+
             Var new_var = {
               {},
-              { ETypeKindU64, {}, {} },
+              { ETypeKindU64, {}, {}, false },
               false,
               {},
             };
@@ -1103,7 +1121,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             *instr = replacement;
             DA_INSERT(proc->instrs, j, new_instr1);
             DA_INSERT(proc->instrs, j, new_instr0);
-            j += 3;
+            j += 2;
           } else {
             EInstr replacement = {
               EInstrKindCopyFromOffset,
@@ -1113,13 +1131,25 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                   instr->as.copy_from_field.dest_index,
                   instr->as.copy_from_field.src_name,
                   instr->as.copy_from_field.src_index,
-                  is_ptr ? 4 : 0,
+                  0,
+                  instr->as.copy_from_field.take_ref,
+                  instr->as.copy_from_field.is_ref_explicit,
                 },
               },
               instr->loc,
             };
             *instr = replacement;
           }
+        }
+
+        if (instr->as.copy_from_field.is_ref_explicit) {
+          EType new_type;
+          new_type.kind = ETypeKindPtr;
+          new_type.ptr_target = malloc(sizeof(EType));
+          *new_type.ptr_target = dest->type;
+          dest->type = new_type;
+        } else {
+          dest->type.is_implicit_ptr |= instr->as.copy_from_field.take_ref;
         }
       } break;
 
@@ -1235,6 +1265,16 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(dest_type_str, &dest->type);
           free_type_str(field_type_str, type);
           goto fail;
+        }
+
+        if (instr->as.copy_from_offset.is_ref_explicit) {
+          EType new_type;
+          new_type.kind = ETypeKindPtr;
+          new_type.ptr_target = malloc(sizeof(EType));
+          *new_type.ptr_target = dest->type;
+          dest->type = new_type;
+        } else {
+          dest->type.is_implicit_ptr |= instr->as.copy_from_offset.take_ref;
         }
       } break;
       }

@@ -7,7 +7,7 @@ use libe::io
 
 proc main() -> s64
   println("Hello, World!")
-  retval 1
+  retval 0
 end
 ```
 
