@@ -171,7 +171,7 @@ static Config config_create(i32 argc, char **argv) {
   }
 
 #ifndef _WIN32
-  DA_APPEND(config.include_paths, STR_LIT("/usr/include"));
+  DA_APPEND(config.include_paths, STR_LIT("/usr/include/e/libe"));
 #endif
 
   return config;
