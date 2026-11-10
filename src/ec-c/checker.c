@@ -1121,7 +1121,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             *instr = replacement;
             DA_INSERT(proc->instrs, j, new_instr1);
             DA_INSERT(proc->instrs, j, new_instr0);
-            j += 3;
+            j += 2;
           } else {
             EInstr replacement = {
               EInstrKindCopyFromOffset,
@@ -1132,8 +1132,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                   instr->as.copy_from_field.src_name,
                   instr->as.copy_from_field.src_index,
                   0,
-                  true,
-                  false,
+                  instr->as.copy_from_field.take_ref,
+                  instr->as.copy_from_field.is_ref_explicit,
                 },
               },
               instr->loc,
