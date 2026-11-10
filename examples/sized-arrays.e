@@ -1,5 +1,5 @@
 proc main() -> u8
-  let array = [u8;; 16]
+  let array = [u8;; 8]
 
   let i = 0 as u8
   while i < (lenof array) as u8
