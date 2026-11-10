@@ -151,6 +151,10 @@ proc munmap(addr: u64, len: u64) -> s64
   retval syscall(11, addr as s64, len as s64)
 end
 
+proc brk(brk: u64) -> s64
+  retval syscall(12, brk as s64)
+end
+
 proc exit(code: u8) -> s64
   retval syscall(60, code as s64)
 end
