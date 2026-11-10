@@ -34,7 +34,6 @@ void write_cstr(FILE *stream, char *cstr);
 void write_str(FILE *stream, Str str);
 void write_value(FILE *stream, Value *value);
 
-void  get_proc_return_kind_and_size(Procs *procs, Str name, ValueKind *kind, u32 *size);
 i32   align(i32 value, i32 base);
 bool  is_jump(Instr *instr);
 u32  *get_dest(Instr *instr);

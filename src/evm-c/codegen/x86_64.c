@@ -355,6 +355,9 @@ static u32 get_segments_size_x86_64(Segments *segments) {
   if (segments->len == 0)
     return 0;
 
+  if (segments->len == 1 && segments->items[0].size == 0)
+    return 0;
+
   u32 max_size = 0;
 
   for (u32 i = 0; i < segments->len; ++i)
@@ -1194,7 +1197,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     locs->items[instr->as.convert.dest_index].kind = instr->as.convert.dest_kind;
     locs->items[instr->as.convert.dest_index].has_imm_value = false;
 
-    u32 dest_size = instr->as.convert.dest_size;
+    u32 dest_size = get_segments_size_x86_64(&instr->as.convert.dest_segments);
     ValueKind src_kind = locs->items[instr->as.convert.src_index].kind;
     u32 src_size = locs->items[instr->as.convert.src_index].size;
 
@@ -1458,7 +1461,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     args_space.stack_size = ARGS_STACK_OFFSET;
     bool has_nested_call = get_have_function_call(&proc->instrs);
 
-    if (proc->return_size > 16)
+    if (get_segments_size_x86_64(&proc->return_segments) > 16)
       ++args_space.regs;
 
     bool has_stack_args = false;

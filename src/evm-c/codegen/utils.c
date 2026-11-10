@@ -20,16 +20,6 @@ void write_value(FILE *stream, Value *value) {
   }
 }
 
-void get_proc_return_kind_and_size(Procs *procs, Str name, ValueKind *kind, u32 *size) {
-  for (u32 i = 0; i < procs->len; ++i) {
-    if (str_eq(procs->items[i].name, name)) {
-      *kind = procs->items[i].return_kind;
-      *size = procs->items[i].return_size;
-      return;
-    }
-  }
-}
-
 i32 align(i32 value, i32 base) {
   if (value % base == 0)
     return value;

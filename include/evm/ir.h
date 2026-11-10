@@ -100,7 +100,6 @@ typedef struct {
 
 typedef struct {
   u32       dest_index;
-  u32       return_size;
   ValueKind return_kind;
   Str       name;
   Indices   arg_indices;
@@ -135,7 +134,6 @@ typedef struct {
   u32       src_index;
   u32       src_offset_index;
   ValueKind src_target_kind;
-  u32       src_target_size;
   bool      take_ref;
 } InstrCopyFromRef;
 
@@ -164,7 +162,7 @@ typedef struct {
 typedef struct {
   u32       dest_index;
   ValueKind dest_kind;
-  u32       dest_size;
+  Segments  dest_segments;
   u32       src_index;
 } InstrConvert;
 
@@ -180,7 +178,6 @@ typedef struct {
   u32       src_index;
   Segments  src_segments;
   ValueKind src_target_kind;
-  u32       src_target_size;
   bool      deref; // Basically true for pointers and false for structures
   bool      take_ref;
 } InstrCopyFromRefFixed;
@@ -197,7 +194,6 @@ typedef struct {
 
 typedef struct {
   u32       dest_index;
-  u32       return_size;
   ValueKind return_kind;
   u32       index;
   Indices   arg_indices;
@@ -243,8 +239,8 @@ typedef Da(Arg) Args;
 typedef struct {
   Str       name;
   Args      args;
-  u32       return_size;
   ValueKind return_kind;
+  Segments  return_segments;
   Instrs    instrs;
   Instrs    last_instrs;
 } Proc;

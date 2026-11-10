@@ -280,10 +280,9 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
       encode_type_fields_as_aligned_segments(stream, arg_type, structs);
     }
 
-    u32 return_size = get_type_size(structs, &proc->return_type);
     ValueKind return_kind = e_type_kind_to_evm_value_kind(proc->return_type.kind);
-    fwrite(&return_size, sizeof(return_size), 1, stream);
     fwrite(&return_kind, 1, 1, stream);
+    encode_type_fields_as_aligned_segments(stream, &proc->return_type, structs);
 
     u32 len_without_tuples = 0;
     for (u32 j = 0; j < proc->instrs.len; ++j)
@@ -366,8 +365,6 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
       case EInstrKindCallAssign: {
         fwrite(&instr->as.call_assign.dest_index, sizeof(instr->as.call_assign.dest_index), 1, stream);
         EType *return_type = &instr->as.call_assign.callee->return_type;
-        u32 size = get_type_size(structs, return_type);
-        fwrite(&size, sizeof(size), 1, stream);
         ValueKind kind = e_type_kind_to_evm_value_kind(return_type->kind);
         fwrite(&kind, 1, 1, stream);
 
@@ -423,9 +420,7 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
 
         Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(src->type.ptr_target->kind);
-        u32 src_target_size = get_type_size(structs, src->type.ptr_target);
         fwrite(&src_target_kind, 1, 1, stream);
-        fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
         fwrite(&instr->as.copy_from_ref.take_ref, 1, 1, stream);
       } break;
 
@@ -461,9 +456,8 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
         fwrite(&instr->as.cast.dest_index, sizeof(instr->as.cast.dest_index), 1, stream);
 
         ValueKind dest_kind = e_type_kind_to_evm_value_kind(instr->as.cast.dest_type.kind);
-        u32 dest_size = get_type_size(structs, &instr->as.cast.dest_type);
         fwrite(&dest_kind, 1, 1, stream);
-        fwrite(&dest_size, sizeof(dest_size), 1, stream);
+        encode_type_fields_as_aligned_segments(stream, &instr->as.cast.dest_type, structs);
 
         fwrite(&instr->as.cast.src_index, sizeof(instr->as.cast.src_index), 1, stream);
       } break;
@@ -525,9 +519,7 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
 
         EField *field = _struct->fields.items + index - 1;
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(field->type.kind);
-        u32 src_target_size = get_type_size(structs, &field->type);
         fwrite(&src_target_kind, 1, 1, stream);
-        fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
 
         bool deref = src->type.kind == ETypeKindPtr ||
                      src->type.is_implicit_ptr;
@@ -588,29 +580,23 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
           }
 
           ValueKind src_target_kind = ValueKindUnsigned;
-          u32 src_target_size = offset == 0 ? 4 : 1;
           fwrite(&src_target_kind, 1, 1, stream);
-          fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
         } else {
           encode_type_fields_as_aligned_segments_until_for_field_access(stream, &src->type,
                                                                         instr->as.copy_from_offset.src_offset + 1,
                                                                         structs);
 
           ValueKind src_target_kind = ValueKindUnsigned;
-          u32 src_target_size = 0;
           if (src->type.kind == ETypeKindStruct) {
             EStruct *_struct = get_struct(structs, src->type.name);
             EField *field = _struct->fields.items + instr->as.copy_from_offset.src_offset;
             src_target_kind = e_type_kind_to_evm_value_kind(field->type.kind);
-            src_target_size = get_type_size(structs, &field->type);
           } else if (src->type.kind == ETypeKindTuple) {
             EType *field_type = src->type.tuple_types.items + instr->as.copy_from_offset.src_offset;
             src_target_kind = e_type_kind_to_evm_value_kind(field_type->kind);
-            src_target_size = get_type_size(structs, field_type);
           }
 
           fwrite(&src_target_kind, 1, 1, stream);
-          fwrite(&src_target_size, sizeof(src_target_size), 1, stream);
         }
 
         bool deref_if_in_reg = src->type.kind == ETypeKindStr;
