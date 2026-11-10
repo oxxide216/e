@@ -59,7 +59,9 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
 
-    if (instr->kind == InstrKindCopyToRef)
+    if (instr->kind == InstrKindRef)
+      locs->items[instr->as.ref.src_index].is_stack_only = true;
+    else if (instr->kind == InstrKindCopyToRef)
       locs->items[instr->as.copy_to_ref.dest_index].is_stack_only = true;
     else if (instr->kind == InstrKindCopyFromRef)
       locs->items[instr->as.copy_from_ref.src_index].is_stack_only = true;

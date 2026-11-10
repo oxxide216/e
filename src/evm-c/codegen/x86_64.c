@@ -745,9 +745,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       }
     }
 
+    u32 size = args_space.stack_size;
     u32 aligned = 0;
     if (args_space.stack_size > 0)
-      aligned = align(args_space.stack_size + total_space_used, 16) - total_space_used;
+      aligned = align(size + total_space_used, 16) - total_space_used;
 
     if (!is_tail && aligned > 0)
       fprintf(stream, "  sub rsp,%u\n", aligned);
@@ -771,7 +772,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
             write_loc(stream, locs->items + i);
           } else {
             write_str(stream, get_mem_prefix(loc->size));
-            fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+            fprintf(stream, "[rsp+%u]", size - args_space.stack_size);
           }
           write_cstr(stream, ",");
           write_loc_ensure_in_reg(stream, loc, 0);
@@ -800,7 +801,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
             write_loc(stream, locs->items + i);
           } else {
             write_str(stream, get_mem_prefix(8));
-            fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+            fprintf(stream, "[rsp+%u]", size - args_space.stack_size);
           }
           write_cstr(stream, ",");
           write_str(stream, get_temp_regs(8)[0]);
@@ -814,7 +815,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           if (is_tail)
             write_loc(stream, locs->items + i);
           else
-            fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+            fprintf(stream, "[rsp+%u]", size - args_space.stack_size);
           write_cstr(stream, ",");
           write_str(stream, get_temp_regs(8)[0]);
           write_cstr(stream, "\n");
@@ -835,7 +836,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
             write_loc_part_of_size(stream, locs->items + i, arg_size, part_size);
           } else {
             write_str(stream, get_mem_prefix(part_size));
-            fprintf(stream, "[rsp+%u]", aligned - args_space.stack_size);
+            fprintf(stream, "[rsp+%u]", size - args_space.stack_size);
           }
           write_cstr(stream, ",");
           write_str(stream, get_temp_regs(part_size)[0]);
@@ -1083,7 +1084,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(8)[0]));
       }
     }
-    ensure_in_reg(stream, src_loc, 0, true);
+    ensure_in_reg(stream, src_loc, 0,
+                  instr->as.copy_from_ref.take_ref ||
+                  src_loc->size > 8 ||
+                  instr->as.copy_from_ref.src_offset_index != (u32) -1);
 
     if (dest_loc->size <= 8 ||
         instr->as.copy_from_ref.take_ref) {
@@ -1255,9 +1259,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *dest_loc = locs->items + instr->as.copy_to_ref_fixed.dest_index;
     VarLoc *src_loc = locs->items + instr->as.copy_to_ref_fixed.src_index;
 
-    i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[0].offset;
-    for (u32 i = 1; i < instr->as.copy_to_ref_fixed.dest_segments.len; ++i)
-      offset += instr->as.copy_to_ref_fixed.dest_segments.items[i].offset;
+    u32 index = instr->as.copy_to_ref_fixed.dest_segments.len - 1;
+    i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[index].offset;
 
     bool deref =
       instr->as.copy_to_ref_fixed.deref ||
@@ -1313,12 +1316,11 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *dest_loc = locs->items + instr->as.copy_from_ref_fixed.dest_index;
     VarLoc *src_loc = locs->items + instr->as.copy_from_ref_fixed.src_index;
 
-    dest_loc->kind = instr->as.copy_from_ref.src_target_kind;
+    dest_loc->kind = instr->as.copy_from_ref_fixed.src_target_kind;
     dest_loc->has_imm_value = false;
 
-    i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[0].offset;
-    for (u32 i = 1; i < instr->as.copy_from_ref_fixed.src_segments.len; ++i)
-      offset += instr->as.copy_from_ref_fixed.src_segments.items[i].offset;
+    u32 index = instr->as.copy_from_ref_fixed.src_segments.len - 1;
+    i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[index].offset;
 
     bool deref =
       instr->as.copy_from_ref_fixed.deref ||
@@ -1363,10 +1365,21 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           write_cstr(stream, "  lea ");
         else
           write_cstr(stream, "  mov ");
-        write_loc(stream, dest_loc);
+        write_loc_ensure_in_reg(stream, dest_loc, 0);
         write_cstr(stream, ",");
         write_loc_of_size(stream, src_loc, size);
         write_cstr(stream, "\n");
+
+        if (dest_loc->value < 0) {
+          write_cstr(stream, "  mov ");
+          write_loc(stream, dest_loc);
+          write_cstr(stream, ",");
+          if (instr->as.copy_from_ref_fixed.take_ref)
+            write_str(stream, get_temp_regs(8)[0]);
+          else
+            write_str(stream, get_temp_regs(dest_loc->size)[0]);
+          write_cstr(stream, "\n");
+        }
       }
     } else {
       u32 size = 0;
@@ -1448,6 +1461,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     if (proc->return_size > 16)
       ++args_space.regs;
 
+    bool has_stack_args = false;
+
     for (u32 j = 0; j < proc->args.len; ++j) {
       u32 size = proc->args.items[j].size;
       i64 value;
@@ -1457,6 +1472,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         } else {
           value = -args_space.stack_size;
           args_space.stack_size += size;
+          has_stack_args = true;
         }
       } else if (size == 16) {
         if (args_space.regs + 1 < ARRAY_LEN(arg_regs8)) {
@@ -1465,10 +1481,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         } else {
           value = -args_space.stack_size;
           args_space.stack_size += size;
+          has_stack_args = true;
         }
       } else {
         value = -args_space.stack_size;
         args_space.stack_size += size;
+        has_stack_args = true;
       }
 
       bool is_arg = !has_nested_call || j >= ARRAY_LEN(arg_regs8);
@@ -1513,7 +1531,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     write_str(stream, proc->name);
     write_cstr(stream, ":\n");
 
-    if (space_used.stack_size > 0 || proc->args.len > ARRAY_LEN(arg_regs8)) {
+    if (has_stack_args ||
+        space_used.stack_size > 0 ||
+        proc->args.len > ARRAY_LEN(arg_regs8)) {
       write_cstr(stream, "  push rbp\n");
       write_cstr(stream, "  mov rbp,rsp\n");
     }
@@ -1604,7 +1624,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     if (space_used.stack_size > 0)
       fprintf(stream, "  add rsp,%u\n", space_used.stack_size);
 
-    if (space_used.stack_size > 0 || proc->args.len > ARRAY_LEN(arg_regs8))
+    if (has_stack_args ||
+        space_used.stack_size > 0 ||
+        proc->args.len > ARRAY_LEN(arg_regs8))
       write_cstr(stream, "  leave\n");
 
     write_cstr(stream, "  ret\n");

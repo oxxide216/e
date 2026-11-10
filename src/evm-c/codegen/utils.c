@@ -173,9 +173,8 @@ u32 *get_nth_arg(Instr *instr, u32 n) {
   } break;
 
   case InstrKindInlineAsm: {
-    u32 len = n <= instr->as.inline_asm.segments.len ? n : instr->as.inline_asm.segments.len;
     u32 i = 0;
-    for (u32 j = 0; j < len; ++j)
+    for (u32 j = 0; j < instr->as.inline_asm.segments.len; ++j)
       if (instr->as.inline_asm.segments.items[j].kind == AsmSegmentKindVar && i++ == n)
         return &instr->as.inline_asm.segments.items[j].index;
   } break;
