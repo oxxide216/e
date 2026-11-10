@@ -1616,7 +1616,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     }
 
     if (labels[proc->last_instrs.len])
-      fprintf(stream, ".l%u:\n", proc->last_instrs.len);
+      fprintf(stream, ".l%u:\n", proc->last_instrs.len + proc->instrs.len);
 
     if (last_instrs_clutter_first_return_reg)
       write_cstr(stream, "  pop rax\n");
