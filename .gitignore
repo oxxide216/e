@@ -16,4 +16,5 @@
 /nested-structs
 /temp-ref
 /struct-field-copy
+/sized-arrays
 /test*

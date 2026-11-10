@@ -710,48 +710,59 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
       parser_expect_token(parser, MASK(TT_SEMI) | MASK(TT_CBRACE), "`;` or `]`");
 
       u32 i = 0;
-      u32 index_index = alloc_var(parser, (Str) {0}, token);
-      u32 element_index = alloc_var(parser, (Str) {0}, token);
 
-      while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
-             temp_token.id != TT_CBRACE) {
+      if (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+          temp_token.id == TT_SEMI) {
+        parser_next_token(parser, NULL);
         parser_peek_token(parser, &temp_token);
-        parser_parse_expr(parser, (Str) {0}, element_index);
+        parser_expect_token(parser, MASK(TT_INT), "integer");
 
-        emit_instr(
-          &parser->ir->procs,
-          temp_token,
-          EInstrKindStore,
-          .store = {
-            {},
-            index_index,
-            {
-              ETypeKindU64,
-              { ._unsigned = i },
+        i = str_to_u32(temp_token.lexeme);
+      } else {
+
+        u32 index_index = alloc_var(parser, (Str) {0}, token);
+        u32 element_index = alloc_var(parser, (Str) {0}, token);
+
+        while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+               temp_token.id != TT_CBRACE) {
+          parser_peek_token(parser, &temp_token);
+          parser_parse_expr(parser, (Str) {0}, element_index);
+
+          emit_instr(
+            &parser->ir->procs,
+            temp_token,
+            EInstrKindStore,
+            .store = {
+              {},
+              index_index,
+              {
+                ETypeKindU64,
+                { ._unsigned = i },
+              },
             },
-          },
-        );
+          );
 
-        emit_instr(
-          &parser->ir->procs,
-          temp_token,
-          EInstrKindCopyToRef,
-          .copy_to_ref = {
-            dest_name,
-            dest_index,
-            true,
-            {},
-            index_index,
-            {},
-            element_index,
-          },
-        );
+          emit_instr(
+            &parser->ir->procs,
+            temp_token,
+            EInstrKindCopyToRef,
+            .copy_to_ref = {
+              dest_name,
+              dest_index,
+              true,
+              {},
+              index_index,
+              {},
+              element_index,
+            },
+          );
 
-        ++i;
+          ++i;
 
-        if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
-            temp_token.id != TT_CBRACE)
-          parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CBRACE), "`,` or `]`");
+          if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+              temp_token.id != TT_CBRACE)
+            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CBRACE), "`,` or `]`");
+        }
       }
 
       parser_expect_token(parser, MASK(TT_CBRACE), "`,` or `]`");
