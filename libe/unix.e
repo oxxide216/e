@@ -34,15 +34,15 @@ struct FileStat      # Linux x86-64 ABI Layout
   __reserved: [s64; 3]
 end
 
-let SEEK_SET = 0  # Seek from the beginning of the file
-let SEEK_CUR = 1  # Seek from the current file position
-let SEEK_END = 2  # Seek from the end of the file
+#let SEEK_SET = 0  # Seek from the beginning of the file
+#let SEEK_CUR = 1  # Seek from the current file position
+#let SEEK_END = 2  # Seek from the end of the file
 
-let POLLIN = 0x001
-let POLLOUT = 0x004
-let POLLERR = 0x008
-let POLLHUP = 0x010
-let POLLNVAL = 0x020
+#let POLLIN = 0x001
+#let POLLOUT = 0x004
+#let POLLERR = 0x008
+#let POLLHUP = 0x010
+#let POLLNVAL = 0x020
 
 struct PollFd
   fd: s32,
@@ -51,33 +51,46 @@ struct PollFd
 end
 
 
-proc syscall(type: s64)                                       # 0 args
+proc syscall(type: s64) -> s64                                       # 0 args
+  let result = 0 as s64
   asm "mov rax,", type
   asm "syscall"
+  asm "mov ", result, ",rax"
+  retval result
 end
 
-proc syscall(type: s64, arg0: s64)                            # 1 arg
+proc syscall(type: s64, arg0: s64) -> s64                            # 1 arg
+  let result = 0 as s64
   asm "mov rax,", type
   asm "mov rdi,", arg0
   asm "syscall"
+  asm "mov ", result, ",rax"
+  retval result
 end
 
-proc syscall(type: s64, arg0: s64, arg1: s64)                 # 2 args
+proc syscall(type: s64, arg0: s64, arg1: s64) -> s64                 # 2 args
+  let result = 0 as s64
   asm "mov rax,", type
   asm "mov rdi,", arg0
   asm "mov rsi,", arg1
   asm "syscall"
+  asm "mov ", result, ",rax"
+  retval result
 end
 
-proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64)      # 3 args
+proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64) -> s64      # 3 args
+  let result = 0 as s64
   asm "mov rax,", type
   asm "mov rdi,", arg0
   asm "mov rsi,", arg1
   asm "mov rdx,", arg2
   asm "syscall"
+  asm "mov ", result, ",rax"
+  retval result
 end
 
-proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64, arg3: s64, arg4: s64, arg5: s64)      # 6 args
+proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64, arg3: s64, arg4: s64, arg5: s64) -> s64      # 6 args
+  let result = 0 as s64
   asm "mov rax,", type
   asm "mov rdi,", arg0
   asm "mov rsi,", arg1
@@ -86,6 +99,8 @@ proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64, arg3: s64, arg4: s64, a
   asm "mov r8,",  arg4
   asm "mov r9,",  arg5
   asm "syscall"
+  asm "mov ", result, ",rax"
+  retval result
 end
 
 proc read(fd: s64, str: &u8, len:u64) -> s64
@@ -97,7 +112,7 @@ proc write(fd: s64, str: &u8, len: u64) -> s64
 end
 
 proc open(filename: &u8, flags: s32, mode: s32) -> s64
-  retval syscall(2, filename as s64, flags, mode)
+  retval syscall(2, filename as s64, flags as s64, mode as s64)
 end
 
 proc close(fd: s64) -> s64
@@ -125,7 +140,7 @@ proc lseek(fd: s32, offset: s64, whence: s32) -> s64
 end
 
 proc mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: u64, off: u64) -> s64
-  retval syscall(9, addr as s64, prot as s64, flags as s64, fd as s64, off as s64)
+  retval syscall(9, addr as s64, len as s64, prot as s64, flags as s64, fd as s64, off as s64)
 end
 
 proc exit(code: u8) -> s64
