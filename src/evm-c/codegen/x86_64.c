@@ -1016,7 +1016,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "  mov ");
       write_str(stream, get_mem_prefix(src_loc->size));
       write_cstr(stream, "[");
-      write_loc_ensure_in_reg(stream, dest_loc, 0);
+      write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
       if (instr->as.copy_to_ref.dest_offset_index != (u32) -1) {
         write_cstr(stream, "+");
         if (is_valid_index_mul(src_loc->size)) {
@@ -1096,7 +1096,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       if (!instr->as.copy_from_ref.take_ref)
         write_str(stream, get_mem_prefix(dest_loc->size));
       write_cstr(stream, "[");
-      write_loc_ensure_in_reg(stream, src_loc, 0);
+      write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 0);
       if (instr->as.copy_from_ref.src_offset_index != (u32) -1) {
         write_cstr(stream, "+");
         if (is_valid_index_mul(dest_loc->size)) {
@@ -1272,7 +1272,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         write_cstr(stream, "  mov ");
         write_str(stream, get_mem_prefix(src_loc->size));
         write_cstr(stream, "[");
-        write_loc_ensure_in_reg(stream, dest_loc, 0);
+        write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
         if (offset >= 0)
           fprintf(stream, "+%d],", offset);
         else
@@ -1340,7 +1340,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         if (!instr->as.copy_from_ref_fixed.take_ref)
           write_str(stream, get_mem_prefix(dest_loc->size));
         write_cstr(stream, "[");
-        write_loc_ensure_in_reg(stream, src_loc, 1);
+        write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 1);
         if (offset >= 0)
           fprintf(stream, "+%d]\n", offset);
         else
