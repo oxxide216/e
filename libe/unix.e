@@ -143,6 +143,10 @@ proc mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: u64, off: u64) -> s64
   retval syscall(9, addr as s64, len as s64, prot as s64, flags as s64, fd as s64, off as s64)
 end
 
+proc munmap(addr: u64, len: u64) -> s64
+  retval syscall(11, addr as s64, len as s64)
+end
+
 proc exit(code: u8) -> s64
   retval syscall(60, code as s64)
 end
