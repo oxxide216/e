@@ -234,8 +234,8 @@ typedef struct {
 typedef Da(Instr) Instrs;
 
 typedef struct {
-  u32       size;
   ValueKind kind;
+  Segments  segments;
 } Arg;
 
 typedef Da(Arg) Args;

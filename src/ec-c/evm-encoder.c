@@ -274,10 +274,10 @@ static void encode_procs_no_len(FILE *stream, EProcs *procs,
 
     fwrite(&proc->args.len, sizeof(proc->args.len), 1, stream);
     for (u32 j = 0; j < proc->args.len; ++j) {
-      u32 arg_size = get_type_size(structs, &proc->args.items[j].type);
-      ValueKind arg_kind = e_type_kind_to_evm_value_kind(proc->args.items[j].type.kind);
-      fwrite(&arg_size, sizeof(arg_size), 1, stream);
+      EType *arg_type = &proc->args.items[j].type;
+      ValueKind arg_kind = e_type_kind_to_evm_value_kind(arg_type->kind);
       fwrite(&arg_kind, 1, 1, stream);
+      encode_type_fields_as_aligned_segments(stream, arg_type, structs);
     }
 
     u32 return_size = get_type_size(structs, &proc->return_type);

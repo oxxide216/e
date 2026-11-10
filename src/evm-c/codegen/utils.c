@@ -226,11 +226,13 @@ void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
     else
       continue;
 
-    i32 offset = 0;
+    i32 diff = 0;
     for (u32 j = 0; j < offsets->len; ++j) {
+      offsets->items[j].offset += diff;
       i32 alignment = alignment_func(offsets->items[j].size);
-      offsets->items[j].offset = align(offsets->items[j].offset, alignment);
-      offset += offsets->items[j].size;
+      i32 aligned = align(offsets->items[j].offset, alignment);
+      diff += aligned - offsets->items[j].offset;
+      offsets->items[j].offset = aligned;
     }
   }
 }

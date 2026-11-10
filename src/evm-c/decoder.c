@@ -315,10 +315,21 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
     proc->args.items = arena_alloc(arena, proc->args.cap * sizeof(Arg));
 
     for (u32 j = 0; j < proc->args.len; ++j) {
-      decode_buffer(&decoder, &proc->args.items[j].size, sizeof(proc->args.items[j].size));
       u8 arg_kind;
       decode_buffer(&decoder, &arg_kind, 1);
       proc->args.items[j].kind = arg_kind;
+
+      decode_buffer(&decoder, &proc->args.items[j].segments.len, sizeof(proc->args.items[j].segments.len));
+      proc->args.items[j].segments.cap = proc->args.items[j].segments.len;
+      proc->args.items[j].segments.items =
+        arena_alloc(decoder.arena,
+                    proc->args.items[j].segments.cap * sizeof(AlignedSegment));
+
+      for (u32 k = 0; k < proc->args.items[j].segments.len; ++k) {
+        AlignedSegment *segment = proc->args.items[j].segments.items + k;
+        decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
+        decode_buffer(&decoder, &segment->size, sizeof(segment->size));
+      }
     }
 
     decode_buffer(&decoder, &proc->return_size, sizeof(proc->return_size));

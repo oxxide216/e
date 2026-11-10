@@ -1464,7 +1464,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     bool has_stack_args = false;
 
     for (u32 j = 0; j < proc->args.len; ++j) {
-      u32 size = proc->args.items[j].size;
+      u32 size = get_segments_size_x86_64(&proc->args.items[j].segments);
       i64 value;
       if (size <= 8) {
         if (args_space.regs < ARRAY_LEN(arg_regs8)) {

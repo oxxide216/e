@@ -227,7 +227,11 @@ void proc_print(Proc *proc, VarLocs *locs, u8 *labels) {
     if (i > 0)
       printf(", ");
     printf("$%u: ", i);
-    print_value_params(proc->args.items[i].kind, proc->args.items[i].size);
+    Segments *segments = &proc->args.items[i].segments;
+    i32 size =
+      segments->items[segments->len - 1].offset +
+      segments->items[segments->len - 1].size;
+    print_value_params(proc->args.items[i].kind, size);
   }
   printf(") -> ");
   print_value_params(proc->return_kind, proc->return_size);
