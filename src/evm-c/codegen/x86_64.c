@@ -1090,8 +1090,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     }
     ensure_in_reg(stream, src_loc, 0,
                   instr->as.copy_from_ref.take_ref ||
-                  src_loc->size > 8 ||
-                  instr->as.copy_from_ref.src_offset_index != (u32) -1);
+                  src_loc->size > 8);
 
     if (dest_loc->size <= 8 ||
         instr->as.copy_from_ref.take_ref) {
