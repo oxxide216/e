@@ -152,7 +152,7 @@ proc fstat(fd: s64, statbuf: &FileStat) -> s64
   retval syscall(5, fd, statbuf as s64)
 end
 
-proc lstat(filename: &u8, statbuf: &FileStat) -> s64 # What's the difference between stat and lstat??
+proc lstat(filename: &u8, statbuf: &FileStat) -> s64
   retval syscall(6, filename as s64, statbuf as s64)
 end
 
