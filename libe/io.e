@@ -12,7 +12,7 @@ proc println(str: str)
 end
 
 proc print(str: &u8)
-  let len = str_len(str)
+  let len = cstr_len(str)
   write(1, str, len as u64)
 end
 
