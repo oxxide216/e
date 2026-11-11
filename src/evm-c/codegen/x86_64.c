@@ -407,6 +407,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
                         VarLocs *locs, JumpOpt *jump_opt,
                         Str proc_name, u32 total_space_used) {
   Instr *instr = instrs->items + index;
+
   switch (instr->kind) {
   case InstrKindAlloc: break;
 
@@ -1287,11 +1288,12 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         write_cstr(stream, "\n");
       } else {
         u32 size = src_loc->size;
+        ensure_in_reg(stream, src_loc, 1, false);
 
         write_cstr(stream, "  mov ");
         write_loc_of_size(stream, dest_loc, size);
         write_cstr(stream, ",");
-        write_loc(stream, src_loc);
+        write_loc_ensure_in_reg(stream, src_loc, 1);
         write_cstr(stream, "\n");
       }
     } else {
