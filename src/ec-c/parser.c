@@ -1861,9 +1861,10 @@ static void parser_parse_stmt_impl(Parser *parser) {
     );
   } else if (token.id == TT_WHILE) {
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+    Vars *vars = parser->varss->items + parser->varss->len - 1;
 
     u32 prev_scope_begin = parser->scope_begin;
-    parser->scope_begin = instrs->len;
+    parser->scope_begin = vars->len;
 
     u32 label_index = instrs->len;
 
@@ -1897,9 +1898,10 @@ static void parser_parse_stmt_impl(Parser *parser) {
     end_vars_scope(parser, prev_scope_begin);
   } else if (token.id == TT_IF) {
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+    Vars *vars = parser->varss->items + parser->varss->len - 1;
 
     u32 prev_scope_begin = parser->scope_begin;
-    parser->scope_begin = instrs->len;
+    parser->scope_begin = vars->len;
 
     u32 cond_index = alloc_var(parser, (Str) {0}, token);
     parser_parse_expr(parser, (Str) {0}, cond_index);
@@ -1928,7 +1930,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
     while (parser_peek_token(parser, &token) != TokenStatusEOF &&
            token.id != TT_ELSE && token.id != TT_END) {
       prev_scope_begin = parser->scope_begin;
-      parser->scope_begin = instrs->len;
+      parser->scope_begin = vars->len;
 
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
 
@@ -1965,7 +1967,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     if (token.id == TT_ELSE) {
       prev_scope_begin = parser->scope_begin;
-      parser->scope_begin = instrs->len;
+      parser->scope_begin = vars->len;
 
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
       jump_index = instrs->len - 1;

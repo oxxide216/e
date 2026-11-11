@@ -66,7 +66,7 @@ void type_free(EType *type) {
     free(type->moved_members);
 }
 
-u32 get_type_size(EStructs *structs, EType *type) {
+u32 get_type_size(EIr *ir, EType *type) {
   switch (type->kind) {
   case ETypeKindUnit: return 0;
   case ETypeKindS8:   return 1;
@@ -82,22 +82,22 @@ u32 get_type_size(EStructs *structs, EType *type) {
   case ETypeKindStruct: {
     u32 size = 0;
 
-    EStruct *_struct = get_struct(structs, type->name);
+    EStruct *_struct = get_struct(ir, type->name);
     for (u32 i = 0; i < _struct->fields.len; ++i)
-      size += get_type_size(structs, &_struct->fields.items[i].type);
+      size += get_type_size(ir, &_struct->fields.items[i].type);
 
     return size == 0 ? 1 : size;
   }
 
   case ETypeKindArray: {
-    return get_type_size(structs, type->array_element) * type->array_len;
+    return get_type_size(ir, type->array_element) * type->array_len;
   }
 
   case ETypeKindTuple: {
     u32 size = 0;
 
     for (u32 i = 0; i < type->tuple_types.len; ++i)
-      size += get_type_size(structs, type->tuple_types.items + i);
+      size += get_type_size(ir, type->tuple_types.items + i);
 
     return size;
   }
@@ -109,10 +109,16 @@ u32 get_type_size(EStructs *structs, EType *type) {
   return 0;
 }
 
-EStruct *get_struct(EStructs *structs, Str name) {
-  for (u32 i = 0; i < structs->len; ++i)
-    if (str_eq(structs->items[i].name, name))
-      return structs->items + i;
+EStruct *get_struct(EIr *ir, Str name) {
+  for (u32 i = 0; i < ir->structs.len; ++i)
+    if (str_eq(ir->structs.items[i].name, name))
+      return ir->structs.items + i;
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EStruct *_struct = get_struct(&ir->module_deps.items[i].ir, name);
+    if (_struct)
+      return _struct;
+  }
 
   return NULL;
 }

@@ -72,19 +72,19 @@ typedef struct {
 
 typedef Da(VarSubstitution) VarSubstitutions;
 
-static bool check_struct_existence(EStructs *structs, EType *type) {
+static bool check_struct_existence(EIr *ir, EType *type) {
   if (type->kind == ETypeKindStruct) {
-    if (!get_struct(structs, type->name)) {
+    if (!get_struct(ir, type->name)) {
       CERRORFT("Structure "STR_FMT" was not defined\n", STR_ARG(type->name));
       return false;
     }
   } else if (type->kind == ETypeKindPtr) {
-    return check_struct_existence(structs, type->ptr_target);
+    return check_struct_existence(ir, type->ptr_target);
   } else if (type->kind == ETypeKindArray) {
-    return check_struct_existence(structs, type->array_element);
+    return check_struct_existence(ir, type->array_element);
   } else if (type->kind == ETypeKindTuple) {
     for (u32 i = 0; i < type->tuple_types.len; ++i)
-      if (!check_struct_existence(structs, type->tuple_types.items + i))
+      if (!check_struct_existence(ir, type->tuple_types.items + i))
         return false;
   }
 
@@ -798,7 +798,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
     EStruct *_struct = ir->structs.items + i;
 
     for (u32 j = 0; j < _struct->fields.len; ++j)
-      if (!check_struct_existence(&ir->structs, &_struct->fields.items[j].type))
+      if (!check_struct_existence(ir, &_struct->fields.items[j].type))
         goto fail;
   }
 
@@ -850,15 +850,16 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
     }
 
     for (u32 j = 0; j < proc->args.len; ++j)
-      if (!check_struct_existence(&ir->structs, &proc->args.items[j].type))
+      if (!check_struct_existence(ir, &proc->args.items[j].type))
         goto fail;
-    if (!check_struct_existence(&ir->structs, &proc->return_type))
+    if (!check_struct_existence(ir, &proc->return_type))
       goto fail;
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
 
-      if (instr->kind == EInstrKindCopy) {
+      if (instr->kind == EInstrKindCopy &&
+          instr->as.copy.src_index < varss->items[i].len) {
         Var *src = varss->items[i].items + instr->as.copy.src_index;
         if (src->type.kind == ETypeKindStruct ||
             src->type.kind == ETypeKindArray ||
@@ -1358,7 +1359,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         }
 
         if (dest_type->kind == ETypeKindStruct) {
-          EStruct *_struct = get_struct(&ir->structs, dest_type->name);
+          EStruct *_struct = get_struct(ir, dest_type->name);
           if (!_struct) {
             CERRORF("Structure "STR_FMT" was not defined\n",
                     STR_ARG(dest->type.name));
@@ -1452,7 +1453,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         }
 
         if (src_type->kind == ETypeKindStruct) {
-          EStruct *_struct = get_struct(&ir->structs, src_type->name);
+          EStruct *_struct = get_struct(ir, src_type->name);
           if (!_struct) {
             CERRORF("Structure "STR_FMT" was not defined\n",
                     STR_ARG(src_type->name));

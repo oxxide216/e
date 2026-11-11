@@ -392,9 +392,9 @@ EType type_clone(EType *type);
 bool type_eq(EType *a, EType *b);
 void type_free(EType *type);
 
-u32 get_type_size(EStructs *structs, EType *type);
+u32 get_type_size(EIr *ir, EType *type);
 
-EStruct *get_struct(EStructs *structs, Str name);
+EStruct *get_struct(EIr *ir, Str name);
 EField  *get_field(EStruct *_struct, Str name);
 
 #endif // EIR_H
