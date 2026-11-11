@@ -44,6 +44,8 @@ struct EType {
     ETypes   tuple_types;
   };
   ETypeLoc   loc;
+  u8        *moved_members;
+  u32        moved_members_len;
   bool       is_implicit_ptr;
 };
 
@@ -326,7 +328,10 @@ struct EProc {
 
 typedef Da(EProc) EProcs;
 
-typedef EArg EField;
+typedef struct {
+  Str   name;
+  EType type;
+} EField;
 
 typedef Da(EField) EFields;
 
@@ -366,12 +371,12 @@ typedef struct {
 } EIr;
 
 typedef struct {
-  Str       name;
-  EType     type;
-  bool      moved;
-  EInstrLoc moved_loc;
-  u32       scope_end_instr;
-  bool      returned;
+  Str        name;
+  EType      type;
+  bool       moved;
+  EInstrLoc  moved_loc;
+  u32        scope_end_instr;
+  bool       returned;
 } Var;
 
 typedef Da(Var) Vars;

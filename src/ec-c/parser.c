@@ -150,29 +150,36 @@ void parser_expect_token_impl(Parser *parser, u64 mask, char *expected) {
 static EType get_type_from_token(Token *name_token) {
   ETypeLoc loc = { name_token->file_path, name_token->row, name_token->col };
   if (str_eq(name_token->lexeme, STR_LIT("unit")))
-    return (EType) { ETypeKindUnit, {}, loc, false };
+    return (EType) { ETypeKindUnit, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("s8")))
-    return (EType) { ETypeKindS8, {}, loc, false };
+    return (EType) { ETypeKindS8, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("s16")))
-    return (EType) { ETypeKindS16, {}, loc, false };
+    return (EType) { ETypeKindS16, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("s32")))
-    return (EType) { ETypeKindS32, {}, loc, false };
+    return (EType) { ETypeKindS32, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("s64")))
-    return (EType) { ETypeKindS64, {}, loc, false };
+    return (EType) { ETypeKindS64, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("u8")))
-    return (EType) { ETypeKindU8, {}, loc, false };
+    return (EType) { ETypeKindU8, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("u16")))
-    return (EType) { ETypeKindU16, {}, loc, false };
+    return (EType) { ETypeKindU16, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("u32")))
-    return (EType) { ETypeKindU32, {}, loc, false };
+    return (EType) { ETypeKindU32, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("u64")))
-    return (EType) { ETypeKindU64, {}, loc, false };
+    return (EType) { ETypeKindU64, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("bool")))
-    return (EType) { ETypeKindBool, {}, loc, false };
+    return (EType) { ETypeKindBool, {}, loc, NULL, 0, false };
   else if (str_eq(name_token->lexeme, STR_LIT("str")))
-    return (EType) { ETypeKindStr, {}, loc, false };
+    return (EType) { ETypeKindStr, {}, loc, NULL, 0, false };
   else
-    return (EType) { ETypeKindStruct, { .name = name_token->lexeme }, loc, false };
+    return (EType) {
+      ETypeKindStruct,
+      { .name = name_token->lexeme },
+      loc,
+      NULL,
+      0,
+      false,
+    };
 }
 
 static void parser_parse_type_impl(Parser *parser) {
@@ -197,6 +204,8 @@ static void parser_parse_type_impl(Parser *parser) {
         .ptr_target = ptr_target,
       },
       loc,
+      NULL,
+      0,
       false,
     };
   } else {
@@ -218,6 +227,8 @@ static void parser_parse_type_impl(Parser *parser) {
         .array_len = str_to_u32(token.lexeme),
       },
       loc,
+      NULL,
+      0,
       false,
     };
   }
@@ -756,6 +767,8 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             token.row,
             token.col,
           },
+          NULL,
+          0,
           false,
         };
         *parser->varss->items[parser->varss->len - 1].items[dest_index].type.array_element = element_type;
@@ -836,6 +849,8 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           token.row,
           token.col,
         },
+        NULL,
+        0,
         false,
       };
       *parser->varss->items[parser->varss->len - 1].items[dest_index].type.array_element = element_type;
@@ -892,6 +907,8 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           parser_expect_token(parser, MASK(TT_SET), "`=`");
           parser_parse_expr(parser, (Str) {0}, element_index);
 
+         make_last_copy_returned(parser); 
+
           emit_instr(
             &parser->ir->procs,
             temp_token,
@@ -927,6 +944,8 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             token.row,
             token.col,
           },
+          NULL,
+          0,
           false,
         };
       } else {

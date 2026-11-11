@@ -9,6 +9,12 @@ EType type_clone(EType *type) {
     new_type.array_element = malloc(sizeof(EType));
     *new_type.array_element = type_clone(type->array_element);
   }
+  if (new_type.moved_members) {
+    new_type.moved_members = malloc(new_type.moved_members_len);
+    memcpy(new_type.moved_members,
+           type->moved_members,
+           new_type.moved_members_len);
+  }
   return new_type;
 }
 
@@ -38,11 +44,20 @@ bool type_eq(EType *a, EType *b) {
 }
 
 void type_free(EType *type) {
-  if (type->kind == ETypeKindPtr)
+  if (type->kind == ETypeKindPtr){
     type_free(type->ptr_target);
-  else if (type->kind == ETypeKindArray)
+    free(type->ptr_target);
+  } else if (type->kind == ETypeKindArray) {
     type_free(type->array_element);
-  free(type);
+    free(type->array_element);
+  } else if (type->kind == ETypeKindTuple) {
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      type_free(type->tuple_types.items + i);
+    if (type->tuple_types.items)
+      free(type->tuple_types.items);
+  }
+  if (type->moved_members)
+    free(type->moved_members);
 }
 
 u32 get_type_size(EStructs *structs, EType *type) {

@@ -171,7 +171,7 @@ void proc_print(EProc *proc) {
         var_print(instr->as.copy_to_ref.dest_index, instr->as.copy_to_ref.dest_name);
         printf("[");
         var_print(instr->as.copy_to_ref.dest_offset_index, instr->as.copy_to_ref.dest_offset_name);
-        printf("] := &");
+        printf("] = &");
         var_print(instr->as.copy_to_ref.src_index, instr->as.copy_to_ref.src_name);
         printf("\n");
       } else {
@@ -187,7 +187,7 @@ void proc_print(EProc *proc) {
       if (instr->as.copy_from_ref.has_offset) {
         printf("  ");
         var_print(instr->as.copy_from_ref.dest_index, instr->as.copy_from_ref.dest_name);
-        printf(" := ");
+        printf(" = ");
         if (instr->as.copy_from_ref.take_ref)
           putc('&', stdout);
         var_print(instr->as.copy_from_ref.src_index, instr->as.copy_from_ref.src_name);

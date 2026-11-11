@@ -46,6 +46,20 @@
     }                                                              \
   } while (0)
 
+// TODO: "Moved here" hint like above
+#define CHECK_MEMBER(type, member_index, member_name)              \
+  do {                                                             \
+    if ((type)->moved_members_len > member_index &&                \
+        (type)->moved_members[member_index]) {                     \
+      CERRORF("Trying to access member "STR_FMT" after move\n",    \
+              STR_ARG(member_name));                               \
+      goto fail;                                                   \
+    }                                                              \
+  } while (0)
+
+#define FIELD_INDEX(_struct, field)    \
+  ((field) - (_struct)->fields.items)
+
 typedef Da(EType *) ETypeRefs;
 
 typedef struct {
@@ -64,13 +78,19 @@ static bool check_struct_existence(EStructs *structs, EType *type) {
     }
   } else if (type->kind == ETypeKindPtr) {
     return check_struct_existence(structs, type->ptr_target);
+  } else if (type->kind == ETypeKindArray) {
+    return check_struct_existence(structs, type->array_element);
+  } else if (type->kind == ETypeKindTuple) {
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      if (!check_struct_existence(structs, type->tuple_types.items + i))
+        return false;
   }
 
   return true;
 }
 
 static EType make_type_from_kind(ETypeKind kind) {
-  return (EType) { kind, {}, {}, false };
+  return (EType) { kind, {}, {}, NULL, 0, false };
 }
 
 static void free_type_str(Str str, EType *type) {
@@ -406,6 +426,16 @@ static void fprintf_tuple_type(FILE *stream, ETypes *field_types) {
   fputc(')', stream);
 }
 
+static void set_member_moved(EType *type, u32 index, bool value) {
+  if (type->moved_members_len < index + 1) {
+    type->moved_members = realloc(type->moved_members, index + 1);
+    memset(type->moved_members, 0, index + 1 - type->moved_members_len);
+    type->moved_members_len = index + 1;
+  }
+
+  type->moved_members[index] = value;
+}
+
 bool check_ir(EIr *ir, Varss *varss, bool require_main) {
   bool found_main = false;
   VarSubstitutions var_substs = {0};
@@ -435,6 +465,30 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         goto fail;
     if (!check_struct_existence(&ir->structs, &proc->return_type))
       goto fail;
+
+    for (u32 j = 0; j < proc->instrs.len; ++j) {
+      EInstr *instr = proc->instrs.items + j;
+
+      if (instr->kind == EInstrKindCopy) {
+        Var *src = varss->items[i].items + instr->as.copy.src_index;
+        if (src->type.kind == ETypeKindStruct ||
+            src->type.kind == ETypeKindArray ||
+            src->type.kind == ETypeKindTuple) {
+          VarSubstitution var_subst = {
+            j,
+            instr->as.copy.dest_index,
+            instr->as.copy.src_index,
+          };
+          DA_APPEND(var_substs, var_subst);
+          DA_REMOVE_AT(proc->instrs, j);
+          --j;
+        }
+      }
+    }
+
+    for (u32 j = 0; j < var_substs.len; ++j)
+      substitute_var_uses_with_its_src(proc, var_substs.items + j);
+    var_substs.len = 0;
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
@@ -480,21 +534,12 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           goto fail;
         }
 
-        if (src->type.kind == ETypeKindStruct ||
-            src->type.kind == ETypeKindArray ||
-            src->type.kind == ETypeKindTuple) {
-          if (instr->as.copy.is_explicit) {
-            src->moved = true;
-            src->moved_loc = instr->loc;
-          }
-          VarSubstitution var_subst = {
-            j,
-            instr->as.copy.dest_index,
-            instr->as.copy.src_index,
-          };
-          DA_APPEND(var_substs, var_subst);
-          DA_REMOVE_AT(proc->instrs, j);
-          --j;
+        if (instr->as.copy.is_explicit &&
+            (src->type.kind == ETypeKindStruct ||
+             src->type.kind == ETypeKindArray ||
+             src->type.kind == ETypeKindTuple)) {
+          src->moved = true;
+          src->moved_loc = instr->loc;
         }
       } break;
 
@@ -524,7 +569,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         EType dest_type;
         if (instr->as.bin_op.kind >= EBinOpKindEq &&
             instr->as.bin_op.kind <= EBinOpKindGe)
-          dest_type = (EType) { ETypeKindBool, {}, {}, false };
+          dest_type = (EType) { ETypeKindBool, {}, {}, NULL, 0, false };
         else
           dest_type = type_clone(&src0->type);
 
@@ -537,17 +582,11 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                   STR_ARG(src0_type_str), STR_ARG(dest_type_str));
           free_type_str(src0_type_str, &src0->type);
           free_type_str(dest_type_str, &dest->type);
-          if (dest_type.kind == ETypeKindPtr)
-            type_free(dest_type.ptr_target);
-          else if (dest_type.kind == ETypeKindArray)
-            type_free(dest_type.array_element);
+          type_free(&dest_type);
           goto fail;
         }
 
-        if (dest_type.kind == ETypeKindPtr)
-          type_free(dest_type.ptr_target);
-        else if (dest_type.kind == ETypeKindArray)
-          type_free(dest_type.array_element);
+        type_free(&dest_type);
       } break;
 
       case EInstrKindCall: {
@@ -689,6 +728,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             .ptr_target = malloc(sizeof(EType)),
           },
           {},
+          NULL,
+          0,
           false,
         };
         *ptr_type.ptr_target = type_clone(&src->type);
@@ -702,10 +743,10 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                   STR_ARG(ptr_type_str), STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           free_type_str(ptr_type_str, &ptr_type);
-          type_free(ptr_type.ptr_target);
+          type_free(&ptr_type);
           goto fail;
         } else {
-          type_free(ptr_type.ptr_target);
+          type_free(&ptr_type);
         }
       } break;
 
@@ -791,6 +832,12 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                   STR_ARG(ptr_target_type_str), STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           free_type_str(ptr_target_type_str, src->type.ptr_target);
+          goto fail;
+        }
+
+        if (src->type.kind == ETypeKindArray &&
+            !instr->as.copy_from_ref.take_ref) {
+          CERROR("Moving from array requires explicit copy\n");
           goto fail;
         }
 
@@ -889,6 +936,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             ETypeKindU64,
             {},
             {},
+            NULL,
+            0,
             false,
           };
         } else if (src->type.kind != ETypeKindArray) {
@@ -954,6 +1003,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           if (src->type.kind == ETypeKindStruct ||
               src->type.kind == ETypeKindArray ||
               src->type.kind == ETypeKindTuple) {
+            set_member_moved(dest_type, FIELD_INDEX(_struct, field), false);
             src->moved = true;
             src->moved_loc = instr->loc;
           }
@@ -970,7 +1020,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             goto fail;
           }
 
-          EType type = { ETypeKindU32, {}, {}, false };
+          EType type = { ETypeKindU32, {}, {}, NULL, 0, false };
           if (!type_eq(&src->type, &type)) {
             Str field_type_str = get_type_str(&type);
             Str src_type_str = get_type_str(&src->type);
@@ -1034,6 +1084,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             goto fail;
           }
 
+          CHECK_MEMBER(src_type, FIELD_INDEX(_struct, field), field->name);
+
           if (dest->type.kind == ETypeKindUnit) {
             dest->type = type_clone(&field->type);
           } else if (!type_eq(&field->type, &dest->type)) {
@@ -1045,6 +1097,12 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
             free_type_str(field_type_str, &field->type);
             goto fail;
           }
+
+          if (!instr->as.copy_from_field.take_ref &&
+              (dest->type.kind == ETypeKindStruct ||
+               dest->type.kind == ETypeKindArray ||
+               dest->type.kind == ETypeKindTuple))
+            set_member_moved(src_type, FIELD_INDEX(_struct, field), true);
         } else {
           bool is_ptr = str_eq(instr->as.copy_from_field.src_field_name, STR_LIT("ptr"));
           if (!is_ptr && !str_eq(instr->as.copy_from_field.src_field_name, STR_LIT("len"))) {
@@ -1061,11 +1119,13 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                 .ptr_target = malloc(sizeof(EType)),
               },
               {},
+              NULL,
+              0,
               false,
             };
-            *type.ptr_target = (EType) { ETypeKindU8, {}, {}, false };
+            *type.ptr_target = (EType) { ETypeKindU8, {}, {}, NULL, 0, false };
           } else {
-            type = (EType) { ETypeKindU32, {}, {}, false };
+            type = (EType) { ETypeKindU32, {}, {}, NULL, 0, false };
           }
 
           if (dest->type.kind == ETypeKindUnit) {
@@ -1077,12 +1137,10 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                     STR_ARG(field_type_str), STR_ARG(dest_type_str));
             free_type_str(dest_type_str, &dest->type);
             free_type_str(field_type_str, &type);
-            if (is_ptr)
-              type_free(type.ptr_target);
+            type_free(&type);
             goto fail;
           } else {
-            if (is_ptr)
-              type_free(type.ptr_target);
+            type_free(&type);
           }
 
           if (is_ptr) {
@@ -1093,7 +1151,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
 
             Var new_var = {
               {},
-              { ETypeKindU64, {}, {}, false },
+              { ETypeKindU64, {}, {}, NULL, 0, false },
               false,
               {},
               0,
@@ -1214,24 +1272,28 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         Var *dest = varss->items[i].items + instr->as.copy_to_offset.dest_index;
         Var *src = varss->items[i].items + instr->as.copy_to_offset.src_index;
 
-        if (dest->type.kind != ETypeKindTuple) {
-          Str dest_type_str = get_type_str(&dest->type);
+        EType *dest_type = &dest->type;
+        if (dest_type->kind == ETypeKindPtr)
+          dest_type = dest_type->ptr_target;
+
+        if (dest_type->kind != ETypeKindTuple) {
+          Str dest_type_str = get_type_str(dest_type);
           CERRORF("Attempt to access number field of something that is not a tuple, but "STR_FMT"\n",
                   STR_ARG(dest_type_str));
-          free_type_str(dest_type_str, &dest->type);
+          free_type_str(dest_type_str, dest_type);
           goto fail;
         }
 
-        if (instr->as.copy_to_offset.dest_offset >= dest->type.tuple_types.len) {
-          Str dest_type_str = get_type_str(&dest->type);
+        if (instr->as.copy_to_offset.dest_offset >= dest_type->tuple_types.len) {
+          Str dest_type_str = get_type_str(dest_type);
           CERRORF("Number field %u does not exist in tuple "STR_FMT"\n",
                   instr->as.copy_to_offset.dest_offset,
                   STR_ARG(dest_type_str));
-          free_type_str(dest_type_str, &dest->type);
+          free_type_str(dest_type_str, dest_type);
           goto fail;
         }
 
-        EType *type = dest->type.tuple_types.items +
+        EType *type = dest_type->tuple_types.items +
                       instr->as.copy_to_offset.dest_offset;
         if (!type_eq(&src->type, type)) {
           Str field_type_str = get_type_str(type);
@@ -1246,6 +1308,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         if (src->type.kind == ETypeKindStruct ||
             src->type.kind == ETypeKindArray ||
             src->type.kind == ETypeKindTuple) {
+          set_member_moved(dest_type, instr->as.copy_to_offset.dest_offset, false);
           src->moved = true;
           src->moved_loc = instr->loc;
         }
@@ -1259,24 +1322,28 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         dest->moved = false;
         Var *src = varss->items[i].items + instr->as.copy_from_offset.src_index;
 
-        if (src->type.kind != ETypeKindTuple) {
-          Str src_type_str = get_type_str(&src->type);
+        EType *src_type = &src->type;
+        if (src_type->kind == ETypeKindPtr)
+          src_type = src_type->ptr_target;
+
+        if (src_type->kind != ETypeKindTuple) {
+          Str src_type_str = get_type_str(src_type);
           CERRORF("Attempt to access numbered field of something that is not a tuple, but "STR_FMT"\n",
                   STR_ARG(src_type_str));
-          free_type_str(src_type_str, &src->type);
+          free_type_str(src_type_str, src_type);
           goto fail;
         }
 
-        if (instr->as.copy_from_offset.src_offset >= src->type.tuple_types.len) {
-          Str src_type_str = get_type_str(&src->type);
+        if (instr->as.copy_from_offset.src_offset >= src_type->tuple_types.len) {
+          Str src_type_str = get_type_str(src_type);
           CERRORF("Numbered ield %u does not exist in tuple "STR_FMT"\n",
                   instr->as.copy_from_offset.src_offset,
                   STR_ARG(src_type_str));
-          free_type_str(src_type_str, &src->type);
+          free_type_str(src_type_str, src_type);
           goto fail;
         }
 
-        EType *type = src->type.tuple_types.items +
+        EType *type = src_type->tuple_types.items +
                       instr->as.copy_from_offset.src_offset;
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(type);
@@ -1289,6 +1356,18 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           free_type_str(field_type_str, type);
           goto fail;
         }
+
+        char field_name[64];
+        snprintf(field_name, sizeof(field_name), "%u",
+                 instr->as.copy_from_offset.src_offset);
+
+        CHECK_MEMBER(src_type, instr->as.copy_from_offset.src_offset, str_new(field_name));
+
+        if (!instr->as.copy_from_offset.take_ref &&
+            (dest->type.kind == ETypeKindStruct ||
+             dest->type.kind == ETypeKindArray ||
+             dest->type.kind == ETypeKindTuple))
+          set_member_moved(src_type, instr->as.copy_from_offset.src_offset, true);
 
         if (instr->as.copy_from_offset.is_ref_explicit) {
           EType new_type;
@@ -1309,10 +1388,6 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
       ERROR("`"STR_FMT"` has no trailing return with a value\n", STR_ARG(proc->name));
       goto fail;
     }
-
-    for (u32 j = 0; j < var_substs.len; ++j)
-      substitute_var_uses_with_its_src(proc, var_substs.items + j);
-    var_substs.len = 0;
   }
 
   if (require_main && !found_main) {

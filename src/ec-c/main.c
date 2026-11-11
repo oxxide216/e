@@ -193,19 +193,17 @@ static void ir_destroy(EIr *ir) {
     EProc *proc = ir->procs.items + i;
 
     for (u32 j = 0; j < proc->args.len; ++j)
-      if (proc->args.items[j].type.kind == ETypeKindPtr)
-        type_free(proc->args.items[j].type.ptr_target);
+      type_free(&proc->args.items[j].type);
     if (proc->args.items)
       free(proc->args.items);
 
-    if (proc->return_type.kind == ETypeKindPtr)
-      type_free(proc->return_type.ptr_target);
+    type_free(&proc->return_type);
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
 
-      if (instr->kind == EInstrKindCast && instr->as.cast.dest_type.ptr_target)
-        type_free(instr->as.cast.dest_type.ptr_target);
+      if (instr->kind == EInstrKindCast)
+        type_free(&instr->as.cast.dest_type);
     }
     if (proc->instrs.items)
       free(proc->instrs.items);
@@ -217,8 +215,7 @@ static void ir_destroy(EIr *ir) {
     EStruct *_struct = ir->structs.items + i;
 
     for (u32 j = 0; j < _struct->fields.len; ++j)
-      if (_struct->fields.items[j].type.kind == ETypeKindPtr)
-        type_free(_struct->fields.items[j].type.ptr_target);
+        type_free(&_struct->fields.items[j].type);
     if (_struct->fields.items)
       free(_struct->fields.items);
   }

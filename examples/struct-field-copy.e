@@ -24,10 +24,7 @@ proc main() -> s64
     end,
   end
 
-  let arr = [A; b0.field, b1.field]
-  arr[1] = arr[0]
-
   b0.field = b1.field
 
-  retval b0.field.x + b1.field.y + arr[1].x + arr[1].y
+  retval b0.field.x + b1.field.y
 end

@@ -61,8 +61,7 @@ void varss_destroy(Varss *varss) {
     Vars *vars = varss->items + i;
 
     for (u32 j = 0; j < vars->len; ++j)
-      if (vars->items[j].type.kind == ETypeKindPtr)
-        type_free(vars->items[j].type.ptr_target);
+      type_free(&vars->items[j].type);
     if (vars->items)
       free(vars->items);
   }
