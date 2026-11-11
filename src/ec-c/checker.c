@@ -436,6 +436,133 @@ static void set_member_moved(EType *type, u32 index, bool value) {
   type->moved_members[index] = value;
 }
 
+static void generate_drop(EIr *ir, Varss *varss,
+                          EStruct *_struct,
+                          bool has_drop) {
+  Vars vars = {0};
+
+  EType *struct_type = malloc(sizeof(*struct_type));
+  *struct_type = (EType) {
+    ETypeKindStruct,
+    { .name = _struct->name },
+    {},
+    NULL,
+    0,
+    false,
+  };
+  EType arg_type = {
+    ETypeKindPtr,
+    { .ptr_target = struct_type },
+    {},
+    NULL,
+    0,
+    false,
+  };
+
+  Var var = {
+    {},
+    arg_type,
+    false,
+    {},
+    0,
+    false,
+  };
+  DA_APPEND(vars, var);
+
+  EArgs args = {0};
+  EArg arg = {
+    {},
+    type_clone(&arg_type),
+  };
+  DA_APPEND(args, arg);
+
+  EInstrs instrs = {0};
+
+  for (u32 j = 0; j < _struct->fields.len; ++j) {
+    EType arg_type = {
+      ETypeKindPtr,
+      { .ptr_target = &_struct->fields.items[j].type },
+      {},
+      NULL,
+      0,
+      false,
+    };
+    EType *arg_type_ptr = &arg_type;
+    ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+    if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
+      EInstr alloc = {
+        EInstrKindAlloc,
+        { .alloc = { {}, vars.len } },
+        {},
+      };
+      DA_APPEND(instrs, alloc);
+
+      EInstr copy_from_field = {
+        EInstrKindCopyFromField,
+        {
+          .copy_from_field = {
+            {},
+            vars.len,
+            {},
+            0,
+            _struct->fields.items[j].name,
+            true,
+            true,
+          },
+        },
+        {},
+      };
+      DA_APPEND(instrs, copy_from_field);
+
+      Indices arg_indices = {0};
+      DA_APPEND(arg_indices, vars.len);
+
+      EInstr call = {
+        EInstrKindCall,
+        {
+          .call = {
+            STR_LIT("drop"),
+            arg_indices,
+          },
+        },
+        {},
+      };
+      DA_APPEND(instrs, call);
+
+      EType type = {
+        ETypeKindPtr,
+        {
+          .ptr_target = &_struct->fields.items[j].type,
+        },
+        {},
+        NULL,
+        0,
+        false,
+      };
+
+      Var var = {
+        {},
+        type_clone(&type),
+        false,
+        {},
+        0,
+        false,
+      };
+      DA_APPEND(vars, var);
+    }
+  }
+
+  EProc proc = {
+    has_drop ? STR_LIT("?drop") : STR_LIT("drop"),
+    args,
+    { ETypeKindUnit },
+    instrs
+  };
+  DA_APPEND(ir->procs, proc);
+
+  DA_APPEND(*varss, vars);
+}
+
 bool check_ir(EIr *ir, Varss *varss, bool require_main) {
   bool found_main = false;
   VarSubstitutions var_substs = {0};
@@ -448,7 +575,88 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         goto fail;
   }
 
-  for (u32 i = 0; i < ir->procs.len; ++i) {
+  u8 *structs_with_drops = alloca(ir->structs.len);
+  memset(structs_with_drops, 0, ir->structs.len);
+
+  u32 procs_len = ir->procs.len;
+
+  bool repeat = true;
+  while (repeat) {
+    repeat = false;
+
+    for (u32 i = 0; i < ir->structs.len; ++i) {
+      EStruct *_struct = ir->structs.items + i;
+
+      if (structs_with_drops[i])
+        continue;
+
+      bool has_droppable_fields = false;
+
+      for (u32 j = 0; j < _struct->fields.len; ++j) {
+        EType arg_type = {
+          ETypeKindPtr,
+          { .ptr_target = &_struct->fields.items[j].type },
+          {},
+          NULL,
+          0,
+          false,
+        };
+        EType *arg_type_ptr = &arg_type;
+        ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+        if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
+          has_droppable_fields = true;
+          break;
+        }
+      }
+
+      if (has_droppable_fields) {
+        repeat = true;
+
+        EType target_type = {
+          ETypeKindStruct,
+          { .name = _struct->name },
+          {},
+          NULL,
+          0,
+          false,
+        };
+        EType arg_type = {
+          ETypeKindPtr,
+          { .ptr_target = &target_type },
+          {},
+          NULL,
+          0,
+          false,
+        };
+        EType *arg_type_ptr = &arg_type;
+        ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+        EProc *drop = get_proc(ir, STR_LIT("drop"), &arg_types);
+
+        generate_drop(ir, varss, _struct, drop != NULL);
+
+        if (drop) {
+          Indices arg_indices = {0};
+          DA_APPEND(arg_indices, 0);
+
+          EInstr instr = {
+            EInstrKindCall,
+            {
+              .call = {
+                STR_LIT("?drop"),
+                arg_indices,
+              },
+            },
+            {},
+          };
+          DA_APPEND(drop->instrs, instr);
+        }
+
+        structs_with_drops[i] = true;
+      }
+    }
+  }
+
+  for (u32 i = 0; i < procs_len; ++i) {
     EProc *proc = ir->procs.items + i;
 
     if (str_eq(proc->name, STR_LIT("main"))) {
@@ -1086,15 +1294,29 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
 
           CHECK_MEMBER(src_type, FIELD_INDEX(_struct, field), field->name);
 
+          EType ptr_type = {0};
+          ptr_type.kind = ETypeKindPtr;
+          ptr_type.ptr_target = &field->type;
+
           if (dest->type.kind == ETypeKindUnit) {
             dest->type = type_clone(&field->type);
-          } else if (!type_eq(&field->type, &dest->type)) {
+          } else if (!instr->as.copy_from_field.take_ref &&
+                     !type_eq(&field->type, &dest->type)) {
             Str dest_type_str = get_type_str(&dest->type);
             Str field_type_str = get_type_str(&field->type);
             CERRORF("Cannot assign value of field of type "STR_FMT" to a variable of type "STR_FMT"\n",
                     STR_ARG(field_type_str), STR_ARG(dest_type_str));
             free_type_str(dest_type_str, &dest->type);
             free_type_str(field_type_str, &field->type);
+            goto fail;
+          } else if (instr->as.copy_from_field.take_ref &&
+                     !type_eq(&ptr_type, &dest->type)) {
+            Str dest_type_str = get_type_str(&dest->type);
+            Str ptr_type_str = get_type_str(&ptr_type);
+            CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                    STR_ARG(ptr_type_str), STR_ARG(dest_type_str));
+            free_type_str(dest_type_str, &dest->type);
+            free_type_str(ptr_type_str, &ptr_type);
             goto fail;
           }
 
@@ -1345,15 +1567,30 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
 
         EType *type = src_type->tuple_types.items +
                       instr->as.copy_from_offset.src_offset;
+
+        EType ptr_type = {0};
+        ptr_type.kind = ETypeKindPtr;
+        ptr_type.ptr_target = type;
+
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(type);
-        } else if (!type_eq(type, &dest->type)) {
+        } else if (!instr->as.copy_from_offset.take_ref &&
+                   !type_eq(type, &dest->type)) {
           Str dest_type_str = get_type_str(&dest->type);
           Str field_type_str = get_type_str(type);
           CERRORF("Cannot assign value of numbered field of type "STR_FMT" to a variable of type "STR_FMT"\n",
                   STR_ARG(field_type_str), STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           free_type_str(field_type_str, type);
+          goto fail;
+        } else if (instr->as.copy_from_offset.take_ref &&
+                   !type_eq(&ptr_type, &dest->type)) {
+          Str dest_type_str = get_type_str(&dest->type);
+          Str ptr_type_str = get_type_str(&ptr_type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(ptr_type_str), STR_ARG(dest_type_str));
+          free_type_str(dest_type_str, &dest->type);
+          free_type_str(ptr_type_str, &ptr_type);
           goto fail;
         }
 
