@@ -480,10 +480,10 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
 
   EInstrs instrs = {0};
 
-  for (u32 j = 0; j < _struct->fields.len; ++j) {
+  for (u32 j = _struct->fields.len; j > 0; --j) {
     EType arg_type = {
       ETypeKindPtr,
-      { .ptr_target = &_struct->fields.items[j].type },
+      { .ptr_target = &_struct->fields.items[j - 1].type },
       {},
       NULL,
       0,
@@ -507,7 +507,7 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
             vars.len,
             {},
             0,
-            _struct->fields.items[j].name,
+            _struct->fields.items[j - 1].name,
             true,
             true,
           },
@@ -534,7 +534,7 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
       EType type = {
         ETypeKindPtr,
         {
-          .ptr_target = &_struct->fields.items[j].type,
+          .ptr_target = &_struct->fields.items[j - 1].type,
         },
         {},
         NULL,
@@ -677,10 +677,10 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
 
   EInstrs instrs = {0};
 
-  for (u32 i = 0; i < type->tuple_types.len; ++i) {
+  for (u32 i = type->tuple_types.len; i > 0; --i) {
     EType arg_type = {
       ETypeKindPtr,
-      { .ptr_target = type->tuple_types.items + i },
+      { .ptr_target = type->tuple_types.items + i - 1 },
       {},
       NULL,
       0,
@@ -704,7 +704,7 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
             vars.len,
             {},
             0,
-            i,
+            i - 1,
             true,
             true,
           },
@@ -731,7 +731,7 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
       EType _type = {
         ETypeKindPtr,
         {
-          .ptr_target = type->tuple_types.items + i,
+          .ptr_target = type->tuple_types.items + i - 1,
         },
         {},
         NULL,
