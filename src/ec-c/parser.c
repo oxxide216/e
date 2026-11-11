@@ -1069,6 +1069,7 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
             temp0_index,
             field_name_token.lexeme,
             not_last,
+            ref_token != NULL,
           },
         );
       } else {
@@ -1083,6 +1084,7 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
             temp0_index,
             str_to_u32(field_name_token.lexeme),
             not_last,
+            ref_token != NULL,
           },
         );
       }
