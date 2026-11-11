@@ -17,5 +17,6 @@
 /temp-ref
 /sized-arrays
 /drop-tuples
+/stat
 /test*
 .idea
