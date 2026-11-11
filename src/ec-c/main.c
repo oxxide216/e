@@ -189,6 +189,9 @@ static void config_destroy(Config *config) {
 }
 
 static void ir_destroy(EIr *ir) {
+  if (ir->is_copy)
+    return;
+
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
 
@@ -271,12 +274,12 @@ i32 main(i32 argc, char **argv) {
   if (config.cache_path && config.link_only)
     cache_path_str = str_new(config.cache_path);
 
-  Hashes included_hashes = {0};
+  IncludedDeps included_deps = {0};
   if (!load_module_deps(&ir, &arena, input_path_str,
                         cache_path_str, &config.include_paths,
-                        &included_hashes)) {
-    if (included_hashes.items)
-      free(included_hashes.items);
+                        &included_deps)) {
+    if (included_deps.items)
+      free(included_deps.items);
     arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
@@ -286,8 +289,8 @@ i32 main(i32 argc, char **argv) {
   }
 
   if (!check_ir(&ir, &varss, !config.link_only)) {
-    if (included_hashes.items)
-      free(included_hashes.items);
+    if (included_deps.items)
+      free(included_deps.items);
     arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
@@ -361,8 +364,8 @@ i32 main(i32 argc, char **argv) {
 
 end:
   free(sb.buffer);
-  if (included_hashes.items)
-    free(included_hashes.items);
+  if (included_deps.items)
+    free(included_deps.items);
   arena_free(&arena);
   varss_destroy(&varss);
   ir_destroy(&ir);

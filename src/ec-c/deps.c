@@ -69,17 +69,17 @@ void varss_destroy(Varss *varss) {
     free(varss->items);
 }
 
-static bool contains_hash(Hashes *hashes, u64 hash) {
-  for (u32 i = 0; i < hashes->len; ++i)
-    if (hashes->items[i] == hash)
-      return true;
+static EIr *get_ir(IncludedDeps *deps, u64 hash) {
+  for (u32 i = 0; i < deps->len; ++i)
+    if (deps->items[i].hash == hash)
+      return deps->items[i].ir;
 
-  return false;
+  return NULL;
 }
 
 bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
                       Str cache_path, Strs *include_paths,
-                      Hashes *included_hashes) {
+                      IncludedDeps *included_deps) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     Str path = merge_module_path(ir->module_deps.items[i].path);
     Str full_module_path = prefix_module_path_with_other_path_zero_term(input_path, path, STR_LIT(".e"), true);
@@ -100,8 +100,11 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
             ir->module_deps.items[i].ir = (EIr) {0};
           }
 
-          if (contains_hash(included_hashes, hash))
-            ir->module_deps.items[i].ir = (EIr) {0};
+          EIr *included_ir = get_ir(included_deps, hash);
+          if (included_ir) {
+            ir->module_deps.items[i].ir = *included_ir;
+            ir->module_deps.items[i].ir.is_copy = true;
+          }
         }
       }
     }
@@ -130,15 +133,19 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
 
       u64 hash = str_hash(code);
 
-      if (contains_hash(included_hashes, hash)) {
+      EIr *included_ir = get_ir(included_deps, hash);
+      if (included_ir) {
+        ir->module_deps.items[i].ir = *included_ir;
+        ir->module_deps.items[i].ir.is_copy = true;
         free(code.ptr);
         free(full_cache_path.ptr);
         free(found_path.ptr);
         free(path.ptr);
-        return true;
+        continue;
       }
 
-      DA_APPEND(*included_hashes, hash);
+      IncludedDep dep = { hash, &ir->module_deps.items[i].ir };
+      DA_APPEND(*included_deps, dep);
 
       if (!parse(&ir->module_deps.items[i].ir,
                  &ir->module_deps.items[i].varss,
@@ -152,7 +159,7 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
 
       if (!load_module_deps(&ir->module_deps.items[i].ir, arena,
                             found_path, cache_path,
-                            include_paths, included_hashes)) {
+                            include_paths, included_deps)) {
         free(code.ptr);
         free(full_cache_path.ptr);
         free(found_path.ptr);

@@ -368,6 +368,7 @@ typedef struct {
   EConsts     consts;
   EData       data;
   EModuleDeps module_deps;
+  bool        is_copy;
 } EIr;
 
 typedef struct {

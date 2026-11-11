@@ -632,17 +632,24 @@ static void encode_imports_no_len(FILE *stream, EProcs *imports) {
 
 static void traverse_deps(EIr *ir, u32 *procs_len, u32 *data_len) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+    if (dep->ir.is_copy)
+      continue;
+
     if (procs_len)
-      *procs_len += ir->module_deps.items[i].ir.procs.len;
+      *procs_len += dep->ir.procs.len;
     if (data_len)
-      *data_len += ir->module_deps.items[i].ir.data.len;
-    traverse_deps(&ir->module_deps.items[i].ir, procs_len, data_len);
+      *data_len += dep->ir.data.len;
+    traverse_deps(&dep->ir, procs_len, data_len);
   }
 }
 
 static void encode_deps_procs(FILE *stream, EIr *ir, u32 *data_base) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
+    if (dep->ir.is_copy)
+      continue;
+
     encode_procs_no_len(stream, &dep->ir, &dep->varss, *data_base);
     *data_base += dep->ir.data.len;
     encode_deps_procs(stream, &dep->ir, data_base);
@@ -652,6 +659,9 @@ static void encode_deps_procs(FILE *stream, EIr *ir, u32 *data_base) {
 static void encode_deps_data(FILE *stream, EIr *ir) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
+    if (dep->ir.is_copy)
+      continue;
+
     encode_data_no_len(stream, &dep->ir.data);
     encode_deps_data(stream, &dep->ir);
   }
@@ -660,6 +670,9 @@ static void encode_deps_data(FILE *stream, EIr *ir) {
 static void encode_deps_imports(FILE *stream, EIr *ir) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
+    if (dep->ir.is_copy)
+      continue;
+
     encode_imports_no_len(stream, &dep->ir.procs);
     encode_deps_imports(stream, &dep->ir);
   }

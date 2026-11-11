@@ -6,11 +6,17 @@
 #include "arena.h"
 
 typedef Da(Str) Strs;
-typedef Da(u64) Hashes;
+
+typedef struct {
+  u64  hash;
+  EIr *ir;
+} IncludedDep;
+
+typedef Da(IncludedDep) IncludedDeps;
 
 void varss_destroy(Varss *vars);
 bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
                       Str cache_path, Strs *include_paths,
-                      Hashes *included_hashes);
+                      IncludedDeps *included_deps);
 
 #endif // DEPS_H
