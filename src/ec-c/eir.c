@@ -8,6 +8,12 @@ EType type_clone(EType *type) {
   } else if (new_type.kind == ETypeKindArray) {
     new_type.array_element = malloc(sizeof(EType));
     *new_type.array_element = type_clone(type->array_element);
+  } else if (new_type.kind == ETypeKindTuple) {
+    new_type.tuple_types.cap = new_type.tuple_types.len;
+    new_type.tuple_types.items =
+      malloc(new_type.tuple_types.cap * sizeof(*new_type.tuple_types.items));
+    for (u32 i = 0; i < new_type.tuple_types.len; ++i)
+      new_type.tuple_types.items[i] = type_clone(type->tuple_types.items + i);
   }
   if (new_type.moved_members) {
     new_type.moved_members = malloc(new_type.moved_members_len);

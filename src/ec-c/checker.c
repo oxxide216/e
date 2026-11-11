@@ -1,3 +1,5 @@
+// NOTE: no automatic `drop` calling for array elements yet
+
 #include "checker.h"
 #include "shl/shl-log.h"
 
@@ -436,9 +438,9 @@ static void set_member_moved(EType *type, u32 index, bool value) {
   type->moved_members[index] = value;
 }
 
-static void generate_drop(EIr *ir, Varss *varss,
-                          EStruct *_struct,
-                          bool has_drop) {
+static void generate_drop_for_struct(EIr *ir, Varss *varss,
+                                     EStruct *_struct,
+                                     bool has_drop) {
   Vars vars = {0};
 
   EType *struct_type = malloc(sizeof(*struct_type));
@@ -563,22 +565,9 @@ static void generate_drop(EIr *ir, Varss *varss,
   DA_APPEND(*varss, vars);
 }
 
-bool check_ir(EIr *ir, Varss *varss, bool require_main) {
-  bool found_main = false;
-  VarSubstitutions var_substs = {0};
-
-  for (u32 i = 0; i < ir->structs.len; ++i) {
-    EStruct *_struct = ir->structs.items + i;
-
-    for (u32 j = 0; j < _struct->fields.len; ++j)
-      if (!check_struct_existence(&ir->structs, &_struct->fields.items[j].type))
-        goto fail;
-  }
-
+static void generate_drops_for_structs(EIr *ir, Varss *varss) {
   u8 *structs_with_drops = alloca(ir->structs.len);
   memset(structs_with_drops, 0, ir->structs.len);
-
-  u32 procs_len = ir->procs.len;
 
   bool repeat = true;
   while (repeat) {
@@ -632,7 +621,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
         EProc *drop = get_proc(ir, STR_LIT("drop"), &arg_types);
 
-        generate_drop(ir, varss, _struct, drop != NULL);
+        generate_drop_for_struct(ir, varss, _struct, drop != NULL);
 
         if (drop) {
           Indices arg_indices = {0};
@@ -655,6 +644,198 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
       }
     }
   }
+}
+
+static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
+  Vars vars = {0};
+
+  EType *tuple_type = malloc(sizeof(*tuple_type));
+  *tuple_type = type_clone(type);
+  EType arg_type = {
+    ETypeKindPtr,
+    { .ptr_target = tuple_type },
+    {},
+    NULL,
+    0,
+    false,
+  };
+
+  Var var = {
+    {},
+    arg_type,
+    false,
+    {},
+    0,
+    false,
+  };
+  DA_APPEND(vars, var);
+
+  EArgs args = {0};
+  EArg arg = {
+    {},
+    type_clone(&arg_type),
+  };
+  DA_APPEND(args, arg);
+
+  EInstrs instrs = {0};
+
+  for (u32 j = 0; j < type->tuple_types.len; ++j) {
+    EType arg_type = {
+      ETypeKindPtr,
+      { .ptr_target = type->tuple_types.items + j },
+      {},
+      NULL,
+      0,
+      false,
+    };
+    EType *arg_type_ptr = &arg_type;
+    ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+    if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
+      EInstr alloc = {
+        EInstrKindAlloc,
+        { .alloc = { {}, vars.len } },
+        {},
+      };
+      DA_APPEND(instrs, alloc);
+
+      EInstr copy_from_offset = {
+        EInstrKindCopyFromOffset,
+        {
+          .copy_from_offset = {
+            {},
+            vars.len,
+            {},
+            0,
+            j,
+            true,
+            true,
+          },
+        },
+        {},
+      };
+      DA_APPEND(instrs, copy_from_offset);
+
+      Indices arg_indices = {0};
+      DA_APPEND(arg_indices, vars.len);
+
+      EInstr call = {
+        EInstrKindCall,
+        {
+          .call = {
+            STR_LIT("drop"),
+            arg_indices,
+          },
+        },
+        {},
+      };
+      DA_APPEND(instrs, call);
+
+      EType _type = {
+        ETypeKindPtr,
+        {
+          .ptr_target = type->tuple_types.items + j,
+        },
+        {},
+        NULL,
+        0,
+        false,
+      };
+
+      Var var = {
+        {},
+        type_clone(&_type),
+        false,
+        {},
+        0,
+        false,
+      };
+      DA_APPEND(vars, var);
+    }
+  }
+
+  EProc proc = {
+    STR_LIT("drop"),
+    args,
+    { ETypeKindUnit },
+    instrs
+  };
+  DA_APPEND(ir->procs, proc);
+
+  DA_APPEND(*varss, vars);
+}
+
+static void generate_drops_for_tuples(EIr *ir, Varss *varss) {
+  for (u32 i = 0; i < varss->len; ++i) {
+    for (u32 j = 0; j < varss->items[i].len; ++j) {
+      Var *var = varss->items[i].items + j;
+
+      if (var->type.kind != ETypeKindTuple)
+        continue;
+
+      EType arg_type = {
+        ETypeKindPtr,
+        { .ptr_target = &var->type },
+        {},
+        NULL,
+        0,
+        false,
+      };
+      EType *arg_type_ptr = &arg_type;
+      ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+      if (get_proc(ir, STR_LIT("drop"), &arg_types))
+        continue;
+
+      generate_drop_for_tuple(ir, varss, &var->type);
+    }
+  }
+}
+
+bool check_ir(EIr *ir, Varss *varss, bool require_main) {
+  bool found_main = false;
+  VarSubstitutions var_substs = {0};
+
+  for (u32 i = 0; i < ir->structs.len; ++i) {
+    EStruct *_struct = ir->structs.items + i;
+
+    for (u32 j = 0; j < _struct->fields.len; ++j)
+      if (!check_struct_existence(&ir->structs, &_struct->fields.items[j].type))
+        goto fail;
+  }
+
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    EProc *proc = ir->procs.items + i;
+
+    for (u32 j = 0; j < proc->instrs.len; ++j) {
+      EInstr *instr = proc->instrs.items + j;
+
+      if (instr->kind != EInstrKindTuple)
+        continue;
+
+      Var *dest = varss->items[i].items + instr->as.tuple.dest_index;
+
+      EType *dest_type = &dest->type;
+      if (dest_type->kind == ETypeKindPtr)
+        dest_type = dest_type->ptr_target;
+
+      ETypes field_types = {0};
+
+      Indices *field_indices = &instr->as.tuple.field_indices;
+      for (u32 k = 0; k < field_indices->len; ++k) {
+        Var *field_var = varss->items[i].items + field_indices->items[k];
+        EType field_type = type_clone(&field_var->type);
+        DA_APPEND(field_types, field_type);
+      }
+
+      if (dest_type->kind == ETypeKindUnit) {
+        dest_type->kind = ETypeKindTuple;
+        dest_type->tuple_types = field_types;
+      }
+    }
+  }
+
+  u32 procs_len = ir->procs.len;
+  generate_drops_for_structs(ir, varss);
+  generate_drops_for_tuples(ir, varss);
 
   for (u32 i = 0; i < procs_len; ++i) {
     EProc *proc = ir->procs.items + i;
@@ -1040,12 +1221,6 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
                   STR_ARG(ptr_target_type_str), STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
           free_type_str(ptr_target_type_str, src->type.ptr_target);
-          goto fail;
-        }
-
-        if (src->type.kind == ETypeKindArray &&
-            !instr->as.copy_from_ref.take_ref) {
-          CERROR("Moving from array requires explicit copy\n");
           goto fail;
         }
 
@@ -1462,27 +1637,13 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         Var *dest = varss->items[i].items + instr->as.copy_from_field.dest_index;
         dest->moved = false;
 
-        ETypes field_types = {0};
-
-        Indices *field_indices = &instr->as.tuple.field_indices;
-        for (u32 k = 0; k < field_indices->len; ++k) {
-          Var *field_var = varss->items[i].items + field_indices->items[k];
-          EType field_type = type_clone(&field_var->type);
-          DA_APPEND(field_types, field_type);
-        }
-
-        if (dest->type.kind == ETypeKindUnit) {
-          dest->type.kind = ETypeKindTuple;
-          dest->type.tuple_types = field_types;
-        } else if (!tuple_type_matches(&dest->type, &field_types)) {
+        if (!tuple_type_matches(&dest->type, &dest->type.tuple_types)) {
           Str dest_type_str = get_type_str(&dest->type);
           CERROR("Cannot assign value of type ");
-          fprintf_tuple_type(stderr, &field_types);
+          fprintf_tuple_type(stderr, &dest->type.tuple_types);
           fprintf(stderr, " to a variable of type "STR_FMT"\n",
                   STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
-          if (field_types.items)
-            free(field_types.items);
           goto fail;
         }
       } break;
@@ -1518,12 +1679,12 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         EType *type = dest_type->tuple_types.items +
                       instr->as.copy_to_offset.dest_offset;
         if (!type_eq(&src->type, type)) {
-          Str field_type_str = get_type_str(type);
           Str src_type_str = get_type_str(&src->type);
+          Str field_type_str = get_type_str(type);
           CERRORF("Cannot assign value of type "STR_FMT" to a numbered field of type "STR_FMT"\n",
                   STR_ARG(src_type_str), STR_ARG(field_type_str));
-          free_type_str(field_type_str, type);
           free_type_str(src_type_str, &src->type);
+          free_type_str(field_type_str, type);
           goto fail;
         }
 

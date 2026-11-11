@@ -253,9 +253,11 @@ static void encode_type_fields_as_aligned_segments_until_for_field_access(FILE *
   u32 offset = 0;
   encode_type_fields_as_aligned_segments_until_rec(stream, type, end, structs, &offset);
 
-  u32 size = get_type_size(structs, last);
-  fwrite(&offset, sizeof(offset), 1, stream);
-  fwrite(&size, sizeof(size), 1, stream);
+  if (last) {
+    u32 size = get_type_size(structs, last);
+    fwrite(&offset, sizeof(offset), 1, stream);
+    fwrite(&size, sizeof(size), 1, stream);
+  }
 }
 
 static void encode_procs_no_len(FILE *stream, EProcs *procs,

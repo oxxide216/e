@@ -16,5 +16,6 @@
 /nested-structs
 /temp-ref
 /sized-arrays
+/drop-tuples
 /test*
 .idea
