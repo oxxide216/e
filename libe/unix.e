@@ -89,6 +89,31 @@ proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64) -> s64      # 3 args
   retval result
 end
 
+proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64, arg3: s64) -> s64      # 4 args
+  let result = 0 as s64
+  asm "mov rax,", type
+  asm "mov rdi,", arg0
+  asm "mov rsi,", arg1
+  asm "mov rdx,", arg2
+  asm "mov r10,", arg3
+  asm "syscall"
+  asm "mov ", result, ",rax"
+  retval result
+end
+
+proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64, arg3: s64, arg4: s64) -> s64      # 5 args
+  let result = 0 as s64
+  asm "mov rax,", type
+  asm "mov rdi,", arg0
+  asm "mov rsi,", arg1
+  asm "mov rdx,", arg2
+  asm "mov r10,", arg3
+  asm "mov r8,",  arg4
+  asm "syscall"
+  asm "mov ", result, ",rax"
+  retval result
+end
+
 proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64, arg3: s64, arg4: s64, arg5: s64) -> s64      # 6 args
   let result = 0 as s64
   asm "mov rax,", type
