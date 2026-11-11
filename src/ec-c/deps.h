@@ -14,7 +14,6 @@ typedef struct {
 
 typedef Da(IncludedDep) IncludedDeps;
 
-void varss_destroy(Varss *vars);
 bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
                       Str cache_path, Strs *include_paths,
                       IncludedDeps *included_deps);

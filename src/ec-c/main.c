@@ -188,66 +188,6 @@ static void config_destroy(Config *config) {
     free(config->include_paths.items);
 }
 
-static void ir_destroy(EIr *ir) {
-  if (ir->is_copy)
-    return;
-
-  for (u32 i = 0; i < ir->procs.len; ++i) {
-    EProc *proc = ir->procs.items + i;
-
-    for (u32 j = 0; j < proc->args.len; ++j)
-      type_free(&proc->args.items[j].type);
-    if (proc->args.items)
-      free(proc->args.items);
-
-    type_free(&proc->return_type);
-
-    for (u32 j = 0; j < proc->instrs.len; ++j) {
-      EInstr *instr = proc->instrs.items + j;
-
-      if (instr->kind == EInstrKindCast)
-        type_free(&instr->as.cast.dest_type);
-    }
-    if (proc->instrs.items)
-      free(proc->instrs.items);
-  }
-  if (ir->procs.items)
-    free(ir->procs.items);
-
-  for (u32 i = 0; i < ir->structs.len; ++i) {
-    EStruct *_struct = ir->structs.items + i;
-
-    for (u32 j = 0; j < _struct->fields.len; ++j)
-        type_free(&_struct->fields.items[j].type);
-    if (_struct->fields.items)
-      free(_struct->fields.items);
-  }
-  if (ir->structs.items)
-    free(ir->structs.items);
-
-  if (ir->consts.items)
-    free(ir->consts.items);
-
-  for (u32 i = 0; i < ir->data.len; ++i) {
-    EDataEntry *entry = ir->data.items + i;
-
-    if (entry->data)
-      free(entry->data);
-  }
-  if (ir->data.items)
-    free(ir->data.items);
-
-  for (u32 i = 0; i < ir->module_deps.len; ++i) {
-    EModuleDep *dep = ir->module_deps.items + i;
-
-    if (dep->path.items)
-      free(dep->path.items);
-    varss_destroy(&dep->varss);
-  }
-  if (ir->module_deps.items)
-    free(ir->module_deps.items);
-}
-
 i32 main(i32 argc, char **argv) {
   Config config = config_create(argc, argv);
 

@@ -416,7 +416,7 @@ static bool tuple_type_matches(EType *type, ETypes *field_types) {
   return true;
 }
 
-static void fprintf_tuple_type(FILE *stream, ETypes *field_types) {
+static void fprint_tuple_type(FILE *stream, ETypes *field_types) {
   fputc('(', stream);
   for (u32 i = 0; i < field_types->len; ++i) {
     Str field_type_str = get_type_str(field_types->items + i);
@@ -473,7 +473,7 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
 
   EArgs args = {0};
   EArg arg = {
-    {},
+    STR_LIT("self"),
     type_clone(&arg_type),
   };
   DA_APPEND(args, arg);
@@ -565,85 +565,83 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
   DA_APPEND(*varss, vars);
 }
 
-static void generate_drops_for_structs(EIr *ir, Varss *varss) {
-  u8 *structs_with_drops = alloca(ir->structs.len);
-  memset(structs_with_drops, 0, ir->structs.len);
+static bool generate_drops_for_structs(EIr *ir, Varss *varss,
+                                       u8 *structs_with_drops) {
+  bool result = false;
 
-  bool repeat = true;
-  while (repeat) {
-    repeat = false;
+  for (u32 i = 0; i < ir->structs.len; ++i) {
+    EStruct *_struct = ir->structs.items + i;
 
-    for (u32 i = 0; i < ir->structs.len; ++i) {
-      EStruct *_struct = ir->structs.items + i;
+    if (structs_with_drops[i])
+      continue;
 
-      if (structs_with_drops[i])
-        continue;
+    bool has_droppable_fields = false;
 
-      bool has_droppable_fields = false;
-
-      for (u32 j = 0; j < _struct->fields.len; ++j) {
-        EType arg_type = {
-          ETypeKindPtr,
-          { .ptr_target = &_struct->fields.items[j].type },
-          {},
-          NULL,
-          0,
-          false,
-        };
-        EType *arg_type_ptr = &arg_type;
-        ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-        if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
-          has_droppable_fields = true;
-          break;
-        }
-      }
-
-      if (has_droppable_fields) {
-        repeat = true;
-
-        EType target_type = {
-          ETypeKindStruct,
-          { .name = _struct->name },
-          {},
-          NULL,
-          0,
-          false,
-        };
-        EType arg_type = {
-          ETypeKindPtr,
-          { .ptr_target = &target_type },
-          {},
-          NULL,
-          0,
-          false,
-        };
-        EType *arg_type_ptr = &arg_type;
-        ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-        EProc *drop = get_proc(ir, STR_LIT("drop"), &arg_types);
-
-        generate_drop_for_struct(ir, varss, _struct, drop != NULL);
-
-        if (drop) {
-          Indices arg_indices = {0};
-          DA_APPEND(arg_indices, 0);
-
-          EInstr instr = {
-            EInstrKindCall,
-            {
-              .call = {
-                STR_LIT("?drop"),
-                arg_indices,
-              },
-            },
-            {},
-          };
-          DA_APPEND(drop->instrs, instr);
-        }
-
-        structs_with_drops[i] = true;
+    for (u32 j = 0; j < _struct->fields.len; ++j) {
+      EType arg_type = {
+        ETypeKindPtr,
+        { .ptr_target = &_struct->fields.items[j].type },
+        {},
+        NULL,
+        0,
+        false,
+      };
+      EType *arg_type_ptr = &arg_type;
+      ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+      if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
+        has_droppable_fields = true;
+        break;
       }
     }
+
+    if (!has_droppable_fields)
+      continue;
+
+    result = true;
+
+    EType target_type = {
+      ETypeKindStruct,
+      { .name = _struct->name },
+      {},
+      NULL,
+      0,
+      false,
+    };
+    EType arg_type = {
+      ETypeKindPtr,
+      { .ptr_target = &target_type },
+      {},
+      NULL,
+      0,
+      false,
+    };
+    EType *arg_type_ptr = &arg_type;
+    ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+    EProc *drop = get_proc(ir, STR_LIT("drop"), &arg_types);
+
+    generate_drop_for_struct(ir, varss, _struct, drop != NULL);
+
+    if (drop) {
+      Indices arg_indices = {0};
+      DA_APPEND(arg_indices, 0);
+
+      EInstr instr = {
+        EInstrKindCall,
+        {
+          .call = {
+            STR_LIT("?drop"),
+            arg_indices,
+          },
+        },
+        {},
+      };
+      DA_APPEND(drop->instrs, instr);
+    }
+
+    structs_with_drops[i] = true;
   }
+
+  return result;
 }
 
 static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
@@ -672,17 +670,17 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
 
   EArgs args = {0};
   EArg arg = {
-    {},
+    STR_LIT("self"),
     type_clone(&arg_type),
   };
   DA_APPEND(args, arg);
 
   EInstrs instrs = {0};
 
-  for (u32 j = 0; j < type->tuple_types.len; ++j) {
+  for (u32 i = 0; i < type->tuple_types.len; ++i) {
     EType arg_type = {
       ETypeKindPtr,
-      { .ptr_target = type->tuple_types.items + j },
+      { .ptr_target = type->tuple_types.items + i },
       {},
       NULL,
       0,
@@ -706,7 +704,7 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
             vars.len,
             {},
             0,
-            j,
+            i,
             true,
             true,
           },
@@ -733,7 +731,7 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
       EType _type = {
         ETypeKindPtr,
         {
-          .ptr_target = type->tuple_types.items + j,
+          .ptr_target = type->tuple_types.items + i,
         },
         {},
         NULL,
@@ -764,17 +762,23 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
   DA_APPEND(*varss, vars);
 }
 
-static void generate_drops_for_tuples(EIr *ir, Varss *varss) {
-  for (u32 i = 0; i < varss->len; ++i) {
-    for (u32 j = 0; j < varss->items[i].len; ++j) {
-      Var *var = varss->items[i].items + j;
+static bool generate_drops_for_tuples(EIr *ir, Varss *varss,
+                                      u8 *amounts_of_drops_for_tuples,
+                                      u32 proc_index) {
+  bool result = false;
 
-      if (var->type.kind != ETypeKindTuple)
-        continue;
+  for (u32 i = 0; i < varss->items[proc_index].len; ++i) {
+    Var *var = varss->items[proc_index].items + i;
 
+    if (var->type.kind != ETypeKindTuple)
+      continue;
+
+    u8 droppable_fields_len = 0;
+
+    for (u32 j = 0; j < var->type.tuple_types.len; ++j) {
       EType arg_type = {
         ETypeKindPtr,
-        { .ptr_target = &var->type },
+        { .ptr_target = var->type.tuple_types.items + j },
         {},
         NULL,
         0,
@@ -783,11 +787,49 @@ static void generate_drops_for_tuples(EIr *ir, Varss *varss) {
       EType *arg_type_ptr = &arg_type;
       ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
       if (get_proc(ir, STR_LIT("drop"), &arg_types))
-        continue;
-
-      generate_drop_for_tuple(ir, varss, &var->type);
+        ++droppable_fields_len;
     }
+
+    if (droppable_fields_len == 0)
+      continue;
+
+    EType arg_type = {
+      ETypeKindPtr,
+      { .ptr_target = &var->type },
+      {},
+      NULL,
+      0,
+      false,
+    };
+    EType *arg_type_ptr = &arg_type;
+    ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+    EProc *existing_drop = get_proc(ir, STR_LIT("drop"), &arg_types);
+    if (existing_drop) {
+      if (droppable_fields_len == amounts_of_drops_for_tuples[i])
+        continue;
+      else
+        proc_destroy(ir, varss, existing_drop);
+    }
+
+    result = true;
+
+    generate_drop_for_tuple(ir, varss, &var->type);
+
+    amounts_of_drops_for_tuples[i] = droppable_fields_len;
   }
+
+  return result;
+}
+
+static bool tuple_type_contains_unit(EType *type) {
+  if (type->kind != ETypeKindTuple)
+    return type->kind == ETypeKindUnit;
+
+  for (u32 i = 0; i < type->tuple_types.len; ++i)
+    if (tuple_type_contains_unit(type->tuple_types.items + i))
+      return true;
+
+  return false;
 }
 
 bool check_ir(EIr *ir, Varss *varss, bool require_main) {
@@ -802,40 +844,10 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         goto fail;
   }
 
-  for (u32 i = 0; i < ir->procs.len; ++i) {
-    EProc *proc = ir->procs.items + i;
-
-    for (u32 j = 0; j < proc->instrs.len; ++j) {
-      EInstr *instr = proc->instrs.items + j;
-
-      if (instr->kind != EInstrKindTuple)
-        continue;
-
-      Var *dest = varss->items[i].items + instr->as.tuple.dest_index;
-
-      EType *dest_type = &dest->type;
-      if (dest_type->kind == ETypeKindPtr)
-        dest_type = dest_type->ptr_target;
-
-      ETypes field_types = {0};
-
-      Indices *field_indices = &instr->as.tuple.field_indices;
-      for (u32 k = 0; k < field_indices->len; ++k) {
-        Var *field_var = varss->items[i].items + field_indices->items[k];
-        EType field_type = type_clone(&field_var->type);
-        DA_APPEND(field_types, field_type);
-      }
-
-      if (dest_type->kind == ETypeKindUnit) {
-        dest_type->kind = ETypeKindTuple;
-        dest_type->tuple_types = field_types;
-      }
-    }
-  }
-
   u32 procs_len = ir->procs.len;
-  generate_drops_for_structs(ir, varss);
-  generate_drops_for_tuples(ir, varss);
+
+  u8 *structs_with_drops = alloca(ir->structs.len);
+  memset(structs_with_drops, 0, ir->structs.len);
 
   for (u32 i = 0; i < procs_len; ++i) {
     EProc *proc = ir->procs.items + i;
@@ -879,6 +891,9 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
     for (u32 j = 0; j < var_substs.len; ++j)
       substitute_var_uses_with_its_src(proc, var_substs.items + j);
     var_substs.len = 0;
+
+    u8 *amounts_of_drops_for_tuples = alloca(varss->items[i].len);
+    memset(amounts_of_drops_for_tuples, 0, varss->items[i].len);
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
@@ -992,8 +1007,22 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           DA_APPEND(arg_types, &arg->type);
         }
 
+        bool is_drop = str_eq(instr->as.call.name, STR_LIT("drop"));
+
+        if (is_drop) {
+          bool repeat = true;
+          while (repeat) {
+            repeat = false;
+
+            if (generate_drops_for_structs(ir, varss, structs_with_drops))
+              repeat = true;
+            if (generate_drops_for_tuples(ir, varss, amounts_of_drops_for_tuples, i))
+              repeat = true;
+          }
+        }
+
         EProc *callee = get_proc(ir, instr->as.call.name, &arg_types);
-        if (str_eq(instr->as.call.name, STR_LIT("drop"))) {
+        if (is_drop) {
           if (!callee ||
               varss->items[i].items[instr[-1].as.ref.src_index].moved ||
               varss->items[i].items[instr[-1].as.ref.src_index].returned) {
@@ -1638,10 +1667,28 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         Var *dest = varss->items[i].items + instr->as.copy_from_field.dest_index;
         dest->moved = false;
 
+        EType *dest_type = &dest->type;
+        if (dest_type->kind == ETypeKindPtr)
+          dest_type = dest_type->ptr_target;
+
+        ETypes field_types = {0};
+
+        Indices *field_indices = &instr->as.tuple.field_indices;
+        for (u32 k = 0; k < field_indices->len; ++k) {
+          Var *field_var = varss->items[i].items + field_indices->items[k];
+          EType field_type = type_clone(&field_var->type);
+          DA_APPEND(field_types, field_type);
+        }
+
+        if (dest_type->kind == ETypeKindUnit) {
+          dest_type->kind = ETypeKindTuple;
+          dest_type->tuple_types = field_types;
+        }
+
         if (!tuple_type_matches(&dest->type, &dest->type.tuple_types)) {
           Str dest_type_str = get_type_str(&dest->type);
           CERROR("Cannot assign value of type ");
-          fprintf_tuple_type(stderr, &dest->type.tuple_types);
+          fprint_tuple_type(stderr, &dest->type.tuple_types);
           fprintf(stderr, " to a variable of type "STR_FMT"\n",
                   STR_ARG(dest_type_str));
           free_type_str(dest_type_str, &dest->type);
@@ -1679,7 +1726,10 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
 
         EType *type = dest_type->tuple_types.items +
                       instr->as.copy_to_offset.dest_offset;
-        if (!type_eq(&src->type, type)) {
+        if (tuple_type_contains_unit(type)) {
+          type_free(type);
+          *type = type_clone(&src->type);
+        } else if (!type_eq(&src->type, type)) {
           Str src_type_str = get_type_str(&src->type);
           Str field_type_str = get_type_str(type);
           CERRORF("Cannot assign value of type "STR_FMT" to a numbered field of type "STR_FMT"\n",

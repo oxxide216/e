@@ -56,19 +56,6 @@ static Str read_file_arena(char *path, Arena *arena) {
   return content;
 }
 
-void varss_destroy(Varss *varss) {
-  for (u32 i = 0; i < varss->len; ++i) {
-    Vars *vars = varss->items + i;
-
-    for (u32 j = 0; j < vars->len; ++j)
-      type_free(&vars->items[j].type);
-    if (vars->items)
-      free(vars->items);
-  }
-  if (varss->items)
-    free(varss->items);
-}
-
 static EIr *get_ir(IncludedDeps *deps, u64 hash) {
   for (u32 i = 0; i < deps->len; ++i)
     if (deps->items[i].hash == hash)

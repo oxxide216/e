@@ -107,12 +107,17 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
 
 static void sb_push_type_hash(StringBuilder *sb, EType *type) {
   sb_push_u32(sb, type->kind);
-  if (type->kind == ETypeKindPtr)
+  if (type->kind == ETypeKindPtr) {
     sb_push_type_hash(sb, type->ptr_target);
-  else if (type->kind == ETypeKindArray)
+  } else if (type->kind == ETypeKindArray) {
     sb_push_type_hash(sb, type->array_element);
-  else if (type->kind == ETypeKindStruct)
+  } else if (type->kind == ETypeKindStruct) {
     sb_push_u64(sb, str_hash(type->name));
+  } else if (type->kind == ETypeKindTuple) {
+    sb_push_u32(sb, type->tuple_types.len);
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      sb_push_type_hash(sb, type->tuple_types.items + i);
+  }
 }
 
 static Str mangle_proc_name(EProc *proc) {

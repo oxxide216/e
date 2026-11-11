@@ -130,3 +130,103 @@ EField *get_field(EStruct *_struct, Str name) {
 
   return NULL;
 }
+
+void varss_destroy(Varss *varss) {
+  for (u32 i = 0; i < varss->len; ++i) {
+    Vars *vars = varss->items + i;
+
+    for (u32 j = 0; j < vars->len; ++j)
+      type_free(&vars->items[j].type);
+    if (vars->items)
+      free(vars->items);
+  }
+  if (varss->items)
+    free(varss->items);
+}
+
+void _proc_destroy(EProc *proc) {
+  for (u32 i = 0; i < proc->args.len; ++i)
+    type_free(&proc->args.items[i].type);
+  if (proc->args.items)
+    free(proc->args.items);
+
+  type_free(&proc->return_type);
+
+  for (u32 i = 0; i < proc->instrs.len; ++i) {
+    EInstr *instr = proc->instrs.items + i;
+
+    if (instr->kind == EInstrKindCast) {
+      type_free(&instr->as.cast.dest_type);
+    } else if (instr->kind == EInstrKindCall) {
+      if (instr->as.call.arg_indices.items)
+        free(instr->as.call.arg_indices.items);
+    } else if (instr->kind == EInstrKindCallAssign) {
+      if (instr->as.call_assign.arg_indices.items)
+        free(instr->as.call_assign.arg_indices.items);
+    }
+  }
+  if (proc->instrs.items)
+    free(proc->instrs.items);
+}
+
+bool proc_destroy(EIr *ir, Varss *varss, EProc *proc) {
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    if (ir->procs.items + i == proc) {
+      _proc_destroy(proc);
+      DA_REMOVE_AT(ir->procs, i);
+      DA_REMOVE_AT(*varss, i);
+      return true;
+    }
+  }
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i)
+    if (proc_destroy(&ir->module_deps.items[i].ir,
+                     &ir->module_deps.items[i].varss,
+                     proc))
+      return true;
+
+  return false;
+}
+
+void ir_destroy(EIr *ir) {
+  if (ir->is_copy)
+    return;
+
+  for (u32 i = 0; i < ir->procs.len; ++i)
+    _proc_destroy(ir->procs.items + i);
+  if (ir->procs.items)
+    free(ir->procs.items);
+
+  for (u32 i = 0; i < ir->structs.len; ++i) {
+    EStruct *_struct = ir->structs.items + i;
+
+    for (u32 j = 0; j < _struct->fields.len; ++j)
+        type_free(&_struct->fields.items[j].type);
+    if (_struct->fields.items)
+      free(_struct->fields.items);
+  }
+  if (ir->structs.items)
+    free(ir->structs.items);
+
+  if (ir->consts.items)
+    free(ir->consts.items);
+
+  for (u32 i = 0; i < ir->data.len; ++i) {
+    EDataEntry *entry = ir->data.items + i;
+
+    if (entry->data)
+      free(entry->data);
+  }
+  if (ir->data.items)
+    free(ir->data.items);
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    if (dep->path.items)
+      free(dep->path.items);
+    varss_destroy(&dep->varss);
+  }
+  if (ir->module_deps.items)
+    free(ir->module_deps.items);
+}

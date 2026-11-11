@@ -398,4 +398,8 @@ u32 get_type_size(EIr *ir, EType *type);
 EStruct *get_struct(EIr *ir, Str name);
 EField  *get_field(EStruct *_struct, Str name);
 
+void varss_destroy(Varss *varss);
+bool proc_destroy(EIr *ir, Varss *varss, EProc *proc);
+void ir_destroy(EIr *ir);
+
 #endif // EIR_H

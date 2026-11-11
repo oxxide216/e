@@ -11,7 +11,10 @@ end
 proc main() -> s64
   let foo = (
     Foo: field = 0 end,
-    Foo: field = 1 end,
+    (  
+      Foo: field = 1 end,
+      Foo: field = 2 end,
+    ),
   )
 
   retval 0
