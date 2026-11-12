@@ -1894,6 +1894,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
       } break;
 
       case EInstrKindCopyFromStatic: {
+        CHECK_VAR(instr->as.copy_from_static.dest_index, instr->as.copy_from_static.dest_name, 0, false);
+
         Var *dest = varss->items[i].items + instr->as.copy_from_static.dest_index;
         Var *src = varss->items[i].items + instr->as.copy_from_static.src_index;
 
