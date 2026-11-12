@@ -48,7 +48,7 @@ bool type_eq(EType *a, EType *b) {
   } else {
     return a->kind == b->kind &&
            (a->kind != ETypeKindStruct ||
-            str_eq(a->name, b->name));
+            a->_struct == b->_struct);
   }
 }
 

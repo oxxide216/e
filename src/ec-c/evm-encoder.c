@@ -117,7 +117,7 @@ static void sb_push_type_hash(StringBuilder *sb, EType *type) {
   } else if (type->kind == ETypeKindArray) {
     sb_push_type_hash(sb, type->array_element);
   } else if (type->kind == ETypeKindStruct) {
-    sb_push_u64(sb, str_hash(type->name));
+    sb_push_u64(sb, str_hash(type->_struct->name));
   } else if (type->kind == ETypeKindTuple) {
     sb_push_u32(sb, type->tuple_types.len);
     for (u32 i = 0; i < type->tuple_types.len; ++i)

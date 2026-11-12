@@ -33,21 +33,26 @@ typedef struct EType EType;
 typedef Da(EType) ETypes;
 typedef Da(EType *) ETypeRefs;
 
+typedef struct EStruct EStruct;
+
 struct EType {
-  ETypeKind  kind;
+  ETypeKind    kind;
   union {
-    Str      name;
-    EType   *ptr_target;
     struct {
-      EType *array_element;
-      u32    array_len;
+      Str      name;
+      EStruct *_struct;
     };
-    ETypes   tuple_types;
+    EType     *ptr_target;
+    struct {
+      EType   *array_element;
+      u32      array_len;
+    };
+    ETypes     tuple_types;
   };
-  ETypeLoc   loc;
-  u8        *moved_members;
-  u32        moved_members_len;
-  bool       is_implicit_ptr;
+  ETypeLoc     loc;
+  u8          *moved_members;
+  u32          moved_members_len;
+  bool         is_implicit_ptr;
 };
 
 typedef union {
@@ -367,10 +372,10 @@ typedef struct {
 
 typedef Da(EField) EFields;
 
-typedef struct {
+struct EStruct {
   Str     name;
   EFields fields;
-} EStruct;
+};
 
 typedef Da(EStruct) EStructs;
 

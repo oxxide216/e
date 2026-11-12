@@ -73,7 +73,8 @@ typedef Da(VarSubstitution) VarSubstitutions;
 
 static bool check_struct_existence(EIr *ir, EType *type) {
   if (type->kind == ETypeKindStruct) {
-    if (!get_struct(ir, type->name)) {
+    type->_struct = get_struct(ir, type->name);
+    if (!type->_struct) {
       CERRORFT("Structure "STR_FMT" was not defined\n", STR_ARG(type->name));
       return false;
     }
@@ -864,6 +865,10 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         goto fail;
     if (!check_struct_existence(ir, &proc->return_type))
       goto fail;
+
+    for (u32 j = 0; j < varss->items[i].len; ++j)
+      if (!check_struct_existence(ir, &varss->items[i].items[j].type))
+        goto fail;
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
