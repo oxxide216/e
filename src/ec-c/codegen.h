@@ -44,10 +44,10 @@
     DA_APPEND((structs)->items[(structs)->len - 1].fields, field); \
   } while (0)
 
-#define emit_const(consts, name, value) \
-  do {                                  \
-    EConst _const = { name, value };    \
-    DA_APPEND(*(consts), _const);       \
+#define emit_const(consts, name, type, value) \
+  do {                                        \
+    EConst _const = { name, type, value };    \
+    DA_APPEND(*(consts), _const);             \
   } while (0)
 
 #define emit_data(data, entry_data, len)    \

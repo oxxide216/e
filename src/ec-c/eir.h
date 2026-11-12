@@ -102,9 +102,11 @@ typedef struct {
 } EInstrAlloc;
 
 typedef struct {
-  Str    name;
-  u32    index;
-  EValue value;
+  Str       name;
+  u32       index;
+  EValue    value;
+  bool      is_const;
+  ETypeKind const_kind;
 } EInstrStore;
 
 typedef struct {
@@ -381,6 +383,7 @@ typedef Da(EStruct) EStructs;
 
 typedef struct {
   Str    name;
+  EType  type;
   EValue value;
 } EConst;
 

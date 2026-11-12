@@ -412,6 +412,8 @@ void ir_destroy(EIr *ir) {
   if (ir->structs.items)
     free(ir->structs.items);
 
+  for (u32 i = 0; i < ir->consts.len; ++i)
+    type_free(&ir->consts.items[i].type);
   if (ir->consts.items)
     free(ir->consts.items);
 

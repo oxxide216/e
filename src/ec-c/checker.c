@@ -831,7 +831,120 @@ static bool tuple_type_contains_unit(EType *type) {
   return false;
 }
 
-bool check_ir(EIr *ir, Varss *varss, bool require_main) {
+static bool str_eq_str_with_path(Str a, Str b, EModulePath *b_path) {
+  for (u32 i = 0; i < b_path->len; ++i) {
+    u32 index = str_find(a, STR_LIT("::"));
+    if (index == (u32) -1)
+      return false;
+    if (!str_eq(STR(a.ptr, index), b_path->items[i]))
+      return false;
+    a.ptr += index + 2;
+    a.len -= index + 2;
+  }
+
+  return str_eq(a, b);
+}
+
+static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
+                       EModulePath *path, Arena *arena) {
+  u32 len = _const->name.len;
+  for (u32 i = 0; i < path->len; ++i)
+    len += path->items[i].len + 2;
+
+  char *name = arena_alloc(arena, len);
+
+  u32 offset = 0;
+  for (u32 i = 0; i < path->len; ++i) {
+    memcpy(name + offset, path->items[i].ptr, path->items[i].len);
+    offset += path->items[i].len;
+    name[offset++] = ':';
+    name[offset++] = ':';
+  }
+  memcpy(name + offset, _const->name.ptr, _const->name.len);
+
+  Var var = { STR(name, len), type_clone(&_const->type), false, {}, 0, false };
+
+  EInstr alloc = {
+    EInstrKindAlloc,
+    {
+      .alloc = {
+        var.name,
+        vars->len,
+      },
+    },
+    {},
+  };
+  DA_INSERT(*instrs, 0, alloc);
+
+  EInstr store = {
+    EInstrKindStore,
+    {
+      .store = {
+        var.name,
+        vars->len,
+        _const->value,
+        true,
+        _const->type.kind,
+      },
+    },
+    {},
+  };
+  DA_INSERT(*instrs, 1, store);
+
+  DA_APPEND(*vars, var);
+}
+
+static void find_and_push_const(EIr *ir, Vars *vars, EInstrs *instrs,
+                                EModulePath *path, Arena *arena,
+                                Str name, u32 *var_index) {
+  for (u32 i = 0; i < ir->consts.len; ++i) {
+    if (str_eq_str_with_path(name, ir->consts.items[i].name, path)) {
+      *var_index = vars->len;
+      push_const(ir->consts.items + i, vars, instrs, path, arena);
+      return;
+    }
+  }
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    DA_APPEND(*path, dep->path.items[dep->path.len - 1]);
+    find_and_push_const(&dep->ir, vars, instrs, path, arena, name, var_index);
+    --path->len;
+  }
+}
+
+static void collect_consts(EIr *ir, EInstrs *instrs, Vars *vars, Arena *arena) {
+  EModulePath path = {0};
+  u32 prev_vars_len = vars->len;
+
+  for (u32 i = 0; i < instrs->len; ++i) {
+    EInstr *instr = instrs->items + i;
+
+    if (instr->kind == EInstrKindCopy) {
+      if (instr->as.copy.src_index == (u32) -1) {
+        for (u32 j = prev_vars_len; j < vars->len; ++j) {
+          if (str_eq(vars->items[j].name, instr->as.copy.src_name)) {
+            instr->as.copy.src_index = j;
+            break;
+          }
+        }
+
+        if (instr->as.copy.src_index == (u32) -1) {
+          path.len = 0;
+          find_and_push_const(ir, vars, instrs, &path, arena,
+                              instr->as.copy.src_name,
+                              &instr->as.copy.src_index);
+        }
+      }
+    }
+  }
+
+  if (path.items)
+    free(path.items);
+}
+
+bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
   bool found_main = false;
   VarSubstitutions var_substs = {0};
 
@@ -869,6 +982,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
     for (u32 j = 0; j < varss->items[i].len; ++j)
       if (!check_struct_existence(ir, &varss->items[i].items[j].type))
         goto fail;
+
+    collect_consts(ir, &proc->instrs, varss->items + i, arena);
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
@@ -921,7 +1036,9 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
         Var *var = varss->items[i].items + instr->as.store.index;
         var->moved = false;
         EType value_type = make_type_from_kind(instr->as.store.value.kind);
-        if (var->type.kind == ETypeKindUnit) {
+        if (instr->as.store.is_const) {
+          var->type.kind = instr->as.store.const_kind;
+        } else if (var->type.kind == ETypeKindUnit) {
           var->type = value_type;
         } else if (!type_eq(&value_type, &var->type)) {
           Str value_type_str = get_type_str(&value_type);

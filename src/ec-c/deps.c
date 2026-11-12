@@ -161,7 +161,7 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
 
       if (!check_ir(&ir->module_deps.items[i].ir,
                     &ir->module_deps.items[i].varss,
-                    false)) {
+                    arena, false)) {
         free(full_cache_path.ptr);
         free(path.ptr);
         return false;

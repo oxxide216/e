@@ -230,7 +230,7 @@ i32 main(i32 argc, char **argv) {
     return 1;
   }
 
-  if (!check_ir(&ir, &varss, !config.link_only)) {
+  if (!check_ir(&ir, &varss, &arena, !config.link_only)) {
     if (included_deps.items)
       free(included_deps.items);
     arena_free(&arena);

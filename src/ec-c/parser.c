@@ -295,6 +295,14 @@ static u32 get_var_index(Varss *varss, Str name) {
   return (u32) -1;
 }
 
+static u32 get_const_index(EIr *ir, Str name) {
+  for (u32 i = ir->consts.len; i > 0; --i)
+    if (str_eq(ir->consts.items[i - 1].name, name))
+      return i - 1;
+
+  return (u32) -1;
+}
+
 static Var *get_var_by_index(Varss *varss, u32 index) {
   return varss->items[varss->len - 1].items + index;
 }
@@ -346,7 +354,8 @@ static void make_last_copy_returned(Parser *parser) {
   Vars *vars = parser->varss->items + parser->varss->len - 1;
 
   if (instrs->len > 0 &&
-      instrs->items[instrs->len - 1].kind == EInstrKindCopy)
+      instrs->items[instrs->len - 1].kind == EInstrKindCopy &&
+      instrs->items[instrs->len - 1].as.copy.src_index != (u32) -1)
     vars->items[instrs->items[instrs->len - 1].as.copy.src_index].returned = true;
 }
 
@@ -709,7 +718,9 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           {
             ETypeKindS64,
             { ._signed = str_to_i64(token.lexeme) },
-          }
+          },
+          false,
+          0,
         },
       );
     } break;
@@ -725,7 +736,9 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           {
             ETypeKindBool,
             { ._bool = str_eq(token.lexeme, STR_LIT("true")) },
-          }
+          },
+          false,
+          0,
         },
       );
     } break;
@@ -936,10 +949,10 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
         parse_moduled_ident(parser, name_token);
         name_token.lexeme = parser->moduled_ident;
 
-        parser_peek_token(parser, &token);
-        parser_expect_token(parser, MASK(TT_OPAREN) | MASK(TT_COLON), "`(` or `:`");
+        if (parser_peek_token(parser, &token) != TokenStatusEOF &&
+            token.id == TT_OPAREN) {
+          parser_next_token(parser, NULL);
 
-        if (token.id == TT_OPAREN) {
           Indices arg_indices = {0};
 
           while (parser_peek_token(parser, &token) != TokenStatusEOF &&
@@ -969,7 +982,10 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           );
 
           parser_expect_token(parser, MASK(TT_CPAREN), "`)`");
-        } else if (token.id == TT_COLON) {
+        } else if (parser_peek_token(parser, &token) != TokenStatusEOF &&
+                   token.id == TT_COLON) {
+          parser_next_token(parser, NULL);
+
           u32 i = 0;
 
           Token temp_token;
@@ -982,7 +998,7 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             parser_expect_token(parser, MASK(TT_SET), "`=`");
             parser_parse_expr(parser, (Str) {0}, element_index);
 
-           make_last_copy_returned(parser); 
+            make_last_copy_returned(parser); 
 
             emit_instr(
               &parser->ir->procs,
@@ -1023,6 +1039,19 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             0,
             false,
           };
+        } else {
+          emit_instr(
+            &parser->ir->procs,
+            name_token,
+            EInstrKindCopy,
+            .copy = {
+              dest_name,
+              dest_index,
+              name_token.lexeme,
+              (u32) -1,
+              false,
+            },
+          );
         }
       } else if (parser_peek_token(parser, &token) != TokenStatusEOF &&
                  token.id == TT_OPAREN) {
@@ -1117,7 +1146,8 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
       } else {
         u32 src_index = get_var_index(parser->varss, name_token.lexeme);
 
-        if (src_index == (u32) -1) {
+        if (src_index == (u32) -1 &&
+            get_const_index(parser->ir, name_token.lexeme) == (u32) -1) {
           u32 ref_index = alloc_var(parser, (Str) {0}, (Token) {0});
 
           emit_instr(
@@ -2379,10 +2409,13 @@ static void parser_parse_program(Parser *parser) {
     case TT_CONST: {
       parser_peek_token(parser, &token);
       parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+      parser_expect_token(parser, MASK(TT_COLON), "`:`");
+      parser_parse_type(parser);
       parser_expect_token(parser, MASK(TT_SET), "`=`");
       parser_parse_primary_expr(parser, (Str) {0}, 0, true);
 
-      emit_const(&parser->ir->consts, token.lexeme, parser->last_const_value);
+      emit_const(&parser->ir->consts, token.lexeme,
+                 parser->last_type, parser->last_const_value);
     } break;
 
     case TT_USE: {
