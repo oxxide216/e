@@ -371,6 +371,11 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
       if (instr->as.copy_from_offset.dest_index == var_index)
         return;
     } break;
+
+    case EInstrKindSizeOf: {
+      if (instr->as.size_of.dest_index == var_index)
+        return;
+    } break;
     }
   }
 }
@@ -1813,6 +1818,25 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           dest->type = new_type;
         } else {
           dest->type.is_implicit_ptr |= instr->as.copy_from_offset.take_ref;
+        }
+      } break;
+
+      case EInstrKindSizeOf: {
+        CHECK_VAR(instr->as.size_of.dest_index, instr->as.size_of.dest_name, 0, false);
+
+        Var *dest = varss->items[i].items + instr->as.size_of.dest_index;
+        dest->moved = false;
+        EType type = make_type_from_kind(ETypeKindU64);
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = type;
+        } else if (!type_eq(&type, &dest->type)) {
+          Str type_str = get_type_str(&type);
+          Str dest_type_str = get_type_str(&dest->type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(type_str), STR_ARG(dest_type_str));
+          free_type_str(type_str, &type);
+          free_type_str(dest_type_str, &dest->type);
+          goto fail;
         }
       } break;
       }

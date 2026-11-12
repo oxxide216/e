@@ -85,6 +85,7 @@ typedef enum {
   EInstrKindTuple,
   EInstrKindCopyToOffset,
   EInstrKindCopyFromOffset,
+  EInstrKindSizeOf,
 } EInstrKind;
 
 typedef struct {
@@ -278,6 +279,12 @@ typedef struct {
   bool is_ref_explicit;
 } EInstrCopyFromOffset;
 
+typedef struct {
+  Str   dest_name;
+  u32   dest_index;
+  EType type;
+} EInstrSizeOf;
+
 typedef union {
   EInstrAlloc          alloc;
   EInstrStore          store;
@@ -301,6 +308,7 @@ typedef union {
   EInstrTuple          tuple;
   EInstrCopyToOffset   copy_to_offset;
   EInstrCopyFromOffset copy_from_offset;
+  EInstrSizeOf         size_of;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;

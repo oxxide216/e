@@ -278,6 +278,12 @@ void proc_print(EProc *proc) {
       var_print(instr->as.copy_from_offset.src_index, instr->as.copy_from_offset.src_name);
       printf(".%u\n", instr->as.copy_from_offset.src_offset);
     } break;
+
+    case EInstrKindSizeOf: {
+      printf("  ");
+      var_print(instr->as.len_of.dest_index, instr->as.len_of.dest_name);
+      printf(" = sizeof\n");
+    } break;
     }
   }
 

@@ -221,6 +221,15 @@ static void instr_print(Instr *instr, VarLocs *locs) {
     }
     printf(")\n");
   } break;
+
+  case InstrKindSizeOf: {
+    Segments *segments = &instr->as.size_of.segments;
+    i32 size =
+      segments->items[segments->len - 1].offset +
+      segments->items[segments->len - 1].size;
+
+    printf("  $%u = %d\n", instr->as.size_of.dest_index, size);
+  } break;
   }
 }
 

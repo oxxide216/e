@@ -41,6 +41,7 @@ typedef enum {
   InstrKindRefProc,
   InstrKindCallRef,
   InstrKindCallRefAssign,
+  InstrKindSizeOf,
 } InstrKind;
 
 typedef struct {
@@ -199,6 +200,11 @@ typedef struct {
   Indices   arg_indices;
 } InstrCallRefAssign;
 
+typedef struct {
+  u32      dest_index;
+  Segments segments;
+} InstrSizeOf;
+
 typedef union {
   InstrAlloc            alloc;
   InstrStore            store;
@@ -220,6 +226,7 @@ typedef union {
   InstrRefProc          ref_proc;
   InstrCallRef          call_ref;
   InstrCallRefAssign    call_ref_assign;
+  InstrSizeOf           size_of;
 } InstrAs;
 
 typedef struct {

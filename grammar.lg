@@ -20,6 +20,7 @@ asm=asm
 as=as
 lenof=lenof
 struct=struct
+sizeof=sizeof
 
 oparen=\(
 cparen=\)

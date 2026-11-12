@@ -18,5 +18,6 @@
 /sized-arrays
 /drop-tuples
 /stat
+/sizeof
 /test*
-.idea
+/.idea/*

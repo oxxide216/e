@@ -101,6 +101,7 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   case EInstrKindTuple:          return 0;
   case EInstrKindCopyToOffset:   return InstrKindCopyToRefFixed;
   case EInstrKindCopyFromOffset: return InstrKindCopyFromRefFixed;
+  case EInstrKindSizeOf:         return InstrKindSizeOf;
   }
 
   return 0;
@@ -646,6 +647,12 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         fwrite(&deref_if_in_reg, 1, 1, stream);
 
         fwrite(&instr->as.copy_from_offset.take_ref, 1, 1, stream);
+      } break;
+
+      case EInstrKindSizeOf: {
+        fwrite(&instr->as.size_of.dest_index, sizeof(instr->as.size_of.dest_index), 1, stream);
+
+        encode_type_fields_as_aligned_segments(stream, &instr->as.size_of.type, ir);
       } break;
       }
     }

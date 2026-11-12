@@ -1426,6 +1426,18 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "\n");
     }
   } break;
+
+  case InstrKindSizeOf: {
+    VarLoc *dest_loc = locs->items + instr->as.size_of.dest_index;
+
+    dest_loc->kind = ValueKindUnsigned;
+
+    u32 size = get_segments_size_x86_64(&instr->as.size_of.segments);
+
+    write_cstr(stream, "  mov ");
+    write_loc(stream, dest_loc);
+    fprintf(stream, ",%u\n", size);
+  } break;
   }
 }
 

@@ -298,6 +298,20 @@ static bool decode_instr_impl(Decoder *decoder, Instr *instr) {
       decode_buffer(decoder, arg_index, sizeof(*arg_index));
     }
   } break;
+
+  case InstrKindSizeOf: {
+    decode_buffer(decoder, &instr->as.size_of.dest_index, sizeof(instr->as.size_of.dest_index));
+
+    decode_buffer(decoder, &instr->as.size_of.segments.len, sizeof(instr->as.size_of.segments.len));
+    instr->as.size_of.segments.cap = instr->as.size_of.segments.len;
+    instr->as.size_of.segments.items = arena_alloc(decoder->arena, instr->as.size_of.segments.cap * sizeof(AlignedSegment));
+
+    for (u32 k = 0; k < instr->as.size_of.segments.len; ++k) {
+      AlignedSegment *segment = instr->as.size_of.segments.items + k;
+      decode_buffer(decoder, &segment->offset, sizeof(segment->offset));
+      decode_buffer(decoder, &segment->size, sizeof(segment->size));
+    }
+  } break;
   }
 
   return true;

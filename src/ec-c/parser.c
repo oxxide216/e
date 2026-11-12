@@ -483,6 +483,13 @@ static void backpatch_dest(EProc *proc, u32 starting_index, Str new_dest_name,
         instr->as.copy_from_offset.dest_index = new_dest_index;
       }
     } break;
+
+    case EInstrKindSizeOf: {
+      if (instr->as.size_of.dest_index == prev_dest_index) {
+        instr->as.size_of.dest_name = new_dest_name;
+        instr->as.size_of.dest_index = new_dest_index;
+      }
+    } break;
     }
   }
 }
@@ -574,6 +581,11 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
 
     case EInstrKindCopyFromOffset: {
       if (instr->as.copy_from_offset.dest_index == prev_dest_index)
+        first_index = i - 1;
+    } break;
+
+    case EInstrKindSizeOf: {
+      if (instr->as.size_of.dest_index == prev_dest_index)
         first_index = i - 1;
     } break;
     }
@@ -1197,7 +1209,8 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
   Token token;
   parser_peek_token(parser, &token);
 
-  if (token.id == TT_AND || token.id == TT_STAR || token.id == TT_LENOF) {
+  if (token.id == TT_AND || token.id == TT_STAR ||
+      token.id == TT_LENOF || token.id == TT_SIZEOF) {
     parser_next_token(parser, NULL);
 
     switch (token.id) {
@@ -1238,6 +1251,21 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
           dest_index,
           {},
           temp_index,
+        },
+      );
+    } break;
+
+    case TT_SIZEOF: {
+      parser_parse_type(parser);
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindSizeOf,
+        .size_of = {
+          dest_name,
+          dest_index,
+          parser->last_type,
         },
       );
     } break;
