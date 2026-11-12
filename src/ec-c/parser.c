@@ -1748,7 +1748,24 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     if (token.id == TT_SET) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
-      parser_parse_expr(parser, name_token.lexeme, index);
+      if (index == (u32) -1) {
+        u32 temp_index = alloc_var(parser, (Str) {0}, token);
+        parser_parse_expr(parser, (Str) {0}, temp_index);
+
+        emit_instr(
+          &parser->ir->procs,
+          token,
+          EInstrKindCopy,
+          .copy = {
+            name_token.lexeme,
+            index,
+            {},
+            temp_index,
+          },
+        );
+      } else {
+        parser_parse_expr(parser, name_token.lexeme, index);
+      }
 
       make_last_copy_returned(parser);
 

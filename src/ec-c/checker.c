@@ -956,6 +956,133 @@ static void collect_consts(EIr *ir, EInstrs *instrs, Vars *vars, Arena *arena) {
     free(path.items);
 }
 
+static void patch_statics(EIr *ir, EInstrs *instrs, Vars *vars) {
+  for (u32 i = 0; i < instrs->len; ++i) {
+    EInstr *instr = instrs->items + i;
+
+    if (instr->kind == EInstrKindCopy) {
+      if (instr->as.copy.dest_index == (u32) -1) {
+        EStaticVar *static_var = get_static_var(ir, instr->as.copy.dest_name);
+        if (static_var) {
+          EInstr alloc = {
+            EInstrKindAlloc,
+            {
+              .alloc = {
+                {},
+                vars->len,
+              },
+            },
+            {},
+          };
+          EInstr static_ref = {
+            EInstrKindStaticRef,
+            {
+              .static_ref = {
+                vars->len,
+                static_var->name,
+                static_var - ir->static_vars.items,
+              },
+            },
+            {},
+          };
+          EInstr copy_to_static = {
+            EInstrKindCopyToStatic,
+            {
+              .copy_to_static = {
+                vars->len,
+                instr->as.copy.src_index,
+              },
+            },
+            {},
+          };
+
+          *instr = alloc;
+          ++i;
+          DA_INSERT(*instrs, i, static_ref);
+          ++i;
+          DA_INSERT(*instrs, i, copy_to_static);
+
+          Var var = {
+            static_var->name,
+            {
+              ETypeKindPtr,
+              {
+                .ptr_target = malloc(sizeof(EType)),
+              },
+              {},
+              NULL,
+              0,
+              false,
+            },
+            false, {}, 0, false,
+          };
+          *var.type.ptr_target = type_clone(&static_var->type);
+          DA_APPEND(*vars, var);
+        }
+      } else if (instr->as.copy.src_index == (u32) -1) {
+        EStaticVar *static_var = get_static_var(ir, instr->as.copy.src_name);
+        if (static_var) {
+          EInstr alloc = {
+            EInstrKindAlloc,
+            {
+              .alloc = {
+                {},
+                vars->len,
+              },
+            },
+            {},
+          };
+          EInstr static_ref = {
+            EInstrKindStaticRef,
+            {
+              .static_ref = {
+                vars->len,
+                static_var->name,
+                static_var - ir->static_vars.items,
+              },
+            },
+            {},
+          };
+          EInstr copy_from_static = {
+            EInstrKindCopyFromStatic,
+            {
+              .copy_from_static = {
+                instr->as.copy.dest_name,
+                instr->as.copy.dest_index,
+                vars->len,
+              },
+            },
+            {},
+          };
+
+          *instr = alloc;
+          ++i;
+          DA_INSERT(*instrs, i, static_ref);
+          ++i;
+          DA_INSERT(*instrs, i, copy_from_static);
+
+          Var var = {
+            static_var->name,
+            {
+              ETypeKindPtr,
+              {
+                .ptr_target = malloc(sizeof(EType)),
+              },
+              {},
+              NULL,
+              0,
+              false,
+            },
+            false, {}, 0, false,
+          };
+          *var.type.ptr_target = type_clone(&static_var->type);
+          DA_APPEND(*vars, var);
+        }
+      }
+    }
+  }
+}
+
 bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
   bool found_main = false;
   VarSubstitutions var_substs = {0};
@@ -996,6 +1123,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
         goto fail;
 
     collect_consts(ir, &proc->instrs, varss->items + i, arena);
+    patch_statics(ir, &proc->instrs, varss->items + i);
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
