@@ -566,16 +566,13 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
 }
 
 static bool generate_drops_for_structs(EIr *ir, Varss *varss,
-                                       u8 *structs_with_drops) {
+                                       u8 *amounts_of_drops_for_structs) {
   bool result = false;
 
   for (u32 i = 0; i < ir->structs.len; ++i) {
     EStruct *_struct = ir->structs.items + i;
 
-    if (structs_with_drops[i])
-      continue;
-
-    bool has_droppable_fields = false;
+    u8 droppable_fields_len = 0;
 
     for (u32 j = 0; j < _struct->fields.len; ++j) {
       EType arg_type = {
@@ -588,13 +585,12 @@ static bool generate_drops_for_structs(EIr *ir, Varss *varss,
       };
       EType *arg_type_ptr = &arg_type;
       ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-      if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
-        has_droppable_fields = true;
-        break;
-      }
+      if (get_proc(ir, STR_LIT("drop"), &arg_types))
+        ++droppable_fields_len;
     }
 
-    if (!has_droppable_fields)
+    if (droppable_fields_len == 0 ||
+        droppable_fields_len == amounts_of_drops_for_structs[i])
       continue;
 
     result = true;
@@ -617,28 +613,36 @@ static bool generate_drops_for_structs(EIr *ir, Varss *varss,
     };
     EType *arg_type_ptr = &arg_type;
     ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-    EProc *drop = get_proc(ir, STR_LIT("drop"), &arg_types);
+    EProc *existing_drop = get_proc(ir, STR_LIT("drop"), &arg_types);
 
-    generate_drop_for_struct(ir, varss, _struct, drop != NULL);
+    if (existing_drop) {
+      if (amounts_of_drops_for_structs[i] == 0) {
+        Indices arg_indices = {0};
+        DA_APPEND(arg_indices, 0);
 
-    if (drop) {
-      Indices arg_indices = {0};
-      DA_APPEND(arg_indices, 0);
-
-      EInstr instr = {
-        EInstrKindCall,
-        {
-          .call = {
-            STR_LIT("?drop"),
-            arg_indices,
+        EInstr instr = {
+          EInstrKindCall,
+          {
+            .call = {
+              STR_LIT("?drop"),
+              arg_indices,
+            },
           },
-        },
-        {},
-      };
-      DA_APPEND(drop->instrs, instr);
+          {},
+        };
+        DA_APPEND(existing_drop->instrs, instr);
+      } else {
+        EProc *generated_drop = get_proc(ir, STR_LIT("?drop"), &arg_types);
+        if (generated_drop)
+          proc_destroy(ir, varss, generated_drop);
+        else
+          proc_destroy(ir, varss, existing_drop);
+      }
     }
 
-    structs_with_drops[i] = true;
+    generate_drop_for_struct(ir, varss, _struct, existing_drop != NULL);
+
+    amounts_of_drops_for_structs[i] = droppable_fields_len;
   }
 
   return result;
@@ -846,8 +850,8 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
 
   u32 procs_len = ir->procs.len;
 
-  u8 *structs_with_drops = alloca(ir->structs.len);
-  memset(structs_with_drops, 0, ir->structs.len);
+  u8 *amounts_of_drops_for_structs = alloca(ir->structs.len);
+  memset(amounts_of_drops_for_structs, 0, ir->structs.len);
 
   for (u32 i = 0; i < procs_len; ++i) {
     EProc *proc = ir->procs.items + i;
@@ -1014,7 +1018,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           while (repeat) {
             repeat = false;
 
-            if (generate_drops_for_structs(ir, varss, structs_with_drops))
+            if (generate_drops_for_structs(ir, varss, amounts_of_drops_for_structs))
               repeat = true;
             if (generate_drops_for_tuples(ir, varss, amounts_of_drops_for_tuples, i))
               repeat = true;
