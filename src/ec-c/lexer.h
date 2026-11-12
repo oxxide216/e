@@ -4,12 +4,14 @@
 #include "shl/shl-defs.h"
 #include "shl/shl-str.h"
 #include "lexgen/runtime.h"
+#include "arena.h"
 
 typedef struct {
   Str              code;
   u32              row, col;
   TransitionTable *table;
   StringBuilder    temp_sb;
+  Arena           *arena;
 } Lexer;
 
 typedef struct {
@@ -27,7 +29,7 @@ typedef enum {
   TokenStatusEOF,
 } TokenStatus;
 
-Lexer lexer_create(Str code);
+Lexer lexer_create(Str code, Arena *arena);
 void  lexer_destroy(Lexer *lexer);
 
 TokenStatus lexer_lex(Lexer *lexer, Token *token, Str file_path);

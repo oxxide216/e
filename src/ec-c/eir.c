@@ -163,6 +163,9 @@ void _proc_destroy(EProc *proc) {
     } else if (instr->kind == EInstrKindCallAssign) {
       if (instr->as.call_assign.arg_indices.items)
         free(instr->as.call_assign.arg_indices.items);
+    } else if (instr->kind == EInstrKindInlineAsm) {
+      if (instr->as.inline_asm.segments.items)
+        free(instr->as.inline_asm.segments.items);
     }
   }
   if (proc->instrs.items)
@@ -225,6 +228,7 @@ void ir_destroy(EIr *ir) {
 
     if (dep->path.items)
       free(dep->path.items);
+    ir_destroy(&dep->ir);
     varss_destroy(&dep->varss);
   }
   if (ir->module_deps.items)

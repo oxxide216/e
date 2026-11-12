@@ -1030,6 +1030,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           if (!callee ||
               varss->items[i].items[instr[-1].as.ref.src_index].moved ||
               varss->items[i].items[instr[-1].as.ref.src_index].returned) {
+            free(instr->as.call.arg_indices.items);
             for (u32 k = 0; k < 3; ++k)
               DA_REMOVE_AT(proc->instrs, j - 2);
             j -= 3;
@@ -1654,6 +1655,7 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           }
         }
 
+        dest = varss->items[i].items + instr->as.copy_from_field.dest_index;
         if (instr->as.copy_from_field.is_ref_explicit) {
           EType new_type;
           new_type.kind = ETypeKindPtr;

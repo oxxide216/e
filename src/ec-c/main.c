@@ -200,8 +200,10 @@ i32 main(i32 argc, char **argv) {
 
   EIr ir = {0};
   Varss varss = {0};
+  Arena arena = {0};
   Str input_path_str = str_new(config.input_path);
-  if (!parse(&ir, &varss, code, input_path_str)) {
+  if (!parse(&ir, &varss, &arena, code, input_path_str)) {
+    arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
     free(code.ptr);
@@ -209,7 +211,8 @@ i32 main(i32 argc, char **argv) {
     return 1;
   }
 
-  Arena arena = {0};
+  free(code.ptr);
+
   Str cache_path_str = { NULL, (u32) -1 };
   if (config.cache_path && config.link_only)
     cache_path_str = str_new(config.cache_path);
@@ -223,7 +226,6 @@ i32 main(i32 argc, char **argv) {
     arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
-    free(code.ptr);
     config_destroy(&config);
     return 1;
   }
@@ -234,7 +236,6 @@ i32 main(i32 argc, char **argv) {
     arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
-    free(code.ptr);
     config_destroy(&config);
     return 1;
   }
@@ -251,7 +252,6 @@ i32 main(i32 argc, char **argv) {
     arena_free(&arena);
     varss_destroy(&varss);
     ir_destroy(&ir);
-    free(code.ptr);
     config_destroy(&config);
     return 1;
   }
@@ -309,7 +309,6 @@ end:
   arena_free(&arena);
   varss_destroy(&varss);
   ir_destroy(&ir);
-  free(code.ptr);
   config_destroy(&config);
 
   return result;

@@ -136,30 +136,31 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
 
       if (!parse(&ir->module_deps.items[i].ir,
                  &ir->module_deps.items[i].varss,
-                 code, found_path)) {
+                 arena, code, found_path)) {
         free(code.ptr);
         free(full_cache_path.ptr);
         free(found_path.ptr);
         free(path.ptr);
         return false;
       }
+
+      free(code.ptr);
 
       if (!load_module_deps(&ir->module_deps.items[i].ir, arena,
                             found_path, cache_path,
                             include_paths, included_deps)) {
-        free(code.ptr);
         free(full_cache_path.ptr);
         free(found_path.ptr);
         free(path.ptr);
         return false;
       }
 
+      free(found_path.ptr);
+
       if (!check_ir(&ir->module_deps.items[i].ir,
                     &ir->module_deps.items[i].varss,
                     false)) {
-        free(code.ptr);
         free(full_cache_path.ptr);
-        free(found_path.ptr);
         free(path.ptr);
         return false;
       }
@@ -170,9 +171,7 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
         FILE *output_file = fopen(full_cache_path.ptr, "wb");
         if (!output_file) {
           ERROR("Could not write %s\n", full_cache_path.ptr);
-          free(code.ptr);
           free(full_cache_path.ptr);
-          free(found_path.ptr);
           free(path.ptr);
           return false;
         }

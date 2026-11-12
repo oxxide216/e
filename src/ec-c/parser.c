@@ -2159,13 +2159,13 @@ static void parser_parse_program(Parser *parser) {
   }
 }
 
-bool parse(EIr *ir, Varss *varss, Str code, Str file_path) {
+bool parse(EIr *ir, Varss *varss, Arena *arena, Str code, Str file_path) {
   Parser parser = {
     ir,
     varss,
     {},
     {},
-    lexer_create(code),
+    lexer_create(code, arena),
     TokenStatusOk,
     {},
     file_path,

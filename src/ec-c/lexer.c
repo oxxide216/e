@@ -5,8 +5,8 @@
 #define LEXGEN_TRANSITION_TABLE_IMPLEMENTATION
 #include "grammar.h"
 
-Lexer lexer_create(Str code) {
-  return (Lexer) { code, 0, 0, get_transition_table(), {} };
+Lexer lexer_create(Str code, Arena *arena) {
+  return (Lexer) { code, 0, 0, get_transition_table(), {}, arena };
 }
 
 void lexer_destroy(Lexer *lexer) {
@@ -193,12 +193,18 @@ TokenStatus lexer_lex(Lexer *lexer, Token *token, Str file_path) {
       ++lexer->col;
 
       lexeme.len = lexer->temp_sb.len;
-      lexeme.ptr = malloc(lexeme.len);
+      lexeme.ptr = arena_alloc(lexer->arena, lexeme.len);
       memcpy(lexeme.ptr, lexer->temp_sb.buffer, lexeme.len);
 
       lexer->temp_sb.len = 0;
     } else {
       lexer->col += char_len;
+
+      if (id == TT_IDENT) {
+        char *new_ptr = arena_alloc(lexer->arena, lexeme.len);
+        memcpy(new_ptr, lexeme.ptr, lexeme.len);
+        lexeme.ptr = new_ptr;
+      }
     }
 
     *token = (Token) { id, lexeme, file_path, row, col };
