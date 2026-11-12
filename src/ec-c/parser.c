@@ -12,6 +12,13 @@
       return;                                         \
   } while (0)
 
+#define parse_moduled_ident(parser, beginning)   \
+  do {                                           \
+    parse_moduled_ident_impl(parser, beginning); \
+    if ((parser)->has_error)                     \
+      return;                                    \
+  } while (0)
+
 #define parser_parse_primary_expr(parser, dest_name, dest_index, is_const)   \
   do {                                                                       \
     parser_parse_primary_expr_impl(parser, dest_name, dest_index, is_const); \
@@ -107,6 +114,7 @@ typedef struct {
   Lexer        lexer;
   TokenStatus  status;
   Token        token;
+  Str          moduled_ident;
   Str          file_path;
   u32          scope_begin;
   bool         has_error;
@@ -145,6 +153,30 @@ void parser_expect_token_impl(Parser *parser, u64 mask, char *expected) {
            token.col + 1, STR_ARG(token.lexeme), expected);
     parser->has_error = true;
   }
+}
+
+static void parse_moduled_ident_impl(Parser *parser, Token beginning) {
+  sb_push_str(&parser->lexer.temp_sb, beginning.lexeme);
+
+  Token token;
+  while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+         token.id == TT_COLONCOLON) {
+    parser_expect_token(parser, MASK(TT_COLONCOLON), "`::`");
+    sb_push_str(&parser->lexer.temp_sb, STR_LIT("::"));
+
+    parser_peek_token(parser, &token);
+    parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+    sb_push_str(&parser->lexer.temp_sb, token.lexeme);
+  }
+
+  parser->moduled_ident.len = parser->lexer.temp_sb.len;
+  parser->moduled_ident.ptr =
+    arena_alloc(parser->lexer.arena, parser->moduled_ident.len);
+  memcpy(parser->moduled_ident.ptr,
+         parser->lexer.temp_sb.buffer,
+         parser->moduled_ident.len);
+
+  parser->lexer.temp_sb.len = 0;
 }
 
 static EType get_type_from_token(Token *name_token) {
@@ -191,6 +223,8 @@ static void parser_parse_type_impl(Parser *parser) {
                       "identifier, `&` or `[`");
 
   if (token.id == TT_IDENT) {
+    parse_moduled_ident(parser, token);
+    token.lexeme = parser->moduled_ident;
     parser->last_type = get_type_from_token(&token);
   } else if (token.id == TT_AND) {
     parser_parse_type(parser);
@@ -858,8 +892,45 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
     case TT_IDENT: {
       Token name_token = token;
+
       if (parser_peek_token(parser, &token) != TokenStatusEOF &&
-          token.id == TT_OPAREN) {
+          token.id == TT_COLONCOLON) {
+        parse_moduled_ident(parser, name_token);
+        name_token.lexeme = parser->moduled_ident;
+
+        parser_expect_token(parser, MASK(TT_OPAREN), "`(`");
+
+        Indices arg_indices = {0};
+
+        while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+               token.id != TT_CPAREN) {
+          u32 arg_index = alloc_var(parser, (Str) {0}, token);
+          DA_APPEND(arg_indices, arg_index);
+
+          parser_parse_expr(parser, (Str) {0}, arg_index);
+
+          make_last_copy_returned(parser);
+
+          if (parser_peek_token(parser, &token) == TokenStatusEOF || token.id != TT_CPAREN)
+            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
+        }
+
+        emit_instr(
+          &parser->ir->procs,
+          name_token,
+          EInstrKindCallAssign,
+          .call_assign = {
+            dest_name,
+            dest_index,
+            name_token.lexeme,
+            NULL,
+            arg_indices,
+          },
+        );
+
+        parser_expect_token(parser, MASK(TT_CPAREN), "`)`");
+      } else if (parser_peek_token(parser, &token) != TokenStatusEOF &&
+                 token.id == TT_OPAREN) {
         parser_next_token(parser, NULL);
 
         Indices arg_indices = {0};
@@ -893,6 +964,9 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
         parser_expect_token(parser, MASK(TT_CPAREN), "`)`");
       } else if (parser_peek_token(parser, &token) != TokenStatusEOF &&
                  token.id == TT_COLON) {
+        parse_moduled_ident(parser, name_token);
+        name_token.lexeme = parser->moduled_ident;
+
         parser_next_token(parser, NULL);
 
         u32 i = 0;
@@ -1527,11 +1601,20 @@ static void parser_parse_stmt_impl(Parser *parser) {
     Token name_token = token;
 
     parser_peek_token(parser, &token);
-    parser_expect_token(parser,
-                        MASK(TT_SET) | MASK(TT_COLONSET) |
-                        MASK(TT_OPAREN) | MASK(TT_OBRACE) |
-                        MASK(TT_DOT),
-                        "`=`, `:=`, `(`, `[` or `.`");
+
+    if (token.id == TT_COLONCOLON) {
+      parse_moduled_ident(parser, name_token);
+      name_token.lexeme = parser->moduled_ident;
+
+      parser_peek_token(parser, &token);
+      parser_expect_token(parser, MASK(TT_OPAREN), "`(`");
+    } else {
+      parser_expect_token(parser,
+                          MASK(TT_SET) | MASK(TT_COLONSET) |
+                          MASK(TT_OPAREN) | MASK(TT_OBRACE) |
+                          MASK(TT_DOT),
+                          "`=`, `:=`, `(`, `[` or `.`");
+    }
 
     if (token.id == TT_SET) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
@@ -2149,7 +2232,26 @@ static void parser_parse_program(Parser *parser) {
         DA_APPEND(module_path, token.lexeme);
       }
 
-      emit_module_dep(&parser->ir->module_deps, module_path);
+      EModuleImports imports = {0};
+
+      if (parser_peek_token(parser, &token) != TokenStatusEOF &&
+          token.id == TT_ARROW) {
+        parser_next_token(parser, NULL);
+
+        parser_peek_token(parser, &token);
+        parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+        DA_APPEND(imports, token.lexeme);
+
+        while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+             token.id == TT_COMMA) {
+          parser_next_token(parser, NULL);
+          parser_peek_token(parser, &token);
+          parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+          DA_APPEND(imports, token.lexeme);
+        }
+      }
+
+      emit_module_dep(&parser->ir->module_deps, module_path, imports);
     } break;
 
     case TT_STRUCT: {
@@ -2167,6 +2269,7 @@ bool parse(EIr *ir, Varss *varss, Arena *arena, Str code, Str file_path) {
     {},
     lexer_create(code, arena),
     TokenStatusOk,
+    {},
     {},
     file_path,
     0,

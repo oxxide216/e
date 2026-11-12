@@ -1,4 +1,5 @@
 #include "eir.h"
+#include "utils.h"
 
 EType type_clone(EType *type) {
   EType new_type = *type;
@@ -109,15 +110,203 @@ u32 get_type_size(EIr *ir, EType *type) {
   return 0;
 }
 
+EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types) {
+  u32 index = str_find(name, STR_LIT("::"));
+  if (index != (u32) -1) {
+    Str prefix = { name.ptr, index };
+
+    name.ptr += index + 2;
+    name.len -= index + 2;
+
+    for (u32 i = 0; i < ir->module_deps.len; ++i) {
+      EModuleDep *dep = ir->module_deps.items + i;
+
+      if (str_eq(dep->path.items[dep->path.len - 1], prefix))
+        return get_proc(&dep->ir, name, arg_types);
+    }
+
+    return NULL;
+  }
+
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    EProc *proc = ir->procs.items + i;
+
+    if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
+      continue;
+
+    bool all = true;
+
+    for (u32 j = 0; j < proc->args.len; ++j) {
+      if (!type_eq(&proc->args.items[j].type, arg_types->items[j])) {
+        all = false;
+        break;
+      }
+    }
+
+    if (all)
+      return proc;
+  }
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    for (u32 j = 0; j < dep->imports.len; ++j)
+      if (str_eq(dep->imports.items[j], name))
+        return get_proc(&dep->ir, name, arg_types);
+  }
+
+  return NULL;
+}
+
+EModulePath get_proc_path(EIr *ir, Str name,
+                          Indices *arg_indices,
+                          Vars *vars,
+                          EModulePath *path) {
+  u32 index = str_find(name, STR_LIT("::"));
+  if (index != (u32) -1) {
+    Str prefix = { name.ptr, index };
+
+    name.ptr += index + 2;
+    name.len -= index + 2;
+
+    EModulePath temp_path = *path;
+    if (temp_path.len > 0)
+      --temp_path.len;
+
+    for (u32 i = 0; i < ir->module_deps.len; ++i) {
+      EModuleDep *dep = ir->module_deps.items + i;
+
+      if (str_eq(dep->path.items[dep->path.len - 1], prefix)) {
+        EModulePath new_path;
+        if (dep->is_submodule)
+          new_path = merge_module_paths(&temp_path, &dep->path);
+        else
+          new_path = dup_module_path(&dep->path);
+
+        EModulePath result =
+          get_proc_path(&dep->ir, name, arg_indices, vars, &new_path);
+
+        if (result.len == 0)
+          free(new_path.items);
+
+        return result;
+      }
+    }
+
+    return (EModulePath) {0};
+  }
+
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    EProc *proc = ir->procs.items + i;
+
+    if (!str_eq(proc->name, name) || proc->args.len != arg_indices->len)
+      continue;
+
+    bool all = true;
+
+    for (u32 j = 0; j < proc->args.len; ++j) {
+      if (!type_eq(&proc->args.items[j].type,
+                   &vars->items[arg_indices->items[j]].type)) {
+        all = false;
+        break;
+      }
+    }
+
+    if (all)
+      return *path;
+  }
+
+  EModulePath temp_path = *path;
+  if (temp_path.len > 0)
+    --temp_path.len;
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    bool found = false;
+
+    for (u32 j = 0; j < dep->imports.len; ++j) {
+      if (str_eq(dep->imports.items[j], name)) {
+        found = true;
+        break;
+      }
+    }
+
+    if (found) {
+      EModulePath new_path;
+      if (dep->is_submodule)
+        new_path = merge_module_paths(&temp_path, &dep->path);
+      else
+        new_path = dup_module_path(&dep->path);
+
+      return new_path;
+    }
+  }
+
+  return (EModulePath) {0};
+}
+
 EStruct *get_struct(EIr *ir, Str name) {
+  u32 index = str_find(name, STR_LIT("::"));
+  if (index != (u32) -1) {
+    Str prefix = { name.ptr, index };
+
+    name.ptr += index + 2;
+    name.len -= index + 2;
+
+    for (u32 i = 0; i < ir->module_deps.len; ++i) {
+      EModuleDep *dep = ir->module_deps.items + i;
+
+      if (str_eq(dep->path.items[dep->path.len - 1], prefix))
+        return get_struct(&dep->ir, name);
+    }
+
+    return NULL;
+  }
+
   for (u32 i = 0; i < ir->structs.len; ++i)
     if (str_eq(ir->structs.items[i].name, name))
       return ir->structs.items + i;
 
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
-    EStruct *_struct = get_struct(&ir->module_deps.items[i].ir, name);
-    if (_struct)
-      return _struct;
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    for (u32 j = 0; j < dep->imports.len; ++j)
+      if (str_eq(dep->imports.items[j], name))
+        return get_struct(&dep->ir, name);
+  }
+
+  return NULL;
+}
+
+EIr *get_struct_ir(EIr *ir, Str name) {
+  u32 index = str_find(name, STR_LIT("::"));
+  if (index != (u32) -1) {
+    Str prefix = { name.ptr, index };
+
+    name.ptr += index + 2;
+    name.len -= index + 2;
+
+    for (u32 i = 0; i < ir->module_deps.len; ++i) {
+      EModuleDep *dep = ir->module_deps.items + i;
+
+      if (str_eq(dep->path.items[dep->path.len - 1], prefix))
+        return get_struct_ir(&dep->ir, name);
+    }
+
+    return NULL;
+  }
+
+  for (u32 i = 0; i < ir->structs.len; ++i)
+    if (str_eq(ir->structs.items[i].name, name))
+      return ir;
+
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    for (u32 j = 0; j < dep->imports.len; ++j)
+      if (str_eq(dep->imports.items[j], name))
+        return get_struct_ir(&dep->ir, name);
   }
 
   return NULL;
@@ -228,6 +417,8 @@ void ir_destroy(EIr *ir) {
 
     if (dep->path.items)
       free(dep->path.items);
+    if (dep->imports.items)
+      free(dep->imports.items);
     ir_destroy(&dep->ir);
     varss_destroy(&dep->varss);
   }

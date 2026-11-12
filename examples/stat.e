@@ -1,4 +1,4 @@
-use libe::unix
+use libe::unix -> FileStat, stat
 
 proc main(argc: s32, argv: &&u8) -> s64
   let fs = FileStat: end

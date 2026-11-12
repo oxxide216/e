@@ -2,6 +2,7 @@
 
 #include "checker.h"
 #include "shl/shl-log.h"
+#include "utils.h"
 
 #define CERROR(fmt)                     \
   PERROR(STR_FMT":%u:%u: ", fmt,        \
@@ -61,8 +62,6 @@
 
 #define FIELD_INDEX(_struct, field)    \
   ((field) - (_struct)->fields.items)
-
-typedef Da(EType *) ETypeRefs;
 
 typedef struct {
   u32 beginning;
@@ -183,35 +182,6 @@ static char *get_bin_op_kind_cstr(EBinOpKind kind) {
   }
 
   ERROR("Unreachable\n");
-  return NULL;
-}
-
-static EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types) {
-  for (u32 i = 0; i < ir->procs.len; ++i) {
-    EProc *proc = ir->procs.items + i;
-
-    if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
-      continue;
-
-    bool all = true;
-
-    for (u32 j = 0; j < proc->args.len; ++j) {
-      if (!type_eq(&proc->args.items[j].type, arg_types->items[j])) {
-        all = false;
-        break;
-      }
-    }
-
-    if (all)
-      return proc;
-  }
-
-  for (u32 i = 0; i < ir->module_deps.len; ++i) {
-    EProc *proc = get_proc(&ir->module_deps.items[i].ir, name, arg_types);
-    if (proc)
-      return proc;
-  }
-
   return NULL;
 }
 
@@ -903,7 +873,18 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
       EInstr *instr = proc->instrs.items + j;
 
       switch (instr->kind) {
-      case EInstrKindAlloc: break;
+      case EInstrKindAlloc: {
+        Var *dest = varss->items[i].items + instr->as.alloc.index;
+
+        if (dest->type.kind == ETypeKindStruct) {
+          EStruct *_struct = get_struct(ir, dest->type.name);
+          if (!_struct) {
+            CERRORF("Structure "STR_FMT" was not defined\n",
+                    STR_ARG(dest->type.name));
+            goto fail;
+          }
+        }
+      } break;
 
       case EInstrKindStore: {
         CHECK_VAR(instr->as.store.index, instr->as.store.name, 0, false);

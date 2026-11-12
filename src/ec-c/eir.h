@@ -31,6 +31,7 @@ typedef struct {
 typedef struct EType EType;
 
 typedef Da(EType) ETypes;
+typedef Da(EType *) ETypeRefs;
 
 struct EType {
   ETypeKind  kind;
@@ -357,6 +358,7 @@ typedef struct {
 typedef Da(EDataEntry) EData;
 
 typedef Da(Str) EModulePath;
+typedef Da(Str) EModuleImports;
 
 typedef struct EModuleDep EModuleDep;
 
@@ -384,9 +386,11 @@ typedef Da(Var) Vars;
 typedef Da(Vars) Varss;
 
 struct EModuleDep {
-  EModulePath  path;
-  EIr          ir;
-  Varss        varss;
+  EModulePath    path;
+  EModuleImports imports;
+  EIr            ir;
+  Varss          varss;
+  bool           is_submodule;
 };
 
 EType type_clone(EType *type);
@@ -395,8 +399,14 @@ void type_free(EType *type);
 
 u32 get_type_size(EIr *ir, EType *type);
 
-EStruct *get_struct(EIr *ir, Str name);
-EField  *get_field(EStruct *_struct, Str name);
+EProc       *get_proc(EIr *ir, Str name, ETypeRefs *arg_types);
+EModulePath  get_proc_path(EIr *ir, Str name,
+                           Indices *arg_indices,
+                           Vars *vars,
+                           EModulePath *path);
+EStruct     *get_struct(EIr *ir, Str name);
+EIr         *get_struct_ir(EIr *ir, Str name);
+EField      *get_field(EStruct *_struct, Str name);
 
 void varss_destroy(Varss *varss);
 bool proc_destroy(EIr *ir, Varss *varss, EProc *proc);

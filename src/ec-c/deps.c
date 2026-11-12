@@ -99,10 +99,12 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
     if (!loaded_cache) {
       Str found_path = full_module_path;
       Str code = read_file(found_path.ptr);
+      ir->module_deps.items[i].is_submodule = true;
       for (u32 j = 0; j < include_paths->len && code.len == (u32) -1; ++j) {
         free(found_path.ptr);
         found_path = prefix_module_path_with_other_path_zero_term(include_paths->items[j], path, STR_LIT(".e"), false);
         code = read_file(found_path.ptr);
+        ir->module_deps.items[i].is_submodule = false;
       }
       if (code.len == (u32) -1) {
         ERROR("Could not find module ");

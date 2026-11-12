@@ -5,7 +5,7 @@ struct Foo
 end
 
 proc drop(self: &Foo)
-  println("Foo drop!")
+  io::println("Foo drop!")
 end
 
 proc main() -> s64

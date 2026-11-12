@@ -56,10 +56,10 @@
     DA_APPEND(*(data), entry);              \
   } while (0)
 
-#define emit_module_dep(module_deps, name) \
-  do {                                     \
-    EModuleDep dep = { name, {}, {} };     \
-    DA_APPEND(*(module_deps), dep);        \
+#define emit_module_dep(module_deps, path, imports)   \
+  do {                                                \
+    EModuleDep dep = { path, imports, {}, {}, true }; \
+    DA_APPEND(*(module_deps), dep);                   \
   } while (0)
 
 #endif // CODEGEN_H

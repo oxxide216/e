@@ -9,11 +9,11 @@ struct B
 end
 
 proc drop(self: &B)
-  println("B drop!")
+  io::println("B drop!")
 end
 
 proc drop(self: &A)
-  println("A drop!")
+  io::println("A drop!")
 end
 
 proc main() -> s64

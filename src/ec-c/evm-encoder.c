@@ -1,5 +1,6 @@
 #include "evm-encoder.h"
 #include "evm/ir.h"
+#include "utils.h"
 
 static void encode_str(FILE *stream, Str str) {
   fwrite(&str.len, sizeof(str.len), 1, stream);
@@ -120,8 +121,12 @@ static void sb_push_type_hash(StringBuilder *sb, EType *type) {
   }
 }
 
-static Str mangle_proc_name(EProc *proc) {
+static Str mangle_proc_name(EProc *proc, EModulePath *path) {
   StringBuilder sb = {0};
+  for (u32 i = 0; i < path->len; ++i) {
+    sb_push_str(&sb, path->items[i]);
+    sb_push_str(&sb, STR_LIT("??"));
+  }
   sb_push_str(&sb, proc->name);
   sb_push_u32(&sb, proc->args.len);
   for (u32 i = 0; i < proc->args.len; ++i)
@@ -129,8 +134,18 @@ static Str mangle_proc_name(EProc *proc) {
   return sb_to_str(sb);
 }
 
-static Str mangle_callee_name(Str name, Indices *arg_indices, Vars *vars) {
+static Str mangle_callee_name(Str name, Indices *arg_indices,
+                              Vars *vars, EModulePath *path) {
   StringBuilder sb = {0};
+  for (u32 i = 0; i < path->len; ++i) {
+    sb_push_str(&sb, path->items[i]);
+    sb_push_str(&sb, STR_LIT("??"));
+  }
+  u32 index;
+  while ((index = str_find(name, STR_LIT("::"))) != (u32) -1) {
+    name.ptr += index + 2;
+    name.len -= index + 2;
+  }
   sb_push_str(&sb, name);
   sb_push_u32(&sb, arg_indices->len);
   for (u32 i = 0; i < arg_indices->len; ++i) {
@@ -146,9 +161,10 @@ static void get_type_fields_len_until_rec(EType *type, u32 end,
                                           EIr *ir, u32 *result) {
   if (type->kind == ETypeKindStruct) {
     EStruct *_struct = get_struct(ir, type->name);
+    EIr *struct_ir = get_struct_ir(ir, type->name);
     for (u32 i = 0; i < end; ++i) {
       EField *field = _struct->fields.items + i;
-      get_type_fields_len_rec(&field->type, ir, result);
+      get_type_fields_len_rec(&field->type, struct_ir, result);
     }
   } else if (type->kind == ETypeKindTuple) {
     for (u32 i = 0; i < end; ++i) {
@@ -180,9 +196,11 @@ static void encode_type_fields_as_aligned_segments_until_rec(FILE *stream, EType
                                                              u32 *offset) {
   if (type->kind == ETypeKindStruct) {
     EStruct *_struct = get_struct(ir, type->name);
+    EIr *struct_ir = get_struct_ir(ir, type->name);
     for (u32 i = 0; i < end; ++i) {
       EField *field = _struct->fields.items + i;
-      encode_type_fields_as_aligned_segments_rec(stream, &field->type, ir, offset);
+      encode_type_fields_as_aligned_segments_rec(stream, &field->type,
+                                                 struct_ir, offset);
     }
   } else if (type->kind == ETypeKindTuple) {
     for (u32 i = 0; i < end; ++i) {
@@ -266,6 +284,7 @@ static void encode_type_fields_as_aligned_segments_until_for_field_access(FILE *
 }
 
 static void encode_procs_no_len(FILE *stream, EIr *ir,
+                                EModulePath *path,
                                 Varss *varss, u32 data_base) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
@@ -273,7 +292,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
     if (str_eq(proc->name, STR_LIT("main"))) {
       encode_str(stream, proc->name);
     } else {
-      Str mangled_name = mangle_proc_name(proc);
+      Str mangled_name = mangle_proc_name(proc, path);
       encode_str(stream, mangled_name);
       free(mangled_name.ptr);
     }
@@ -356,9 +375,18 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         if (str_eq(instr->as.call.name, STR_LIT("main"))) {
           encode_str(stream, instr->as.call.name);
         } else {
-          Str mangled_name = mangle_callee_name(instr->as.call.name, &instr->as.call.arg_indices, varss->items + i);
+          EModulePath temp_path =
+            get_proc_path(ir, instr->as.call.name,
+                          &instr->as.call.arg_indices,
+                          varss->items + i, path);
+          Str mangled_name =
+            mangle_callee_name(instr->as.call.name,
+                               &instr->as.call.arg_indices,
+                               varss->items + i, &temp_path);
           encode_str(stream, mangled_name);
           free(mangled_name.ptr);
+          if (temp_path.items != path->items)
+            free(temp_path.items);
         }
 
         fwrite(&instr->as.call.arg_indices.len, sizeof(instr->as.call.arg_indices.len), 1, stream);
@@ -377,9 +405,18 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         if (str_eq(instr->as.call_assign.name, STR_LIT("main"))) {
           encode_str(stream, instr->as.call_assign.name);
         } else {
-          Str mangled_name = mangle_callee_name(instr->as.call_assign.name, &instr->as.call_assign.arg_indices, varss->items + i);
+          EModulePath temp_path =
+            get_proc_path(ir, instr->as.call_assign.name,
+                          &instr->as.call_assign.arg_indices,
+                          varss->items + i, path);
+          Str mangled_name =
+            mangle_callee_name(instr->as.call_assign.name,
+                               &instr->as.call_assign.arg_indices,
+                               varss->items + i, &temp_path);
           encode_str(stream, mangled_name);
           free(mangled_name.ptr);
+          if (temp_path.items != path->items)
+            free(temp_path.items);
         }
 
         fwrite(&instr->as.call_assign.arg_indices.len, sizeof(instr->as.call_assign.arg_indices.len), 1, stream);
@@ -628,8 +665,9 @@ static void encode_data_no_len(FILE *stream, EData *data) {
 }
 
 static void encode_imports_no_len(FILE *stream, EProcs *imports) {
+  EModulePath path = {0};
   for (u32 i = 0; i < imports->len; ++i) {
-    Str mangled_name = mangle_proc_name(imports->items + i);
+    Str mangled_name = mangle_proc_name(imports->items + i, &path);
     encode_str(stream, mangled_name);
     free(mangled_name.ptr);
   }
@@ -649,15 +687,30 @@ static void traverse_deps(EIr *ir, u32 *procs_len, u32 *data_len) {
   }
 }
 
-static void encode_deps_procs(FILE *stream, EIr *ir, u32 *data_base) {
+static void encode_deps_procs(FILE *stream, EIr *ir,
+                              EModulePath *path,
+                              u32 *data_base) {
+  EModulePath temp_path = *path;
+  if (temp_path.len > 0)
+    --temp_path.len;
+
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
     if (dep->ir.is_copy)
       continue;
 
-    encode_procs_no_len(stream, &dep->ir, &dep->varss, *data_base);
+    EModulePath new_path;
+    if (dep->is_submodule)
+      new_path = merge_module_paths(&temp_path, &dep->path);
+    else
+      new_path = dep->path;
+
+    encode_procs_no_len(stream, &dep->ir, &new_path, &dep->varss, *data_base);
     *data_base += dep->ir.data.len;
-    encode_deps_procs(stream, &dep->ir, data_base);
+    encode_deps_procs(stream, &dep->ir, &new_path, data_base);
+
+    if (dep->is_submodule)
+      free(new_path.items);
   }
 }
 
@@ -689,11 +742,13 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps)
   if (include_deps)
     traverse_deps(ir, &procs_len, &data_len);
 
+  EModulePath path = {0};
+
   fwrite(&procs_len, sizeof(procs_len), 1, stream);
-  encode_procs_no_len(stream, ir, varss, 0);
+  encode_procs_no_len(stream, ir, &path, varss, 0);
   if (include_deps) {
     u32 data_base = ir->data.len;
-    encode_deps_procs(stream, ir, &data_base);
+    encode_deps_procs(stream, ir, &path, &data_base);
   }
 
   fwrite(&data_len, sizeof(data_len), 1, stream);

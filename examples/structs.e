@@ -7,7 +7,7 @@ struct IVec3
 end
 
 proc drop(self: &IVec3)
-  println("drop!")
+  io::println("drop!")
 end
 
 proc main() -> s64
