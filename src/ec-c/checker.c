@@ -146,13 +146,18 @@ static Str get_type_str(EType *type) {
     case ETypeKindStr: return STR_LIT("str");
 
     case ETypeKindPtr: {
-      Str target_str = get_type_str(type->ptr_target);
+      Str target_str;
+      if (type->ptr_target)
+        target_str = get_type_str(type->ptr_target);
+      else
+        target_str = STR_LIT("unit");
       Str result;
       result.len = target_str.len + 1;
       result.ptr = malloc(result.len);
       result.ptr[0] = '&';
       memcpy(result.ptr + 1, target_str.ptr, target_str.len);
-      free_type_str(target_str, type->ptr_target);
+      if (type->ptr_target)
+        free_type_str(target_str, type->ptr_target);
       return result;
     }
     }
@@ -911,6 +916,13 @@ static void find_and_push_const(EIr *ir, Vars *vars, EInstrs *instrs,
     DA_APPEND(*path, dep->path.items[dep->path.len - 1]);
     find_and_push_const(&dep->ir, vars, instrs, path, arena, name, var_index);
     --path->len;
+
+    for (u32 j = 0; j < dep->imports.len; ++j) {
+      if (str_eq(dep->imports.items[j], name)) {
+        find_and_push_const(&dep->ir, vars, instrs, path, arena, name, var_index);
+        break;
+      }
+    }
   }
 }
 

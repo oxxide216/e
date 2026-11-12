@@ -295,14 +295,6 @@ static u32 get_var_index(Varss *varss, Str name) {
   return (u32) -1;
 }
 
-static u32 get_const_index(EIr *ir, Str name) {
-  for (u32 i = ir->consts.len; i > 0; --i)
-    if (str_eq(ir->consts.items[i - 1].name, name))
-      return i - 1;
-
-  return (u32) -1;
-}
-
 static Var *get_var_by_index(Varss *varss, u32 index) {
   return varss->items[varss->len - 1].items + index;
 }
@@ -1145,46 +1137,18 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
         };
       } else {
         u32 src_index = get_var_index(parser->varss, name_token.lexeme);
-
-        if (src_index == (u32) -1 &&
-            get_const_index(parser->ir, name_token.lexeme) == (u32) -1) {
-          u32 ref_index = alloc_var(parser, (Str) {0}, (Token) {0});
-
-          emit_instr(
-            &parser->ir->procs,
-            name_token,
-            EInstrKindStaticRef,
-            .static_ref = {
-              ref_index,
-              name_token.lexeme,
-              0,
-            },
-          );
-
-          emit_instr(
-            &parser->ir->procs,
-            name_token,
-            EInstrKindCopyFromStatic,
-            .copy_from_static = {
-              dest_name,
-              dest_index,
-              ref_index,
-            },
-          );
-        } else {
-          emit_instr(
-            &parser->ir->procs,
-            name_token,
-            EInstrKindCopy,
-            .copy = {
-              dest_name,
-              dest_index,
-              name_token.lexeme,
-              src_index,
-              false,
-            },
-          );
-        }
+        emit_instr(
+          &parser->ir->procs,
+          name_token,
+          EInstrKindCopy,
+          .copy = {
+            dest_name,
+            dest_index,
+            name_token.lexeme,
+            src_index,
+            false,
+          },
+        );
       }
     } break;
 
@@ -1784,41 +1748,14 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     if (token.id == TT_SET) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
-      if (index == (u32) -1) {
-        u32 ref_index = alloc_var(parser, (Str) {0}, (Token) {0});
-        u32 temp_index = alloc_var(parser, (Str) {0}, (Token) {0});
-        parser_parse_expr(parser, (Str) {0}, temp_index);
+      parser_parse_expr(parser, name_token.lexeme, index);
 
-        emit_instr(
-          &parser->ir->procs,
-          name_token,
-          EInstrKindStaticRef,
-          .static_ref = {
-            ref_index,
-            name_token.lexeme,
-            0,
-          },
-        );
+      make_last_copy_returned(parser);
 
-        emit_instr(
-          &parser->ir->procs,
-          name_token,
-          EInstrKindCopyToStatic,
-          .copy_to_static = {
-            ref_index,
-            temp_index,
-          },
-        );
-      } else {
-        parser_parse_expr(parser, name_token.lexeme, index);
-
-        make_last_copy_returned(parser);
-
-        EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
-        EInstr *instr = proc->instrs.items + proc->instrs.len - 1;
-        if (instr->kind == EInstrKindCopy)
-          instr->as.copy.is_explicit = true;
-      }
+      EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
+      EInstr *instr = proc->instrs.items + proc->instrs.len - 1;
+      if (instr->kind == EInstrKindCopy)
+        instr->as.copy.is_explicit = true;
     } else if (token.id == TT_COLONSET) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
       u32 temp_index = alloc_var(parser, (Str) {0}, token);
