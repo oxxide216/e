@@ -4,8 +4,10 @@
 EType type_clone(EType *type) {
   EType new_type = *type;
   if (new_type.kind == ETypeKindPtr) {
-    new_type.ptr_target = malloc(sizeof(EType));
-    *new_type.ptr_target = type_clone(type->ptr_target);
+    if (type->ptr_target) {
+      new_type.ptr_target = malloc(sizeof(EType));
+      *new_type.ptr_target = type_clone(type->ptr_target);
+    }
   } else if (new_type.kind == ETypeKindArray) {
     new_type.array_element = malloc(sizeof(EType));
     *new_type.array_element = type_clone(type->array_element);
@@ -52,8 +54,10 @@ bool type_eq(EType *a, EType *b) {
 
 void type_free(EType *type) {
   if (type->kind == ETypeKindPtr){
-    type_free(type->ptr_target);
-    free(type->ptr_target);
+    if (type->ptr_target) {
+      type_free(type->ptr_target);
+      free(type->ptr_target);
+    }
   } else if (type->kind == ETypeKindArray) {
     type_free(type->array_element);
     free(type->array_element);
