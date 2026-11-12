@@ -936,37 +936,94 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
         parse_moduled_ident(parser, name_token);
         name_token.lexeme = parser->moduled_ident;
 
-        parser_expect_token(parser, MASK(TT_OPAREN), "`(`");
+        parser_peek_token(parser, &token);
+        parser_expect_token(parser, MASK(TT_OPAREN) | MASK(TT_COLON), "`(` or `:`");
 
-        Indices arg_indices = {0};
+        if (token.id == TT_OPAREN) {
+          Indices arg_indices = {0};
 
-        while (parser_peek_token(parser, &token) != TokenStatusEOF &&
-               token.id != TT_CPAREN) {
-          u32 arg_index = alloc_var(parser, (Str) {0}, token);
-          DA_APPEND(arg_indices, arg_index);
+          while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+                 token.id != TT_CPAREN) {
+            u32 arg_index = alloc_var(parser, (Str) {0}, token);
+            DA_APPEND(arg_indices, arg_index);
 
-          parser_parse_expr(parser, (Str) {0}, arg_index);
+            parser_parse_expr(parser, (Str) {0}, arg_index);
 
-          make_last_copy_returned(parser);
+            make_last_copy_returned(parser);
 
-          if (parser_peek_token(parser, &token) == TokenStatusEOF || token.id != TT_CPAREN)
-            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
-        }
+            if (parser_peek_token(parser, &token) == TokenStatusEOF || token.id != TT_CPAREN)
+              parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
+          }
 
-        emit_instr(
-          &parser->ir->procs,
-          name_token,
-          EInstrKindCallAssign,
-          .call_assign = {
-            dest_name,
-            dest_index,
-            name_token.lexeme,
+          emit_instr(
+            &parser->ir->procs,
+            name_token,
+            EInstrKindCallAssign,
+            .call_assign = {
+              dest_name,
+              dest_index,
+              name_token.lexeme,
+              NULL,
+              arg_indices,
+            },
+          );
+
+          parser_expect_token(parser, MASK(TT_CPAREN), "`)`");
+        } else if (token.id == TT_COLON) {
+          u32 i = 0;
+
+          Token temp_token;
+          while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+                 temp_token.id != TT_END) {
+            u32 element_index = alloc_var(parser, (Str) {0}, token);
+
+            parser_peek_token(parser, &temp_token);
+            parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+            parser_expect_token(parser, MASK(TT_SET), "`=`");
+            parser_parse_expr(parser, (Str) {0}, element_index);
+
+           make_last_copy_returned(parser); 
+
+            emit_instr(
+              &parser->ir->procs,
+              temp_token,
+              EInstrKindCopyToField,
+              .copy_to_field = {
+                dest_name,
+                dest_index,
+                temp_token.lexeme,
+                {},
+                element_index,
+              },
+            );
+
+            ++i;
+
+            if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+                temp_token.id != TT_END)
+              parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_END), "`,` or `end`");
+          }
+
+          parser_expect_token(parser, MASK(TT_END), "`,` or `end`");
+
+          if (i == 0)
+            --parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len;
+
+          parser->varss->items[parser->varss->len - 1].items[dest_index].type = (EType) {
+            ETypeKindStruct,
+            {
+              .name = name_token.lexeme,
+            },
+            {
+              token.file_path,
+              token.row,
+              token.col,
+            },
             NULL,
-            arg_indices,
-          },
-        );
-
-        parser_expect_token(parser, MASK(TT_CPAREN), "`)`");
+            0,
+            false,
+          };
+        }
       } else if (parser_peek_token(parser, &token) != TokenStatusEOF &&
                  token.id == TT_OPAREN) {
         parser_next_token(parser, NULL);
@@ -1002,9 +1059,6 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
         parser_expect_token(parser, MASK(TT_CPAREN), "`)`");
       } else if (parser_peek_token(parser, &token) != TokenStatusEOF &&
                  token.id == TT_COLON) {
-        parse_moduled_ident(parser, name_token);
-        name_token.lexeme = parser->moduled_ident;
-
         parser_next_token(parser, NULL);
 
         u32 i = 0;
