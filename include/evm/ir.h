@@ -42,6 +42,7 @@ typedef enum {
   InstrKindCallRef,
   InstrKindCallRefAssign,
   InstrKindSizeOf,
+  InstrKindStoreUninit,
 } InstrKind;
 
 typedef struct {
@@ -51,6 +52,7 @@ typedef struct {
 
 typedef Da(AlignedSegment) Segments;
 
+// TODO: specify ValueKind in alloc
 typedef struct {
   u32      index;
   Segments segments;
@@ -205,6 +207,11 @@ typedef struct {
   Segments segments;
 } InstrSizeOf;
 
+typedef struct {
+  u32 index;
+  u32 uninit_index;
+} InstrStoreUninit;
+
 typedef union {
   InstrAlloc            alloc;
   InstrStore            store;
@@ -227,6 +234,7 @@ typedef union {
   InstrCallRef          call_ref;
   InstrCallRefAssign    call_ref_assign;
   InstrSizeOf           size_of;
+  InstrStoreUninit      store_uninit;
 } InstrAs;
 
 typedef struct {
@@ -261,11 +269,18 @@ typedef struct {
 
 typedef Da(DataEntry) Data;
 
+typedef struct {
+  Segments segments;
+} Uninit;
+
+typedef Da(Uninit) Uninits;
+
 typedef Da(Str) Imports;
 
 typedef struct {
   Procs   procs;
   Data    data;
+  Uninits uninits;
   Imports imports;
 } Ir;
 

@@ -230,6 +230,12 @@ static void instr_print(Instr *instr, VarLocs *locs) {
 
     printf("  $%u = %d\n", instr->as.size_of.dest_index, size);
   } break;
+
+  case InstrKindStoreUninit: {
+    printf("  $%u = uninit %u\n",
+           instr->as.store_uninit.index,
+           instr->as.store_uninit.uninit_index);
+  } break;
   }
 }
 

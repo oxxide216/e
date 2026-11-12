@@ -1438,6 +1438,25 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     write_loc(stream, dest_loc);
     fprintf(stream, ",%u\n", size);
   } break;
+
+  case InstrKindStoreUninit: {
+    locs->items[instr->as.store_uninit.index].kind = ValueKindUnsigned;
+    locs->items[instr->as.store_uninit.index].has_imm_value = false;
+
+    write_cstr(stream, "  lea ");
+    write_loc_ensure_in_reg(stream, locs->items + instr->as.store_uninit.index, 0);
+    write_cstr(stream, ",");
+    write_str(stream, get_mem_prefix(8));
+    fprintf(stream, "[uninit_%u]\n", instr->as.store_uninit.uninit_index);
+
+    if (locs->items[instr->as.store_uninit.index].value < 0) {
+      write_cstr(stream, "  mov ");
+      write_loc(stream, locs->items + instr->as.store_uninit.index);
+      write_cstr(stream, ",");
+      write_str(stream, get_temp_regs(locs->items[instr->as.store_uninit.index].size)[0]);
+      write_cstr(stream, "\n");
+    }
+  } break;
   }
 }
 
@@ -1671,5 +1690,15 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       fprintf(stream, "%u", entry->data[j]);
     }
     fputc('\n', stream);
+  }
+
+  if (ir->uninits.len > 0)
+    write_cstr(stream, "section '.bss'\n");
+
+  for (u32 i = 0; i < ir->uninits.len; ++i) {
+    Uninit *uninit = ir->uninits.items + i;
+
+    fprintf(stream, "uninit_%u: resb %u\n", i,
+            get_segments_size_x86_64(&uninit->segments));
   }
 }

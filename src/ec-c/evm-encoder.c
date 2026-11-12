@@ -102,6 +102,9 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   case EInstrKindCopyToOffset:   return InstrKindCopyToRefFixed;
   case EInstrKindCopyFromOffset: return InstrKindCopyFromRefFixed;
   case EInstrKindSizeOf:         return InstrKindSizeOf;
+  case EInstrKindStaticRef:      return InstrKindStoreUninit;
+  case EInstrKindCopyToStatic:   return InstrKindCopyToRefFixed;
+  case EInstrKindCopyFromStatic: return InstrKindCopyFromRefFixed;
   }
 
   return 0;
@@ -286,7 +289,9 @@ static void encode_type_fields_as_aligned_segments_until_for_field_access(FILE *
 
 static void encode_procs_no_len(FILE *stream, EIr *ir,
                                 EModulePath *path,
-                                Varss *varss, u32 data_base) {
+                                Varss *varss,
+                                u32 data_base,
+                                u32 static_base) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
 
@@ -654,6 +659,53 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         encode_type_fields_as_aligned_segments(stream, &instr->as.size_of.type, ir);
       } break;
+
+      case EInstrKindStaticRef: {
+        u32 static_index = instr->as.static_ref.static_index + static_base;
+        fwrite(&instr->as.static_ref.dest_index, sizeof(instr->as.static_ref.dest_index), 1, stream);
+        fwrite(&static_index, sizeof(static_index), 1, stream);
+      } break;
+
+      case EInstrKindCopyToStatic: {
+        fwrite(&instr->as.copy_to_static.dest_index, sizeof(instr->as.copy_to_static.dest_index), 1, stream);
+
+        Var *src = varss->items[i].items + instr->as.copy_to_static.src_index;
+
+        u32 len = 1;
+        i32 offset = 0;
+        u32 size = get_type_size(ir, &src->type);
+        fwrite(&len, sizeof(len), 1, stream);
+        fwrite(&offset, sizeof(offset), 1, stream);
+        fwrite(&size, sizeof(size), 1, stream);
+
+        fwrite(&instr->as.copy_to_static.src_index, sizeof(instr->as.copy_to_static.src_index), 1, stream);
+
+        bool deref = true;
+        fwrite(&deref, 1, 1, stream);
+      } break;
+
+      case EInstrKindCopyFromStatic: {
+        fwrite(&instr->as.copy_from_static.dest_index, sizeof(instr->as.copy_from_static.dest_index), 1, stream);
+        fwrite(&instr->as.copy_from_static.src_index, sizeof(instr->as.copy_from_static.src_index), 1, stream);
+
+        Var *dest = varss->items[i].items + instr->as.copy_from_static.dest_index;    
+
+        u32 len = 1;
+        i32 offset = 0;
+        u32 size = get_type_size(ir, &dest->type);
+        fwrite(&len, sizeof(len), 1, stream);
+        fwrite(&offset, sizeof(offset), 1, stream);
+        fwrite(&size, sizeof(size), 1, stream);
+
+        ValueKind src_target_kind = e_type_kind_to_evm_value_kind(dest->type.kind);
+        fwrite(&src_target_kind, 1, 1, stream);
+
+        bool deref = true;
+        fwrite(&deref, 1, 1, stream);
+
+        bool take_ref = false;
+        fwrite(&take_ref, 1, 1, stream);
+       } break;
       }
     }
 
@@ -671,6 +723,13 @@ static void encode_data_no_len(FILE *stream, EData *data) {
   }
 }
 
+static void encode_static_vars_no_len(FILE *stream, EIr *ir) {
+  for (u32 i = 0; i < ir->static_vars.len; ++i) {
+    EStaticVar *var = ir->static_vars.items + i;
+    encode_type_fields_as_aligned_segments(stream, &var->type, ir);
+  }
+}
+
 static void encode_imports_no_len(FILE *stream, EProcs *imports) {
   EModulePath path = {0};
   for (u32 i = 0; i < imports->len; ++i) {
@@ -680,7 +739,8 @@ static void encode_imports_no_len(FILE *stream, EProcs *imports) {
   }
 }
 
-static void traverse_deps(EIr *ir, u32 *procs_len, u32 *data_len) {
+static void traverse_deps(EIr *ir, u32 *procs_len,
+                          u32 *data_len, u32 *static_vars_len) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
     if (dep->ir.is_copy)
@@ -690,13 +750,16 @@ static void traverse_deps(EIr *ir, u32 *procs_len, u32 *data_len) {
       *procs_len += dep->ir.procs.len;
     if (data_len)
       *data_len += dep->ir.data.len;
-    traverse_deps(&dep->ir, procs_len, data_len);
+    if (static_vars_len)
+      *static_vars_len += dep->ir.static_vars.len;
+    traverse_deps(&dep->ir, procs_len, data_len, static_vars_len);
   }
 }
 
 static void encode_deps_procs(FILE *stream, EIr *ir,
                               EModulePath *path,
-                              u32 *data_base) {
+                              u32 *data_base,
+                              u32 *static_base) {
   EModulePath temp_path = *path;
   if (temp_path.len > 0)
     --temp_path.len;
@@ -712,9 +775,11 @@ static void encode_deps_procs(FILE *stream, EIr *ir,
     else
       new_path = dep->path;
 
-    encode_procs_no_len(stream, &dep->ir, &new_path, &dep->varss, *data_base);
+    encode_procs_no_len(stream, &dep->ir, &new_path,
+                        &dep->varss, *data_base, *static_base);
     *data_base += dep->ir.data.len;
-    encode_deps_procs(stream, &dep->ir, &new_path, data_base);
+    *static_base += dep->ir.static_vars.len;
+    encode_deps_procs(stream, &dep->ir, &new_path, data_base, static_base);
 
     if (dep->is_submodule)
       free(new_path.items);
@@ -732,6 +797,17 @@ static void encode_deps_data(FILE *stream, EIr *ir) {
   }
 }
 
+static void encode_deps_static_vars(FILE *stream, EIr *ir) {
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+    if (dep->ir.is_copy)
+      continue;
+
+    encode_static_vars_no_len(stream, &dep->ir);
+    encode_deps_static_vars(stream, &dep->ir);
+  }
+}
+
 static void encode_deps_imports(FILE *stream, EIr *ir) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
@@ -746,16 +822,18 @@ static void encode_deps_imports(FILE *stream, EIr *ir) {
 void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps) {
   u32 procs_len = ir->procs.len;
   u32 data_len = ir->data.len;
+  u32 static_vars_len = ir->static_vars.len;
   if (include_deps)
-    traverse_deps(ir, &procs_len, &data_len);
+    traverse_deps(ir, &procs_len, &data_len, &static_vars_len);
 
   EModulePath path = {0};
 
   fwrite(&procs_len, sizeof(procs_len), 1, stream);
-  encode_procs_no_len(stream, ir, &path, varss, 0);
+  encode_procs_no_len(stream, ir, &path, varss, 0, 0);
   if (include_deps) {
     u32 data_base = ir->data.len;
-    encode_deps_procs(stream, ir, &path, &data_base);
+    u32 static_base = ir->static_vars.len;
+    encode_deps_procs(stream, ir, &path, &data_base, &static_base);
   }
 
   fwrite(&data_len, sizeof(data_len), 1, stream);
@@ -763,11 +841,19 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps)
   if (include_deps)
     encode_deps_data(stream, ir);
 
+  fwrite(&static_vars_len, sizeof(static_vars_len), 1, stream);
+  encode_static_vars_no_len(stream, ir);
+  if (include_deps)
+    encode_deps_static_vars(stream, ir);
+
+  u32 zero = 0;
+  fwrite(&zero, sizeof(zero), 1, stream);
+
   if (include_deps) {
     u32 imports_len = 0;
     fwrite(&imports_len, sizeof(imports_len), 1, stream);
   } else {
-    traverse_deps(ir, &procs_len, NULL);
+    traverse_deps(ir, &procs_len, NULL, NULL);
     u32 imports_len = procs_len - ir->procs.len;
     fwrite(&imports_len, sizeof(imports_len), 1, stream);
     encode_deps_imports(stream, ir);

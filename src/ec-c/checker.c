@@ -376,6 +376,25 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
       if (instr->as.size_of.dest_index == var_index)
         return;
     } break;
+
+    case EInstrKindStaticRef: {
+      if (instr->as.static_ref.dest_index == var_index)
+        return;
+    } break;
+
+    case EInstrKindCopyToStatic: {
+      if (instr->as.copy_to_static.dest_index == var_index)
+        instr->as.copy_to_static.dest_index = src_index;
+      if (instr->as.copy_to_static.src_index == var_index)
+        instr->as.copy_to_static.src_index = src_index;
+    } break;
+
+    case EInstrKindCopyFromStatic: {
+      if (instr->as.copy_from_static.src_index == var_index)
+        instr->as.copy_from_static.src_index = src_index;
+      if (instr->as.copy_from_static.dest_index == var_index)
+        return;
+    } break;
     }
   }
 }
@@ -1835,6 +1854,62 @@ bool check_ir(EIr *ir, Varss *varss, bool require_main) {
           CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
                   STR_ARG(type_str), STR_ARG(dest_type_str));
           free_type_str(type_str, &type);
+          free_type_str(dest_type_str, &dest->type);
+          goto fail;
+        }
+      } break;
+
+      case EInstrKindStaticRef: {
+        EStaticVar *static_var = get_static_var(ir, instr->as.static_ref.static_name);
+        if (!static_var) {
+          CERRORF("Variable "STR_FMT" was not defined before usage\n",
+                  STR_ARG(instr->as.static_ref.static_name));
+          goto fail;
+        }
+
+        Var *dest = varss->items[i].items + instr->as.static_ref.dest_index;
+        dest->type.kind = ETypeKindPtr;
+        dest->type.ptr_target = malloc(sizeof(*dest->type.ptr_target));
+        *dest->type.ptr_target = type_clone(&static_var->type);
+      } break;
+
+      case EInstrKindCopyToStatic: {
+        Var *dest = varss->items[i].items + instr->as.copy_to_static.dest_index;
+        Var *src = varss->items[i].items + instr->as.copy_to_static.src_index;
+
+        if (dest->type.kind != ETypeKindPtr) {
+          ERROR("Unreachable\n");
+          goto fail;
+        }
+
+        if (!type_eq(&src->type, dest->type.ptr_target)) {
+          Str src_type_str = get_type_str(&src->type);
+          Str dest_type_str = get_type_str(dest->type.ptr_target);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(src_type_str), STR_ARG(dest_type_str));
+          free_type_str(src_type_str, &src->type);
+          free_type_str(dest_type_str, dest->type.ptr_target);
+          goto fail;
+        }
+      } break;
+
+      case EInstrKindCopyFromStatic: {
+        Var *dest = varss->items[i].items + instr->as.copy_from_static.dest_index;
+        Var *src = varss->items[i].items + instr->as.copy_from_static.src_index;
+
+        if (src->type.kind != ETypeKindPtr) {
+          ERROR("Unreachable\n");
+          goto fail;
+        }
+
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = type_clone(src->type.ptr_target);
+        } else if (!type_eq(src->type.ptr_target, &dest->type)) {
+          Str src_type_str = get_type_str(src->type.ptr_target);
+          Str dest_type_str = get_type_str(&dest->type);
+          CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                  STR_ARG(src_type_str), STR_ARG(dest_type_str));
+          free_type_str(src_type_str, src->type.ptr_target);
           free_type_str(dest_type_str, &dest->type);
           goto fail;
         }

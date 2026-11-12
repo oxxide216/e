@@ -19,5 +19,6 @@
 /drop-tuples
 /stat
 /sizeof
+/static
 /test*
 /.idea/*

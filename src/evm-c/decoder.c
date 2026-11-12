@@ -312,6 +312,11 @@ static bool decode_instr_impl(Decoder *decoder, Instr *instr) {
       decode_buffer(decoder, &segment->size, sizeof(segment->size));
     }
   } break;
+
+  case InstrKindStoreUninit: {
+    decode_buffer(decoder, &instr->as.store_uninit.index, sizeof(instr->as.store_uninit.index));
+    decode_buffer(decoder, &instr->as.store_uninit.uninit_index, sizeof(instr->as.store_uninit.uninit_index));
+  } break;
   }
 
   return true;
@@ -388,7 +393,7 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
   ir->data.cap = ir->data.len;
   ir->data.items = arena_alloc(arena, ir->data.cap * sizeof(DataEntry));
 
-  for (u32 i = 0 ; i < ir->data.len; ++i) {
+  for (u32 i = 0; i < ir->data.len; ++i) {
     DataEntry *entry = ir->data.items + i;
 
     decode_buffer(&decoder, &entry->len, sizeof(entry->len));
@@ -396,11 +401,29 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
     decode_buffer(&decoder, entry->data, entry->len);
   }
 
+  decode_buffer(&decoder, &ir->uninits.len, sizeof(ir->uninits.len));
+  ir->uninits.cap = ir->uninits.len;
+  ir->uninits.items = arena_alloc(arena, ir->uninits.cap * sizeof(Uninit));
+
+  for (u32 i = 0; i < ir->uninits.len; ++i) {
+    Uninit *uninit = ir->uninits.items + i;
+
+    decode_buffer(&decoder, &uninit->segments.len, sizeof(uninit->segments.len));
+    uninit->segments.cap = uninit->segments.len;
+    uninit->segments.items = arena_alloc(decoder.arena, uninit->segments.cap * sizeof(AlignedSegment));
+
+    for (u32 k = 0; k < uninit->segments.len; ++k) {
+      AlignedSegment *segment = uninit->segments.items + k;
+      decode_buffer(&decoder, &segment->offset, sizeof(segment->offset));
+      decode_buffer(&decoder, &segment->size, sizeof(segment->size));
+    }
+  }
+
   decode_buffer(&decoder, &ir->imports.len, sizeof(ir->imports.len));
   ir->imports.cap = ir->imports.len;
   ir->imports.items = arena_alloc(arena, ir->imports.cap * sizeof(Str));
 
-  for (u32 i = 0 ; i < ir->imports.len; ++i)
+  for (u32 i = 0; i < ir->imports.len; ++i)
     decode_str(&decoder, ir->imports.items + i);
 
   return true;

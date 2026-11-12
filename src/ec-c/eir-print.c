@@ -284,6 +284,25 @@ void proc_print(EProc *proc) {
       var_print(instr->as.len_of.dest_index, instr->as.len_of.dest_name);
       printf(" = sizeof\n");
     } break;
+
+    case EInstrKindStaticRef: {
+      printf("  $%u = &static "STR_FMT"\n",
+             instr->as.static_ref.dest_index,
+             STR_ARG(instr->as.static_ref.static_name));
+    } break;
+
+    case EInstrKindCopyToStatic: {
+      printf("  *$%u = $%u\n",
+             instr->as.copy_to_static.dest_index,
+             instr->as.copy_to_static.src_index);
+    } break;
+
+    case EInstrKindCopyFromStatic: {
+      printf("  ");
+      var_print(instr->as.copy_from_static.dest_index,
+                instr->as.copy_from_static.dest_name);
+      printf(" = $%u\n", instr->as.copy_from_static.src_index);
+    } break;
     }
   }
 

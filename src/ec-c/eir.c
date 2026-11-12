@@ -320,6 +320,14 @@ EField *get_field(EStruct *_struct, Str name) {
   return NULL;
 }
 
+EStaticVar *get_static_var(EIr *ir, Str name) {
+  for (u32 i = 0; i < ir->static_vars.len; ++i)
+    if (str_eq(ir->static_vars.items[i].name, name))
+      return ir->static_vars.items + i;
+
+  return NULL;
+}
+
 void varss_destroy(Varss *varss) {
   for (u32 i = 0; i < varss->len; ++i) {
     Vars *vars = varss->items + i;
@@ -411,6 +419,11 @@ void ir_destroy(EIr *ir) {
   }
   if (ir->data.items)
     free(ir->data.items);
+
+  for (u32 i = 0; i < ir->static_vars.len; ++i)
+    type_free(&ir->static_vars.items[i].type);
+  if (ir->static_vars.items)
+    free(ir->static_vars.items);
 
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;

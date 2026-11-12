@@ -86,6 +86,9 @@ typedef enum {
   EInstrKindCopyToOffset,
   EInstrKindCopyFromOffset,
   EInstrKindSizeOf,
+  EInstrKindStaticRef,
+  EInstrKindCopyToStatic,
+  EInstrKindCopyFromStatic,
 } EInstrKind;
 
 typedef struct {
@@ -285,6 +288,23 @@ typedef struct {
   EType type;
 } EInstrSizeOf;
 
+typedef struct {
+  u32 dest_index;
+  Str static_name;
+  u32 static_index;
+} EInstrStaticRef;
+
+typedef struct {
+  u32 dest_index;
+  u32 src_index;
+} EInstrCopyToStatic;
+
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  u32 src_index;
+} EInstrCopyFromStatic;
+
 typedef union {
   EInstrAlloc          alloc;
   EInstrStore          store;
@@ -309,6 +329,9 @@ typedef union {
   EInstrCopyToOffset   copy_to_offset;
   EInstrCopyFromOffset copy_from_offset;
   EInstrSizeOf         size_of;
+  EInstrStaticRef      static_ref;
+  EInstrCopyToStatic   copy_to_static;
+  EInstrCopyFromStatic copy_from_static;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;
@@ -373,10 +396,18 @@ typedef struct EModuleDep EModuleDep;
 typedef Da(EModuleDep) EModuleDeps;
 
 typedef struct {
+  Str   name;
+  EType type;
+} EStaticVar;
+
+typedef Da(EStaticVar) EStaticVars;
+
+typedef struct {
   EProcs      procs;
   EStructs    structs;
   EConsts     consts;
   EData       data;
+  EStaticVars static_vars;
   EModuleDeps module_deps;
   bool        is_copy;
 } EIr;
@@ -415,6 +446,7 @@ EModulePath  get_proc_path(EIr *ir, Str name,
 EStruct     *get_struct(EIr *ir, Str name);
 EIr         *get_struct_ir(EIr *ir, Str name);
 EField      *get_field(EStruct *_struct, Str name);
+EStaticVar  *get_static_var(EIr *ir, Str name);
 
 void varss_destroy(Varss *varss);
 bool proc_destroy(EIr *ir, Varss *varss, EProc *proc);

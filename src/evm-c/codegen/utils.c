@@ -98,6 +98,10 @@ u32 *get_dest(Instr *instr) {
   case InstrKindSizeOf: {
     return &instr->as.size_of.dest_index;
   }
+
+  case InstrKindStoreUninit: {
+    return &instr->as.store_uninit.index;
+  }
   }
 
   return NULL;
@@ -204,7 +208,8 @@ u32 *get_nth_arg(Instr *instr, u32 n) {
       return instr->as.call_ref_assign.arg_indices.items + n;
   } break;
 
-  case InstrKindSizeOf: break;
+  case InstrKindSizeOf:      break;
+  case InstrKindStoreUninit: break;
   }
 
   return NULL;

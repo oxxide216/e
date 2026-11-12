@@ -21,6 +21,7 @@ as=as
 lenof=lenof
 struct=struct
 sizeof=sizeof
+static=static
 
 oparen=\(
 cparen=\)
