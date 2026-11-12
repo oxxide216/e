@@ -1566,7 +1566,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     write_str(stream, proc->name);
     write_cstr(stream, ":\n");
 
-    if (has_stack_args ||
+    space_used.stack_size =
+      align(space_used.stack_size + space_used.regs * 8, 16) -
+      space_used.regs * 8;
+
+    if (has_nested_call ||
+        has_stack_args ||
         space_used.stack_size > 0 ||
         proc->args.len > ARRAY_LEN(arg_regs8)) {
       write_cstr(stream, "  push rbp\n");
