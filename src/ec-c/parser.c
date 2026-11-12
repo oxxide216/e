@@ -2179,6 +2179,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     for (u32 i = 0; i < jumps_to_end_indices.len; ++i)
       instrs->items[jumps_to_end_indices.items[i]].as.jump.target = instrs->len;
+
+    if (jumps_to_end_indices.items)
+      free(jumps_to_end_indices.items);
   } else if (token.id == TT_ASM) {
     EAsmSegments asm_segments = {0};
 
