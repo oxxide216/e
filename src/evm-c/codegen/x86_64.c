@@ -1013,7 +1013,9 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(8)[0]));
       }
     }
-    ensure_in_reg(stream, dest_loc, 0, true);
+    ensure_in_reg(stream, dest_loc, 0,
+                  instr->as.copy_from_ref.take_ref ||
+                  src_loc->size > 8);
 
     if (src_loc->size <= 8) {
       ensure_in_reg(stream, src_loc, 1, false);
