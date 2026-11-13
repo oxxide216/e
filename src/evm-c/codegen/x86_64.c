@@ -644,8 +644,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         jump_opt->bin_op_kind = instr->as.bin_op.kind;
         jump_opt->value_kind = locs->items[instr->as.bin_op.src0_index].kind;
       } else {
-        u32 index = (instr->as.bin_op.kind - BinOpKindEqInt) *
-                    ((locs->items[instr->as.bin_op.dest_index].kind == ValueKindUnsigned) + 1);
+        u32 index = instr->as.bin_op.kind - BinOpKindEqInt +
+                    6 * (locs->items[instr->as.bin_op.src0_index].kind == ValueKindUnsigned);
         u32 size = locs->items[instr->as.bin_op.dest_index].size;
         if (size == 1)
           size = 2;
@@ -655,7 +655,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         write_cstr(stream, ",0\n");
 
         write_cstr(stream, "  mov ");
-        write_str(stream, temp_regs8[0]);
+        write_str(stream, get_temp_regs(size)[1]);
         write_cstr(stream, ",1\n");
 
         write_cstr(stream, "  ");
@@ -663,7 +663,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         write_cstr(stream, " ");
         write_loc_of_size_ensure_in_reg(stream, locs->items + instr->as.bin_op.dest_index, size, 0);
         write_cstr(stream, ",");
-        write_str(stream, get_temp_regs(size)[0]);
+        write_str(stream, get_temp_regs(size)[1]);
         write_cstr(stream, "\n");
 
         if (locs->items[instr->as.bin_op.dest_index].value < 0) {
@@ -1013,9 +1013,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(8)[0]));
       }
     }
-    ensure_in_reg(stream, dest_loc, 0,
-                  instr->as.copy_from_ref.take_ref ||
-                  src_loc->size > 8);
+    ensure_in_reg(stream, dest_loc, 0, src_loc->size > 8);
 
     if (src_loc->size <= 8) {
       ensure_in_reg(stream, src_loc, 1, false);
