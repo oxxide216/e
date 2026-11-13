@@ -1111,6 +1111,25 @@ static void patch_statics(EIr *ir, EInstrs *instrs, Vars *vars) {
           DA_APPEND(*vars, var);
         }
       }
+    } else if (instr->kind == EInstrKindRef) {
+      if (instr->as.ref.src_index == (u32) -1) {
+        EStaticVar *static_var = get_static_var(ir, instr->as.ref.src_name);
+        if (static_var) {
+          EInstr static_ref = {
+            EInstrKindStaticRef,
+            {
+              .static_ref = {
+                instr->as.ref.dest_index,
+                static_var->name,
+                static_var - ir->static_vars.items,
+              },
+            },
+            {},
+          };
+
+          *instr = static_ref;
+        }
+      }
     }
   }
 }
