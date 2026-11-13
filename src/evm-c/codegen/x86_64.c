@@ -651,7 +651,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           size = 2;
 
         write_cstr(stream, "  mov ");
-        write_loc_of_size(stream, locs->items + instr->as.bin_op.dest_index, size);
+        write_loc_of_size_ensure_in_reg(stream, locs->items + instr->as.bin_op.dest_index, size, 0);
         write_cstr(stream, ",0\n");
 
         write_cstr(stream, "  mov ");
