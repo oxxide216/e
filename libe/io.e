@@ -35,7 +35,7 @@ proc read_file(path: &u8) -> &u8
   end
 
   let result = mem::alloc((fs.st_size + 1) as u64)
-  if result as s64 < 0
+  if result == null
     retval null
   end
 

@@ -1,4 +1,5 @@
 use libe::io
+use libe::mem
 
 proc main(argc: s32, argv: &&u8) -> s64
   if argc < 2 as s32
@@ -15,6 +16,9 @@ proc main(argc: s32, argv: &&u8) -> s64
     end
 
     io::print(content)
+
+    mem::free(content)
+
     i = i + 1
   end
 

@@ -34,6 +34,8 @@ struct FileStat      # Linux x86-64 ABI Layout
   __reserved: [s64;; 3]
 end
 
+const PAGE_SIZE: u64 = 4096
+
 const O_RDONLY: s32 = 0
 const O_WRONLY: s32 = 1
 const O_RDWR: s32 = 2
