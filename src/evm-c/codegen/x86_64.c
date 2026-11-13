@@ -391,9 +391,9 @@ u8 *get_labels(Instrs *instrs, u8 *prev) {
   for (u32 j = 0; j < instrs->len; ++j) {
     Instr *instr = instrs->items + j;
 
-    if (instr->kind == InstrKindJump && instr->as.jump.target < instrs->len)
+    if (instr->kind == InstrKindJump && instr->as.jump.target <= instrs->len)
       labels[instr->as.jump.target] = 1;
-    else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target < instrs->len)
+    else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target <= instrs->len)
       labels[instr->as.jump_if_not.target] = 1;
   }
   return labels;
