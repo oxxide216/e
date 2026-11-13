@@ -6,12 +6,17 @@ proc main(argc: s32, argv: &&u8) -> s64
     retval 1
   end
 
-  let content = io::read_file(argv[1])
-  if content == null as &u8
-    io::println("[ERROR] Could not read input file")
-    retval 1
+  let i = 1
+  while i < argc as s64
+    let content = io::read_file(argv[i])
+    if content == null as &u8
+      io::println("[ERROR] Could not read input file")
+      retval 1
+    end
+
+    io::print(content)
+    i = i + 1
   end
 
-  io::print(content)
   retval 0
 end
