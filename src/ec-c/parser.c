@@ -2151,11 +2151,11 @@ static void parser_parse_stmt_impl(Parser *parser) {
       parser_parse_stmt(parser);
     }
 
+    end_vars_scope(parser, prev_scope_begin);
+
     DA_APPEND(jumps_to_end_indices, instrs->len);
 
     emit_instr(&parser->ir->procs, token, EInstrKindJump, .jump = { 0 });
-
-    end_vars_scope(parser, prev_scope_begin);
 
     while (parser_peek_token(parser, &token) != TokenStatusEOF &&
            token.id != TT_ELSE && token.id != TT_END) {
@@ -2183,13 +2183,13 @@ static void parser_parse_stmt_impl(Parser *parser) {
         parser_parse_stmt(parser);
       }
 
+      end_vars_scope(parser, prev_scope_begin);
+
       DA_APPEND(jumps_to_end_indices, instrs->len);
 
       emit_instr(&parser->ir->procs, token, EInstrKindJump, .jump = { 0 });
 
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
-
-      end_vars_scope(parser, prev_scope_begin);
     }
     parser_expect_token(parser,
                         MASK(TT_ELIF) | MASK(TT_ELSE) | MASK(TT_END),
@@ -2208,9 +2208,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
       }
       parser_expect_token(parser, MASK(TT_END), "`end`");
 
-      instrs->items[jump_index].as.jump.target = instrs->len;
-
       end_vars_scope(parser, prev_scope_begin);
+
+      instrs->items[jump_index].as.jump.target = instrs->len;
     } else {
       instrs->items[jump_index].as.jump_if_not.target = instrs->len;
     }
