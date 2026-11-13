@@ -210,7 +210,7 @@ static bool is_int(EType *type) {
 static bool can_do_bin_op(EBinOpKind kind, EType *a, EType *b) {
   if (kind == EBinOpKindAdd || kind == EBinOpKindSub) {
     if ((is_int(a) && is_int(b) && a->kind == b->kind) ||
-        (a->kind == ETypeKindPtr && type_eq(a, b)))
+        (a->kind == ETypeKindPtr && (type_eq(a, b) || is_int(b))))
       return true;
   } else {
     if ((is_int(a) && is_int(b) && a->kind == b->kind) ||

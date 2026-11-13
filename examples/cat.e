@@ -9,7 +9,7 @@ proc main(argc: s32, argv: &&u8) -> s64
   let i = 1
   while i < argc as s64
     let content = io::read_file(argv[i])
-    if content == null as &u8
+    if content == null
       io::println("[ERROR] Could not read input file")
       retval 1
     end
