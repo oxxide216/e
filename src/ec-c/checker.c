@@ -212,6 +212,10 @@ static bool can_do_bin_op(EBinOpKind kind, EType *a, EType *b) {
     if ((is_int(a) && is_int(b) && a->kind == b->kind) ||
         (a->kind == ETypeKindPtr && (type_eq(a, b) || is_int(b))))
       return true;
+  } if (kind == EBinOpKindAnd || kind == EBinOpKindOr || kind ==EBinOpKindXor) {
+    if ((is_int(a) && is_int(b) && a->kind == b->kind) ||
+        (a->kind == ETypeKindBool && b->kind == ETypeKindBool))
+      return true;
   } else {
     if ((is_int(a) && is_int(b) && a->kind == b->kind) ||
         (a->kind == ETypeKindPtr && type_eq(a, b)))
@@ -1123,6 +1127,14 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
         goto fail;
   }
 
+  for (u32 i = 0; i < ir->consts.len; ++i)
+    if (!check_struct_existence(ir, &ir->consts.items[i].type))
+      goto fail;
+
+  for (u32 i = 0; i < ir->static_vars.len; ++i)
+    if (!check_struct_existence(ir, &ir->static_vars.items[i].type))
+      goto fail;
+
   u32 procs_len = ir->procs.len;
 
   u8 *amounts_of_drops_for_structs = alloca(ir->structs.len);
@@ -1146,12 +1158,12 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
     if (!check_struct_existence(ir, &proc->return_type))
       goto fail;
 
+    collect_consts(ir, &proc->instrs, varss->items + i, arena);
+    patch_statics(ir, &proc->instrs, varss->items + i);
+
     for (u32 j = 0; j < varss->items[i].len; ++j)
       if (!check_struct_existence(ir, &varss->items[i].items[j].type))
         goto fail;
-
-    collect_consts(ir, &proc->instrs, varss->items + i, arena);
-    patch_statics(ir, &proc->instrs, varss->items + i);
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       EInstr *instr = proc->instrs.items + j;
@@ -1617,6 +1629,8 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
 
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(&instr->as.cast.dest_type);
+          if (!check_struct_existence(ir, &dest->type))
+            goto fail;
         } else if (!type_eq(&instr->as.cast.dest_type, &dest->type)) {
           Str dest_type_str = get_type_str(&dest->type);
           Str new_type_str = get_type_str(&instr->as.cast.dest_type);
