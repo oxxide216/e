@@ -20,5 +20,6 @@
 /stat
 /sizeof
 /static
+/cat
 /test*
 /.idea/*

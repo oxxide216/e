@@ -34,15 +34,27 @@ struct FileStat      # Linux x86-64 ABI Layout
   __reserved: [s64;; 3]
 end
 
-const SEEK_SET = 0  # Seek from the beginning of the file
-const SEEK_CUR = 1  # Seek from the current file position
-const SEEK_END = 2  # Seek from the end of the file
+const O_RDONLY: s32 = 0
+const O_WRONLY: s32 = 1
+const O_RDWR: s32 = 2
 
-const POLLIN = 1
-const POLLOUT = 4
-const POLLERR = 8
-const POLLHUP = 16
-const POLLNVAL = 32
+const SEEK_SET: s32 = 0  # Seek from the beginning of the file
+const SEEK_CUR: s32 = 1  # Seek from the current file position
+const SEEK_END: s32 = 2  # Seek from the end of the file
+
+const PROT_READ: u64 = 1
+const PROT_WRITE: u64 = 2
+const PROT_EXEC: u64 = 4
+
+const MAP_SHARED: u64 = 1
+const MAP_PRIVATE: u64 = 2
+const MAP_ANONYMOUS: u64 = 32
+
+const POLLIN: s16 = 1
+const POLLOUT: s16 = 4
+const POLLERR: s16 = 8
+const POLLHUP: s16 = 16
+const POLLNVAL: s16 = 32
 
 struct PollFd
   fd: s32,
@@ -128,7 +140,7 @@ proc syscall(type: s64, arg0: s64, arg1: s64, arg2: s64, arg3: s64, arg4: s64, a
   retval result
 end
 
-proc read(fd: s64, str: &u8, len:u64) -> s64
+proc read(fd: s64, str: &u8, len: u64) -> s64
   retval syscall(0, fd, str as s64, len as s64)
 end
 
@@ -164,8 +176,8 @@ proc lseek(fd: s32, offset: s64, whence: s32) -> s64
   retval syscall(8, fd as s64, offset, whence as s64)
 end
 
-proc mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: u64, off: u64) -> s64
-  retval syscall(9, addr as s64, len as s64, prot as s64, flags as s64, fd as s64, off as s64)
+proc mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: s64, off: u64) -> s64
+  retval syscall(9, addr as s64, len as s64, prot as s64, flags as s64, fd, off as s64)
 end
 
 proc mprotect(start: u64, len: u64, prot: u64) -> s64
