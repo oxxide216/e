@@ -685,22 +685,23 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     Str name = {0};
     u32 index = (u32) -1;
     Indices *arg_indices;
+    VarLoc *loc;
     if (instr->kind == InstrKindCall) {
       name = instr->as.call.name;
       arg_indices = &instr->as.call.arg_indices;
     } else if (instr->kind == InstrKindCallAssign) {
       name = instr->as.call_assign.name;
       arg_indices = &instr->as.call_assign.arg_indices;
-      locs->items[instr->as.call_assign.dest_index].kind =
-        instr->as.call_assign.return_kind;
+      loc = locs->items + instr->as.call_assign.dest_index;
+      loc->kind = instr->as.call_assign.return_kind;
     } else if (instr->kind == InstrKindCallRef) {
       index = instr->as.call_ref.index;
       arg_indices = &instr->as.call_ref.arg_indices;
     } else if (instr->kind == InstrKindCallRefAssign) {
       index = instr->as.call_ref_assign.index;
       arg_indices = &instr->as.call_ref_assign.arg_indices;
-      locs->items[instr->as.call_ref_assign.dest_index].kind =
-        instr->as.call_ref_assign.return_kind;
+      loc = locs->items + instr->as.call_ref_assign.dest_index;
+      loc->kind = instr->as.call_ref_assign.return_kind;
     }
 
     bool is_tail = str_eq(name, proc_name) &&
@@ -870,8 +871,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     if (!is_tail &&
         (instr->kind == InstrKindCallAssign ||
          instr->kind == InstrKindCallRefAssign)) {
-      VarLoc *loc = locs->items + instr->as.bin_op.dest_index;
-
       if (!loc->is_ret && (loc->size <= 8 || loc->size == 16)) {
         u32 size = loc->size == 16 ? 8 : loc->size;
 
