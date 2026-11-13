@@ -1664,7 +1664,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     if (space_used.stack_size > 0)
       fprintf(stream, "  add rsp,%u\n", space_used.stack_size);
 
-    if (has_stack_args ||
+    if (has_nested_call ||
+        has_stack_args ||
         space_used.stack_size > 0 ||
         proc->args.len > ARRAY_LEN(arg_regs8))
       write_cstr(stream, "  leave\n");
