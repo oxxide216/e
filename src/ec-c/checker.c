@@ -850,6 +850,32 @@ static bool str_eq_str_with_path(Str a, Str b, EModulePath *b_path) {
   return str_eq(a, b);
 }
 
+static void remove_instr(EInstrs *instrs, u32 index) {
+  DA_REMOVE_AT(*instrs, index);
+
+  for (u32 i = 0; i < instrs->len; ++i) {
+    if (instrs->items[i].kind == EInstrKindJump &&
+        instrs->items[i].as.jump.target > index)
+      --instrs->items[i].as.jump.target;
+    else if (instrs->items[i].kind == EInstrKindJumpIfNot &&
+             instrs->items[i].as.jump_if_not.target > index)
+      --instrs->items[i].as.jump_if_not.target;
+  }
+}
+
+static void insert_instr(EInstrs *instrs, u32 index, EInstr instr) {
+  DA_INSERT(*instrs, index, instr);
+
+  for (u32 i = 0; i < instrs->len; ++i) {
+    if (instrs->items[i].kind == EInstrKindJump &&
+        instrs->items[i].as.jump.target >= index)
+      ++instrs->items[i].as.jump.target;
+    else if (instrs->items[i].kind == EInstrKindJumpIfNot &&
+             instrs->items[i].as.jump_if_not.target >= index)
+      ++instrs->items[i].as.jump_if_not.target;
+  }
+}
+
 static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
                        EModulePath *path, Arena *arena) {
   u32 len = _const->name.len;
@@ -879,7 +905,7 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
     },
     {},
   };
-  DA_INSERT(*instrs, 0, alloc);
+  insert_instr(instrs, 0, alloc);
 
   EInstr store = {
     EInstrKindStore,
@@ -894,7 +920,7 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
     },
     {},
   };
-  DA_INSERT(*instrs, 1, store);
+  insert_instr(instrs, 1, store);
 
   DA_APPEND(*vars, var);
 }
@@ -998,9 +1024,9 @@ static void patch_statics(EIr *ir, EInstrs *instrs, Vars *vars) {
 
           *instr = alloc;
           ++i;
-          DA_INSERT(*instrs, i, static_ref);
+          insert_instr(instrs, i, static_ref);
           ++i;
-          DA_INSERT(*instrs, i, copy_to_static);
+          insert_instr(instrs, i, copy_to_static);
 
           Var var = {
             static_var->name,
@@ -1057,9 +1083,9 @@ static void patch_statics(EIr *ir, EInstrs *instrs, Vars *vars) {
 
           *instr = alloc;
           ++i;
-          DA_INSERT(*instrs, i, static_ref);
+          insert_instr(instrs, i, static_ref);
           ++i;
-          DA_INSERT(*instrs, i, copy_from_static);
+          insert_instr(instrs, i, copy_from_static);
 
           Var var = {
             static_var->name,
@@ -1140,7 +1166,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
             instr->as.copy.src_index,
           };
           DA_APPEND(var_substs, var_subst);
-          DA_REMOVE_AT(proc->instrs, j);
+          remove_instr(&proc->instrs, j);
           --j;
         }
       }
@@ -1299,7 +1325,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
               varss->items[i].items[instr[-1].as.ref.src_index].returned) {
             free(instr->as.call.arg_indices.items);
             for (u32 k = 0; k < 3; ++k)
-              DA_REMOVE_AT(proc->instrs, j - 2);
+              remove_instr(&proc->instrs, j - 2);
             j -= 3;
           }
         } else if (!callee) {
@@ -1899,8 +1925,8 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
               instr->loc,
             };
             *instr = replacement;
-            DA_INSERT(proc->instrs, j, new_instr1);
-            DA_INSERT(proc->instrs, j, new_instr0);
+            insert_instr(&proc->instrs, j, new_instr1);
+            insert_instr(&proc->instrs, j, new_instr0);
             j += 2;
           } else {
             EInstr replacement = {
