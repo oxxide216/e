@@ -1541,7 +1541,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
                                                 space_used.stack_size;
 
 #ifndef NDEBUG
-    proc_print(proc, &locs, labels);
+    proc_print(proc, &locs);
 #endif
 
     write_cstr(stream, "global $");

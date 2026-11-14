@@ -239,7 +239,7 @@ static void instr_print(Instr *instr, VarLocs *locs) {
   }
 }
 
-void proc_print(Proc *proc, VarLocs *locs, u8 *labels) {
+void proc_print(Proc *proc, VarLocs *locs) {
   printf("proc "STR_FMT"(", STR_ARG(proc->name));
   for (u32 i = 0; i < proc->args.len; ++i) {
     if (i > 0)
@@ -260,7 +260,7 @@ void proc_print(Proc *proc, VarLocs *locs, u8 *labels) {
   putc('\n', stdout);
 
   for (u32 i = 0; i < proc->instrs.len; ++i) {
-    if (labels[i])
+    if (proc->instrs.items[i].has_label)
       printf("l%u:\n", i);
 
     instr_print(proc->instrs.items + i, locs);
@@ -270,7 +270,7 @@ void proc_print(Proc *proc, VarLocs *locs, u8 *labels) {
     printf("last:\n");
 
   for (u32 i = 0; i < proc->last_instrs.len; ++i) {
-    if (labels[i])
+    if (proc->last_instrs.items[i].has_label)
       printf("l%u:\n", i + proc->instrs.len);
 
     instr_print(proc->last_instrs.items + i, locs);
