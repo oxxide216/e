@@ -149,7 +149,7 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
           locs->items[prop->src].end = i;
         if (locs->items[prop->dest].uses > 0)
           --locs->items[prop->dest].uses;
-        if (locs->items[prop->dest].uses == 0) {
+        if (locs->items[prop->dest].uses <= 1) {
           remove_instr_props(instrs, locs, &props, prop->instr_index);
           --instr;
           --i;
