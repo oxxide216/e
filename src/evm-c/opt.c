@@ -120,7 +120,9 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
 
-    if (instr->has_label) {
+    if (instr->has_label ||
+        instr->kind == InstrKindCopyToRef ||
+        instr->kind == InstrKindCopyToRefFixed) {
       props.len = 0;
     } else {
       u32 *dest = get_dest(instr);
@@ -173,7 +175,9 @@ void opt_const_prop(Instrs *instrs, VarLocs *locs) {
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
 
-    if (instr->has_label) {
+    if (instr->has_label ||
+        instr->kind == InstrKindCopyToRef ||
+        instr->kind == InstrKindCopyToRefFixed) {
       props.len = 0;
     } else {
       u32 *dest = get_dest(instr);
