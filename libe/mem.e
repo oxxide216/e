@@ -72,7 +72,7 @@ proc alloc(size: u64) -> &u8
         let next = segment.next
 
         segment.next =
-          (segment as &u8 + sizeof SegmentHeader + aligned_size) as &SegmentHeader
+          (segment as &u8 + aligned_size + sizeof SegmentHeader) as &SegmentHeader
         segment.next.size = segment.size - aligned_size - sizeof SegmentHeader
         segment.next.is_consumed = 0 as u64
         segment.next.next = next
