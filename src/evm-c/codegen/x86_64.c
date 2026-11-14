@@ -404,7 +404,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   case InstrKindStore: {
     VarLoc *dest_loc = locs->items + instr->as.store.index;
 
-    if (dest_loc->uses > 0) {
+    if (dest_loc->uses > 1) {
       dest_loc->kind = instr->as.store.value.kind;
 
       write_cstr(stream, "  mov ");
@@ -1389,7 +1389,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *dest_loc = locs->items + instr->as.size_of.dest_index;
     u32 size = get_segments_size_x86_64(&instr->as.size_of.segments);
 
-    if (dest_loc->uses > 0) {
+    if (dest_loc->uses > 1) {
       dest_loc->kind = ValueKindUnsigned;
 
       write_cstr(stream, "  mov ");
