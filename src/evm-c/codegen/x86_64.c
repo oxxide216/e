@@ -1533,7 +1533,9 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     add_var_locs(&locs, proc, get_segments_size_x86_64);
 
     opt_derefs_to_copies(&proc->instrs, &locs);
+    opt_copy_prop(&proc->instrs, &locs);
     opt_derefs_to_copies(&proc->last_instrs, &locs);
+    opt_copy_prop(&proc->last_instrs, &locs);
 
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8));
