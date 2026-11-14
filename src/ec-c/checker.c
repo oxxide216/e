@@ -230,7 +230,9 @@ static bool can_cast(EType *src, EType *dest) {
          (is_int(src) && dest->kind == ETypeKindPtr) ||
          (src->kind == ETypeKindBool && is_int(dest)) ||
          (src->kind == ETypeKindPtr && is_int(dest)) ||
-         (src->kind == ETypeKindPtr && dest->kind == ETypeKindPtr);
+         (src->kind == ETypeKindPtr && dest->kind == ETypeKindPtr) ||
+         (src->kind == ETypeKindPtr && dest->kind == ETypeKindStr) ||
+         (src->kind == ETypeKindStr && dest->kind == ETypeKindPtr);
 }
 
 static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_subst) {

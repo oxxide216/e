@@ -10,14 +10,14 @@ proc main(argc: s32, argv: &&u8) -> s64
   let i = 1
   while i < argc as s64
     let content = io::read_file(argv[i])
-    if content == null
+    if content as &u8 == null
       io::println("[ERROR] Could not read input file")
       retval 1
     end
 
     io::print(content)
 
-    mem::free(content)
+    mem::free(content as &u8)
 
     i = i + 1
   end

@@ -21,29 +21,32 @@ proc println(str: &u8)
 end
 
 # TODO: make it return str. This requires changes to the compiler
-proc read_file(path: &u8) -> &u8
+proc read_file(path: &u8) -> str
   let fs = unix::FileStat: end
   if unix::stat(path, &fs) < 0
-    retval null
+    retval null as str
   end
 
   let fd = unix::open(path, O_RDONLY, 0 as s32)
   if fd < 0
-    retval null
+    retval null as str
   end
 
-  let result = mem::alloc((fs.st_size + 1) as u64)
+  let result = mem::alloc(sizeof u32 + fs.st_size as u64 + 1 as u64)
   if result == null
-    retval null
+    retval null as str
   end
 
-  unix::read(fd, result, fs.st_size as u64)
-  result[fs.st_size] = 0 as u8
+  let size_ptr = result as &u32
+  size_ptr := fs.st_size as u32
+
+  unix::read(fd, result + sizeof u32, fs.st_size as u64)
+  result[sizeof u32 + fs.st_size as u64] = 0 as u8
   unix::close(fd)
 
-  retval result
+  retval result as str
 end
 
-proc read_file(path: str) -> &u8
+proc read_file(path: str) -> str
   retval read_file(path.ptr)
 end
