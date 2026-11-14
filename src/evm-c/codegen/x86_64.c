@@ -398,19 +398,24 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   case InstrKindAlloc: break;
 
   case InstrKindStore: {
-    locs->items[instr->as.store.index].kind = instr->as.store.value.kind;
+    if (locs->items[instr->as.store.index].uses > 1) {
+      locs->items[instr->as.store.index].kind = instr->as.store.value.kind;
 
-    write_cstr(stream, "  mov ");
-    write_loc(stream, locs->items + instr->as.store.index);
-    write_cstr(stream, ",");
-    switch (instr->as.store.value.kind) {
-    case ValueKindSigned: {
-      fprintf(stream, "%ld\n", instr->as.store.value.as._signed);
-    } break;
+      write_cstr(stream, "  mov ");
+      write_loc(stream, locs->items + instr->as.store.index);
+      write_cstr(stream, ",");
+      switch (instr->as.store.value.kind) {
+      case ValueKindSigned: {
+        fprintf(stream, "%ld\n", instr->as.store.value.as._signed);
+      } break;
 
-    case ValueKindUnsigned: {
-      fprintf(stream, "%lu\n", instr->as.store.value.as._unsigned);
-    } break;
+      case ValueKindUnsigned: {
+        fprintf(stream, "%lu\n", instr->as.store.value.as._unsigned);
+      } break;
+      }
+    } else {
+      locs->items[instr->as.store.index].has_imm_value = true;
+      locs->items[instr->as.store.index].imm_value = instr->as.store.value.as._signed;
     }
   } break;
 
@@ -419,6 +424,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *src_loc = locs->items + instr->as.copy.src_index;
 
     dest_loc->kind = src_loc->kind;
+    dest_loc->has_imm_value = false;
 
     if (dest_loc->value != src_loc->value || dest_loc->is_arg != src_loc->is_arg) {
       if (dest_loc->size <= 8) {
@@ -548,11 +554,11 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
                      "or");
     } break;
 
-  case BinOpKindXor: {
-    write_basic_op(stream, locs, instr->as.bin_op.dest_index,
-                   instr->as.bin_op.src0_index, instr->as.bin_op.src1_index,
-                   "xor");
-  } break;
+    case BinOpKindXor: {
+      write_basic_op(stream, locs, instr->as.bin_op.dest_index,
+                     instr->as.bin_op.src0_index, instr->as.bin_op.src1_index,
+                     "xor");
+    } break;
 
     case BinOpKindLShift:
     case BinOpKindRShift: {
@@ -680,6 +686,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       arg_indices = &instr->as.call_assign.arg_indices;
       loc = locs->items + instr->as.call_assign.dest_index;
       loc->kind = instr->as.call_assign.return_kind;
+      loc->has_imm_value = false;
     } else if (instr->kind == InstrKindCallRef) {
       index = instr->as.call_ref.index;
       arg_indices = &instr->as.call_ref.arg_indices;
@@ -688,6 +695,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       arg_indices = &instr->as.call_ref_assign.arg_indices;
       loc = locs->items + instr->as.call_ref_assign.dest_index;
       loc->kind = instr->as.call_ref_assign.return_kind;
+      loc->has_imm_value = false;
     }
 
     bool is_tail = str_eq(name, proc_name) &&
@@ -695,26 +703,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
                     instr[1].kind == InstrKindRet ||
                     instr[1].kind == InstrKindRetVal);
 
-    if (!is_tail) {
-      if (instr->kind == InstrKindCallAssign) {
-        VarLoc *loc = locs->items + instr->as.call_assign.dest_index;
-        loc->has_imm_value = false;
-
-        if (loc->size > 16) {
-          write_cstr(stream, "  lea rdi,");
-          write_loc(stream, loc);
-          write_cstr(stream, "\n");
-        }
-      } else if (instr->kind == InstrKindCallRefAssign) {
-        VarLoc *loc = locs->items + instr->as.call_ref_assign.dest_index;
-        loc->has_imm_value = false;
-
-        if (loc->size > 16) {
-          write_cstr(stream, "  lea rdi,");
-          write_loc(stream, loc);
-          write_cstr(stream, "\n");
-        }
-      }
+    if (!is_tail &&
+        (instr->kind == InstrKindCallAssign ||
+         instr->kind == InstrKindCallRefAssign) &&
+        loc->size > 8 && loc->size != 16) {
+      write_cstr(stream, "  lea rdi,");
+      write_loc(stream, loc);
+      write_cstr(stream, "\n");
     }
 
     SpaceUsed args_space = {0};
@@ -1414,14 +1409,18 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindSizeOf: {
     VarLoc *dest_loc = locs->items + instr->as.size_of.dest_index;
-
-    dest_loc->kind = ValueKindUnsigned;
-
     u32 size = get_segments_size_x86_64(&instr->as.size_of.segments);
 
-    write_cstr(stream, "  mov ");
-    write_loc(stream, dest_loc);
-    fprintf(stream, ",%u\n", size);
+    if (dest_loc->uses > 1) {
+      dest_loc->kind = ValueKindUnsigned;
+
+      write_cstr(stream, "  mov ");
+      write_loc(stream, dest_loc);
+      fprintf(stream, ",%u\n", size);
+    } else {
+      dest_loc->has_imm_value = true;
+      dest_loc->imm_value = size;
+    }
   } break;
 
   case InstrKindStoreUninit: {
@@ -1534,8 +1533,10 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     opt_derefs_to_copies(&proc->instrs, &locs);
     opt_copy_prop(&proc->instrs, &locs);
+    opt_const_prop(&proc->instrs, &locs);
     opt_derefs_to_copies(&proc->last_instrs, &locs);
     opt_copy_prop(&proc->last_instrs, &locs);
+    opt_const_prop(&proc->last_instrs, &locs);
 
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8));

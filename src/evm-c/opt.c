@@ -166,3 +166,44 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
   if (props.items)
     free(props.items);
 }
+
+void opt_const_prop(Instrs *instrs, VarLocs *locs) {
+  CopyProps props = {0};
+
+  for (u32 i = 0; i < instrs->len; ++i) {
+    Instr *instr = instrs->items + i;
+
+    if (instr->has_label) {
+      props.len = 0;
+    } else {
+      u32 *dest = get_dest(instr);
+      if (dest) {
+        u32 index;
+        while ((index = get_prop_index_by_dest(&props, *dest)) != (u32) -1)
+          DA_REMOVE_AT(props, index);
+      }
+    }
+
+    u32 j = 0;
+    u32 *arg;
+    while ((arg = get_nth_arg(instr, j++))) {
+      u32 index = get_prop_index_by_dest(&props, *arg);
+      if (index != (u32) -1) {
+        CopyProp *prop = props.items + index;
+        if (locs->items[prop->dest].uses > 0)
+          --locs->items[prop->dest].uses;
+      }
+    }
+
+    if (instr->kind == InstrKindStore) {
+      CopyProp prop = { instr->as.copy.dest_index, 0, 0 };
+      DA_APPEND(props, prop);
+    } else if (instr->kind == InstrKindSizeOf) {
+      CopyProp prop = { instr->as.size_of.dest_index, 0, 0 };
+      DA_APPEND(props, prop);
+    }
+  }
+
+  if (props.items)
+    free(props.items);
+}
