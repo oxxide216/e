@@ -240,6 +240,7 @@ typedef union {
 typedef struct {
   InstrKind kind;
   InstrAs   as;
+  bool      has_label;
 } Instr;
 
 typedef Da(Instr) Instrs;

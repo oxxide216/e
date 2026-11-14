@@ -41,5 +41,6 @@ u32  *get_nth_arg(Instr *instr, u32 n);
 void  align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func);
 bool  get_have_function_call(Instrs *instrs);
 bool  clutter_reg(Instrs *instrs, CluttersRegFunc clutters_reg);
+void  setup_labels(Instrs *instrs);
 
 #endif // UTILS_H

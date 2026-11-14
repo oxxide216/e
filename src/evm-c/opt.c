@@ -23,6 +23,7 @@ void opt_derefs_to_copies(Instrs *instrs, VarLocs *locs) {
                 instr->as.copy_to_ref_fixed.src_index,
               },
             },
+            instr->has_label,
           };
           *instr = new_instr;
         }
@@ -46,6 +47,7 @@ void opt_derefs_to_copies(Instrs *instrs, VarLocs *locs) {
                 instr->as.copy_from_ref_fixed.src_index,
               },
             },
+            instr->has_label,
           };
           *instr = new_instr;
         }

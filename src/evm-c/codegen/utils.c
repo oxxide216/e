@@ -254,3 +254,14 @@ bool clutter_reg(Instrs *instrs, CluttersRegFunc clutters_reg) {
 
   return false;
 }
+
+void setup_labels(Instrs *instrs) {
+  for (u32 j = 0; j < instrs->len; ++j) {
+    Instr *instr = instrs->items + j;
+
+    if (instr->kind == InstrKindJump && instr->as.jump.target <= instrs->len)
+      instrs->items[instr->as.jump.target].has_label = true;
+    else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target <= instrs->len)
+      instrs->items[instr->as.jump_if_not.target].has_label = true;
+  }
+}

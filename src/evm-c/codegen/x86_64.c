@@ -385,20 +385,6 @@ static bool clutters_second_return_reg_x86_64(Instr *instr) {
      instr->as.bin_op.kind == BinOpKindRem);
 }
 
-u8 *get_labels(Instrs *instrs, u8 *prev) {
-  u8 *labels = realloc(prev, instrs->len + 1);
-  memset(labels, 0, instrs->len + 1);
-  for (u32 j = 0; j < instrs->len; ++j) {
-    Instr *instr = instrs->items + j;
-
-    if (instr->kind == InstrKindJump && instr->as.jump.target <= instrs->len)
-      labels[instr->as.jump.target] = 1;
-    else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target <= instrs->len)
-      labels[instr->as.jump_if_not.target] = 1;
-  }
-  return labels;
-}
-
 static bool is_valid_index_mul(u32 mul) {
   return mul == 1 || mul == 2 || mul == 4;
 }
@@ -1540,8 +1526,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         locs.items[2].is_arg = false;
     }
 
-    u8 *labels = get_labels(&proc->instrs, NULL);
-    u8 *last_labels = get_labels(&proc->last_instrs, NULL);
+    setup_labels(&proc->instrs);
+    setup_labels(&proc->last_instrs);
 
     align_fixed_offsets(proc, alignment_func_x86_64);
     add_var_locs(&locs, proc, get_segments_size_x86_64);
@@ -1620,16 +1606,17 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     JumpOpt jump_opt = {0};
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
-      if (labels[j])
+      if (proc->instrs.items[j].has_label)
         fprintf(stream, ".l%u:\n", j);
-      if (labels[j] || is_jump(proc->instrs.items + j))
+      if (proc->instrs.items[j].has_label ||
+          is_jump(proc->instrs.items + j))
         for (u32 k = 0; k < locs.cap; ++k)
           locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->instrs, j, &locs, &jump_opt,
                   proc->name, total_space_used);
     }
 
-    if (labels[proc->instrs.len])
+    if (proc->instrs.items[proc->instrs.len].has_label)
       fprintf(stream, ".l%u:\n", proc->instrs.len);
 
     write_cstr(stream, ".end:\n");
@@ -1642,16 +1629,17 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     jump_opt = (JumpOpt) {0};
 
     for (u32 j = 0; j < proc->last_instrs.len; ++j) {
-      if (last_labels[j])
+      if (proc->last_instrs.items[j].has_label)
         fprintf(stream, ".l%u:\n", j + proc->instrs.len);
-      if (labels[j] || is_jump(proc->last_instrs.items + j))
+      if (proc->last_instrs.items[j].has_label ||
+          is_jump(proc->last_instrs.items + j))
         for (u32 k = 0; k < locs.cap; ++k)
           locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->last_instrs, j, &locs, &jump_opt,
                   proc->name, total_space_used);
     }
 
-    if (labels[proc->last_instrs.len])
+    if (proc->last_instrs.items[proc->last_instrs.len].has_label)
       fprintf(stream, ".l%u:\n", proc->last_instrs.len + proc->instrs.len);
 
     if (last_instrs_clutter_first_return_reg)
@@ -1671,8 +1659,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     write_cstr(stream, "  ret\n");
 
-    if (labels)
-      free(labels);
     memset(locs.items, 0, locs.cap * sizeof(VarLoc));
   }
 
