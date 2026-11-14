@@ -601,7 +601,8 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         fwrite(&instr->as.copy_to_offset.src_index, sizeof(instr->as.copy_to_offset.src_index), 1, stream);
 
-        bool deref = dest->type.kind == ETypeKindPtr ||
+        bool deref = dest->type.kind == ETypeKindStr ||
+                     dest->type.kind == ETypeKindPtr ||
                      dest->type.is_implicit_ptr;
         fwrite(&deref, 1, 1, stream);
       } break;
@@ -651,7 +652,8 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           fwrite(&src_target_kind, 1, 1, stream);
         }
 
-        bool deref = src->type.kind == ETypeKindPtr ||
+        bool deref = src->type.kind == ETypeKindStr ||
+                     src->type.kind == ETypeKindPtr ||
                      src->type.is_implicit_ptr;
         fwrite(&deref, 1, 1, stream);
 
