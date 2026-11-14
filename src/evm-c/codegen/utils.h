@@ -27,7 +27,6 @@
     ++(da).len;                                                         \
   } while (0)
 
-typedef u32 (*AlignmentFunc)(u32 size);
 typedef bool (*CluttersRegFunc)(Instr *instr);
 
 void write_cstr(FILE *stream, char *cstr);

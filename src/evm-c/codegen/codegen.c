@@ -37,7 +37,9 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
       u32 *dest = get_dest(instr);
       if (dest && *dest < locs->cap) {
         ++locs->items[*dest].uses;
-        locs->items[*dest].end = i + offset;
+        if (locs->items[*dest].end == (u32) -1 ||
+            locs->items[*dest].end < i + offset)
+          locs->items[*dest].end = i + offset;
         if (locs->items[*dest].begin == (u32) -1)
           locs->items[*dest].begin = i + offset;
       }
@@ -47,11 +49,16 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
       while ((arg = get_nth_arg(instr, j++))) {
         if (*arg < locs->cap) {
           ++locs->items[*arg].uses;
-          locs->items[*arg].end = i + offset;
+          if (locs->items[*arg].end == (u32) -1 ||
+              locs->items[*arg].end < i + offset)
+            locs->items[*arg].end = i + offset;
           if (locs->items[*arg].begin == (u32) -1)
             locs->items[*arg].begin = i + offset;
         }
       }
+
+      if (instr->kind == InstrKindRef)
+        locs->items[instr->as.ref.src_index].end = instrs->len - 1;
     } break;
     }
   }
@@ -65,9 +72,11 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
       locs->items[instr->as.copy_to_ref.dest_index].is_stack_only = true;
     else if (instr->kind == InstrKindCopyFromRef)
       locs->items[instr->as.copy_from_ref.src_index].is_stack_only = true;
-    else if (instr->kind == InstrKindCopyToRefFixed)
+    else if (instr->kind == InstrKindCopyToRefFixed &&
+             !instr->as.copy_to_ref_fixed.deref)
       locs->items[instr->as.copy_to_ref_fixed.dest_index].is_stack_only = true;
-    else if (instr->kind == InstrKindCopyFromRefFixed)
+    else if (instr->kind == InstrKindCopyFromRefFixed &&
+             !instr->as.copy_from_ref_fixed.deref)
       locs->items[instr->as.copy_from_ref_fixed.src_index].is_stack_only = true;
   }
 }
@@ -78,10 +87,10 @@ void add_var_locs(VarLocs *locs, Proc *proc,
   add_var_locs_instrs(locs, &proc->last_instrs, proc->instrs.len, get_segments_size);
 }
 
-static bool var_loc_collides_at_reg_index(VarLocRefs *refs, VarLoc *loc, i32 reg_index, u32 max) {
+static bool var_loc_collides_at_value(VarLocRefs *refs, VarLoc *loc, i32 value, u32 max) {
   for (u32 i = 0; i < max; ++i) {
     VarLoc *temp_loc = refs->items[i];
-    if (temp_loc->value == reg_index &&
+    if (temp_loc->value == value &&
         temp_loc->end >= loc->begin &&
         temp_loc->begin <= loc->end)
       return true;
@@ -93,7 +102,7 @@ static bool var_loc_collides_at_reg_index(VarLocRefs *refs, VarLoc *loc, i32 reg
 static i32 get_var_loc_reg_index(Allocator *allocator, VarLoc *loc,
                                  u32 max, u32 scratch_regs_len) {
   for (u32 i = 0; i < scratch_regs_len; ++i) {
-    if (!var_loc_collides_at_reg_index(&allocator->refs, loc, i, max)) {
+    if (!var_loc_collides_at_value(&allocator->refs, loc, i, max)) {
       if (allocator->space_used.regs < i + 1)
         allocator->space_used.regs = i + 1;
 
@@ -104,8 +113,29 @@ static i32 get_var_loc_reg_index(Allocator *allocator, VarLoc *loc,
   return -1;
 }
 
-SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len) {
+static i32 get_var_loc_stack_pos(Allocator *allocator, VarLoc *loc, u32 max) {
+  for (u32 i = 0; i < allocator->used_stack_locs.len; ++i) {
+    if (allocator->used_stack_locs.items[i].size < loc->size)
+      continue;
+    i32 pos = allocator->used_stack_locs.items[i].pos;
+    if (!var_loc_collides_at_value(&allocator->refs, loc, pos, max))
+      return pos;
+  }
+
+  allocator->space_used.stack_size =
+    align(allocator->space_used.stack_size + loc->size,
+          allocator->alignment_func(loc->size));
+
+  StackLoc new_loc = { -allocator->space_used.stack_size, loc->size };
+  DA_APPEND(allocator->used_stack_locs, new_loc);
+
+  return -allocator->space_used.stack_size;
+}
+
+SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len,
+                              AlignmentFunc alignment_func) {
   Allocator allocator = {0};
+  allocator.alignment_func = alignment_func;
   for (u32 i = 0; i < locs->cap; ++i)
     if (locs->items[i].uses > 0 && !locs->items[i].is_arg &&
         locs->items[i].begin != (u32) -1 && locs->items[i].end != (u32) -1)
@@ -128,15 +158,13 @@ SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len) {
     VarLoc *loc = allocator.refs.items[i];
 
     if (loc->is_stack_only) {
-      allocator.space_used.stack_size += loc->size;
-      loc->value = -allocator.space_used.stack_size;
+      loc->value = get_var_loc_stack_pos(&allocator, loc, i);
       continue;
     }
 
     i32 reg_index = get_var_loc_reg_index(&allocator, loc, i, scratch_regs_len);
     if (reg_index == -1) {
-      allocator.space_used.stack_size += loc->size;
-      loc->value = -allocator.space_used.stack_size;
+      loc->value = get_var_loc_stack_pos(&allocator, loc, i);
     } else {
       loc->value = reg_index;
     }
@@ -144,6 +172,8 @@ SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len) {
 
   if (allocator.refs.items)
     free(allocator.refs.items);
+  if (allocator.used_stack_locs.items)
+    free(allocator.used_stack_locs.items);
 
   return allocator.space_used;
 }
