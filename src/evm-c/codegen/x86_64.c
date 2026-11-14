@@ -609,18 +609,18 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       locs->items[instr->as.bin_op.dest_index].kind = ValueKindUnsigned;
 
       static char *cmp_mnemonics[] = {
-        "cmove",
-        "cmovne",
-        "cmovl",
-        "cmovle",
-        "cmovg",
-        "cmovge",
-        "cmove",
-        "cmovne",
-        "cmovb",
-        "cmovbe",
-        "cmova",
-        "cmovae",
+        "sete",
+        "setne",
+        "setl",
+        "setle",
+        "setg",
+        "setge",
+        "sete",
+        "setne",
+        "setb",
+        "setbe",
+        "seta",
+        "setae",
       };
 
       ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 0, false);
@@ -638,33 +638,16 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       } else {
         u32 index = instr->as.bin_op.kind - BinOpKindEqInt +
                     6 * (locs->items[instr->as.bin_op.src0_index].kind == ValueKindUnsigned);
-        u32 size = locs->items[instr->as.bin_op.dest_index].size;
-        if (size == 1)
-          size = 2;
 
         write_cstr(stream, "  mov ");
-        write_loc_of_size_ensure_in_reg(stream, locs->items + instr->as.bin_op.dest_index, size, 0);
+        write_loc(stream, locs->items + instr->as.bin_op.dest_index);
         write_cstr(stream, ",0\n");
-
-        write_cstr(stream, "  mov ");
-        write_str(stream, get_temp_regs(size)[1]);
-        write_cstr(stream, ",1\n");
 
         write_cstr(stream, "  ");
         write_cstr(stream, cmp_mnemonics[index]);
         write_cstr(stream, " ");
-        write_loc_of_size_ensure_in_reg(stream, locs->items + instr->as.bin_op.dest_index, size, 0);
-        write_cstr(stream, ",");
-        write_str(stream, get_temp_regs(size)[1]);
+        write_loc_of_size(stream, locs->items + instr->as.bin_op.dest_index, 1);
         write_cstr(stream, "\n");
-
-        if (locs->items[instr->as.bin_op.dest_index].value < 0) {
-          write_cstr(stream, "  mov ");
-          write_loc_of_size(stream, locs->items + instr->as.bin_op.dest_index, size);
-          write_cstr(stream, ",");
-          write_str(stream, get_temp_regs(size)[0]);
-          write_cstr(stream, "\n");
-        }
       }
     } break;
     }
