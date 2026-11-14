@@ -382,13 +382,15 @@ bool decode_ir(Ir *ir, Arena *arena, u8 *data, u32 data_len) {
     proc->instrs.items[proc->instrs.len].has_label = false;
 
     decode_buffer(&decoder, &proc->last_instrs.len, sizeof(proc->last_instrs.len));
-    proc->last_instrs.cap = proc->last_instrs.len;
+    proc->last_instrs.cap = proc->last_instrs.len + 1;
     proc->last_instrs.items = arena_alloc(arena, proc->last_instrs.cap * sizeof(Instr));
 
     for (u32 j = 0; j < proc->last_instrs.len; ++j) {
       Instr *instr = proc->last_instrs.items + j;
       decode_instr(&decoder, instr);
+      instr->has_label = false;
     }
+    proc->last_instrs.items[proc->last_instrs.len].has_label = false;
   }
 
   decode_buffer(&decoder, &ir->data.len, sizeof(ir->data.len));
