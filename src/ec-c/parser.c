@@ -1217,8 +1217,7 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
 
       Token temp_token;
       bool not_last = (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
-                       (temp_token.id == TT_OBRACE || temp_token.id == TT_DOT)) ||
-                      ref_token != NULL;
+                       (temp_token.id == TT_OBRACE || temp_token.id == TT_DOT));
 
       emit_instr(
         &parser->ir->procs,
@@ -1232,7 +1231,8 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
           true,
           {},
           temp2_index,
-          not_last,
+          not_last || ref_token != NULL,
+          not_last && ref_token != NULL,
         },
       );
     } else if (token.id == TT_DOT) {
@@ -1256,8 +1256,8 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
             {},
             temp0_index,
             field_name_token.lexeme,
-            not_last,
-            ref_token != NULL,
+            not_last || ref_token != NULL,
+            not_last && ref_token != NULL,
           },
         );
       } else {

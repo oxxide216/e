@@ -543,7 +543,8 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         fwrite(&instr->as.copy_to_field.src_index, sizeof(instr->as.copy_to_field.src_index), 1, stream);
 
-        bool deref = dest->type.kind == ETypeKindPtr ||
+        bool deref = dest->type.kind == ETypeKindStr ||
+                     dest->type.kind == ETypeKindPtr ||
                      dest->type.is_implicit_ptr;
         fwrite(&deref, 1, 1, stream);
       } break;
@@ -570,7 +571,8 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(field->type.kind);
         fwrite(&src_target_kind, 1, 1, stream);
 
-        bool deref = src->type.kind == ETypeKindPtr ||
+        bool deref = src->type.kind == ETypeKindStr ||
+                     src->type.kind == ETypeKindPtr ||
                      src->type.is_implicit_ptr;
         fwrite(&deref, 1, 1, stream);
 
@@ -599,8 +601,9 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         fwrite(&instr->as.copy_to_offset.src_index, sizeof(instr->as.copy_to_offset.src_index), 1, stream);
 
-        bool deref_if_in_reg = dest->type.kind == ETypeKindStr;
-        fwrite(&deref_if_in_reg, 1, 1, stream);
+        bool deref = dest->type.kind == ETypeKindPtr ||
+                     dest->type.is_implicit_ptr;
+        fwrite(&deref, 1, 1, stream);
       } break;
 
       case EInstrKindCopyFromOffset: {
@@ -648,8 +651,9 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           fwrite(&src_target_kind, 1, 1, stream);
         }
 
-        bool deref_if_in_reg = src->type.kind == ETypeKindStr;
-        fwrite(&deref_if_in_reg, 1, 1, stream);
+        bool deref = src->type.kind == ETypeKindPtr ||
+                     src->type.is_implicit_ptr;
+        fwrite(&deref, 1, 1, stream);
 
         fwrite(&instr->as.copy_from_offset.take_ref, 1, 1, stream);
       } break;

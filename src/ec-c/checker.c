@@ -1585,6 +1585,17 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           goto fail;
         }
 
+        if (src->type.kind == ETypeKindPtr &&
+            src->type.ptr_target->kind == ETypeKindPtr &&
+            instr->as.copy_from_ref.take_ref &&
+            !instr->as.copy_from_ref.is_ref_explicit)
+            instr->as.copy_from_ref.take_ref = false;
+        else if (src->type.kind == ETypeKindArray &&
+                 src->type.array_element->kind == ETypeKindPtr &&
+                 instr->as.copy_from_ref.take_ref &&
+                 !instr->as.copy_from_ref.is_ref_explicit)
+            instr->as.copy_from_ref.take_ref = false;
+
         if (instr->as.copy_from_ref.is_ref_explicit) {
           EType new_type;
           new_type.kind = ETypeKindPtr;
@@ -1831,6 +1842,11 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           }
 
           CHECK_MEMBER(src_type, FIELD_INDEX(_struct, field), field->name);
+
+          if (field->type.kind == ETypeKindPtr &&
+              instr->as.copy_from_field.take_ref &&
+              !instr->as.copy_from_field.is_ref_explicit)
+            instr->as.copy_from_field.take_ref = false;
 
           EType ptr_type = {0};
           ptr_type.kind = ETypeKindPtr;
@@ -2113,6 +2129,11 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
 
         EType *type = src_type->tuple_types.items +
                       instr->as.copy_from_offset.src_offset;
+
+        if (type->kind == ETypeKindPtr &&
+            instr->as.copy_from_offset.take_ref &&
+            !instr->as.copy_from_offset.is_ref_explicit)
+          instr->as.copy_from_offset.take_ref = false;
 
         EType ptr_type = {0};
         ptr_type.kind = ETypeKindPtr;
