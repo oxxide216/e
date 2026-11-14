@@ -499,7 +499,7 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
     };
     EType *arg_type_ptr = &arg_type;
     ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-    if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
+    if (get_proc(ir, STR_LIT("drop"), &arg_types, true)) {
       EInstr alloc = {
         EInstrKindAlloc,
         { .alloc = { {}, vars.len } },
@@ -593,7 +593,7 @@ static bool generate_drops_for_structs(EIr *ir, Varss *varss,
       };
       EType *arg_type_ptr = &arg_type;
       ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-      if (get_proc(ir, STR_LIT("drop"), &arg_types))
+      if (get_proc(ir, STR_LIT("drop"), &arg_types, true))
         ++droppable_fields_len;
     }
 
@@ -621,7 +621,7 @@ static bool generate_drops_for_structs(EIr *ir, Varss *varss,
     };
     EType *arg_type_ptr = &arg_type;
     ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-    EProc *existing_drop = get_proc(ir, STR_LIT("drop"), &arg_types);
+    EProc *existing_drop = get_proc(ir, STR_LIT("drop"), &arg_types, true);
 
     if (existing_drop) {
       if (amounts_of_drops_for_structs[i] == 0) {
@@ -640,7 +640,7 @@ static bool generate_drops_for_structs(EIr *ir, Varss *varss,
         };
         DA_APPEND(existing_drop->instrs, instr);
       } else {
-        EProc *generated_drop = get_proc(ir, STR_LIT("?drop"), &arg_types);
+        EProc *generated_drop = get_proc(ir, STR_LIT("?drop"), &arg_types, true);
         if (generated_drop)
           proc_destroy(ir, varss, generated_drop);
         else
@@ -700,7 +700,7 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
     };
     EType *arg_type_ptr = &arg_type;
     ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-    if (get_proc(ir, STR_LIT("drop"), &arg_types)) {
+    if (get_proc(ir, STR_LIT("drop"), &arg_types, true)) {
       EInstr alloc = {
         EInstrKindAlloc,
         { .alloc = { {}, vars.len } },
@@ -798,7 +798,7 @@ static bool generate_drops_for_tuples(EIr *ir, Varss *varss,
       };
       EType *arg_type_ptr = &arg_type;
       ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-      if (get_proc(ir, STR_LIT("drop"), &arg_types))
+      if (get_proc(ir, STR_LIT("drop"), &arg_types, true))
         ++droppable_fields_len;
     }
 
@@ -815,7 +815,7 @@ static bool generate_drops_for_tuples(EIr *ir, Varss *varss,
     };
     EType *arg_type_ptr = &arg_type;
     ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
-    EProc *existing_drop = get_proc(ir, STR_LIT("drop"), &arg_types);
+    EProc *existing_drop = get_proc(ir, STR_LIT("drop"), &arg_types, true);
     if (existing_drop) {
       if (droppable_fields_len == amounts_of_drops_for_tuples[i])
         continue;
@@ -1136,6 +1136,20 @@ static void patch_statics(EIr *ir, EInstrs *instrs, Vars *vars) {
   }
 }
 
+static bool is_movable(EIr *ir, EType *type) {
+  EType arg_type = {
+    ETypeKindPtr,
+    { .ptr_target = type },
+    {},
+    NULL,
+    0,
+    false,
+  };
+  EType *arg_type_ptr = &arg_type;
+  ETypeRefs arg_types = { &arg_type_ptr, 1, 1 };
+  return get_proc(ir, STR_LIT("drop"), &arg_types, true) != NULL;
+}
+
 bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
   bool found_main = false;
   VarSubstitutions var_substs = {0};
@@ -1192,9 +1206,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
       if (instr->kind == EInstrKindCopy &&
           instr->as.copy.src_index < varss->items[i].len) {
         Var *src = varss->items[i].items + instr->as.copy.src_index;
-        if (src->type.kind == ETypeKindStruct ||
-            src->type.kind == ETypeKindArray ||
-            src->type.kind == ETypeKindTuple) {
+        if (is_movable(ir, &src->type)) {
           VarSubstitution var_subst = {
             j,
             instr->as.copy.dest_index,
@@ -1272,9 +1284,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
         }
 
         if (instr->as.copy.is_explicit &&
-            (src->type.kind == ETypeKindStruct ||
-             src->type.kind == ETypeKindArray ||
-             src->type.kind == ETypeKindTuple)) {
+            is_movable(ir, &src->type)) {
           src->moved = true;
           src->moved_loc = instr->loc;
         }
@@ -1332,9 +1342,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           CHECK_VAR(instr->as.call.arg_indices.items[k], (Str) {0}, k, true);
 
           Var *arg = varss->items[i].items + instr->as.call.arg_indices.items[k];
-          if (arg->type.kind == ETypeKindStruct ||
-              arg->type.kind == ETypeKindArray ||
-              arg->type.kind == ETypeKindTuple)
+          if (is_movable(ir, &arg->type))
             arg->moved = true;
           DA_APPEND(arg_types, &arg->type);
         }
@@ -1351,10 +1359,8 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
             if (generate_drops_for_tuples(ir, varss, amounts_of_drops_for_tuples, i))
               repeat = true;
           }
-        }
 
-        EProc *callee = get_proc(ir, instr->as.call.name, &arg_types);
-        if (is_drop) {
+          EProc *callee = get_proc(ir, instr->as.call.name, &arg_types, true);
           if (!callee ||
               varss->items[i].items[instr[-1].as.ref.src_index].moved ||
               varss->items[i].items[instr[-1].as.ref.src_index].returned) {
@@ -1363,13 +1369,16 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
               remove_instr(&proc->instrs, j - 2);
             j -= 3;
           }
-        } else if (!callee) {
-          CERROR("Procedure ");
-          fprintf_proc_signature(stderr, instr->as.call.name, &arg_types);
-          fprintf(stderr, " was not declared or defined\n");
-          if (arg_types.items)
-            free(arg_types.items);
-          goto fail;
+        } else {
+          EProc *callee = get_proc(ir, instr->as.call.name, &arg_types, false);
+          if (!callee) {
+            CERROR("Procedure ");
+            fprintf_proc_signature(stderr, instr->as.call.name, &arg_types);
+            fprintf(stderr, " was not declared or defined\n");
+            if (arg_types.items)
+              free(arg_types.items);
+            goto fail;
+          }
         }
 
         if (arg_types.items)
@@ -1384,14 +1393,12 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           CHECK_VAR(instr->as.call_assign.arg_indices.items[k], (Str) {0}, k, true);
 
           Var *arg = varss->items[i].items + instr->as.call_assign.arg_indices.items[k];
-          if (arg->type.kind == ETypeKindStruct ||
-              arg->type.kind == ETypeKindArray ||
-              arg->type.kind == ETypeKindTuple)
+          if (is_movable(ir, &arg->type))
             arg->moved = true;
           DA_APPEND(arg_types, &arg->type);
         }
 
-        instr->as.call_assign.callee = get_proc(ir, instr->as.call_assign.name, &arg_types);
+        instr->as.call_assign.callee = get_proc(ir, instr->as.call_assign.name, &arg_types, false);
         if (!instr->as.call_assign.callee) {
           CERROR("Procedure ");
           fprintf_proc_signature(stderr, instr->as.call_assign.name, &arg_types);
@@ -1445,9 +1452,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           goto fail;
         }
 
-        if (var->type.kind == ETypeKindStruct ||
-            var->type.kind == ETypeKindArray ||
-            var->type.kind == ETypeKindTuple)
+        if (is_movable(ir, &var->type))
           var->moved = true;
       } break;
 
@@ -1774,36 +1779,8 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
             goto fail;
           }
 
-          if (is_ptr) {
-            CERROR("`ptr` field of str type is read-only\n");
-            goto fail;
-          }
-
-          EType type = { ETypeKindU32, {}, {}, NULL, 0, false };
-          if (!type_eq(&src->type, &type)) {
-            Str field_type_str = get_type_str(&type);
-            Str src_type_str = get_type_str(&src->type);
-            CERRORF("Cannot assign value of type "STR_FMT" to a field of type "STR_FMT"\n",
-                    STR_ARG(src_type_str), STR_ARG(field_type_str));
-            free_type_str(field_type_str, &type);
-            free_type_str(src_type_str, &src->type);
-            goto fail;
-          }
-
-          EInstr replacement = {
-            EInstrKindCopyToOffset,
-            {
-              .copy_to_offset = {
-                instr->as.copy_to_field.dest_name,
-                instr->as.copy_to_field.dest_index,
-                0,
-                instr->as.copy_to_field.src_name,
-                instr->as.copy_to_field.src_index,
-              },
-            },
-            instr->loc,
-          };
-          *instr = replacement;
+          CERROR("Fields of str type are read-only\n");
+          goto fail;
         }
       } break;
 
@@ -1936,71 +1913,205 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
               false,
             };
             DA_APPEND(varss->items[i], new_var);
-            EInstr new_instr0 = {
-              EInstrKindAlloc,
-              {
-                .alloc = {
-                  {},
-                  varss->items[i].len - 1,
+
+            if (src->type.kind == ETypeKindPtr) {
+              EInstr new_instr0 = {
+                EInstrKindCopyFromOffset,
+                {
+                  .copy_from_offset = {
+                    instr->as.copy_from_field.dest_name,
+                    instr->as.copy_from_field.dest_index,
+                    instr->as.copy_from_field.src_name,
+                    instr->as.copy_from_field.src_index,
+                    0,
+                    true,
+                    false,
+                    instr->as.copy_from_field.is_ref_explicit,
+                  },
                 },
-              },
-              {},
-            };
-            EInstr new_instr1 = {
-              EInstrKindStore,
-              {
-                .store = {
-                  {},
-                  varss->items[i].len - 1,
-                  {
-                    ETypeKindU64,
+                instr->loc,
+              };
+              EInstr new_instr1 = {
+                EInstrKindAlloc,
+                {
+                  .alloc = {
+                    {},
+                    varss->items[i].len - 1,
+                  },
+                },
+                {},
+              };
+              EInstr new_instr2 = {
+                EInstrKindStore,
+                {
+                  .store = {
+                    {},
+                    varss->items[i].len - 1,
                     {
-                      ._unsigned = 4,
+                      ETypeKindU64,
+                      {
+                        ._unsigned = 4,
+                      },
                     },
                   },
                 },
-              },
-              {},
-            };
-            EInstr replacement = {
-              EInstrKindBinOp,
-              {
-                .bin_op = {
-                  instr->as.copy_from_field.dest_name,
-                  instr->as.copy_from_field.dest_index,
-                  instr->as.copy_from_field.src_name,
-                  instr->as.copy_from_field.src_index,
-                  {},
-                  varss->items[i].len - 1,
-                  EBinOpKindAdd,
+                {},
+              };
+              EInstr new_instr3 = {
+                EInstrKindBinOp,
+                {
+                  .bin_op = {
+                    instr->as.copy_from_field.dest_name,
+                    instr->as.copy_from_field.dest_index,
+                    instr->as.copy_from_field.dest_name,
+                    instr->as.copy_from_field.dest_index,
+                    {},
+                    varss->items[i].len - 1,
+                    EBinOpKindAdd,
+                  },
                 },
-              },
-              instr->loc,
-            };
-            *instr = replacement;
-            insert_instr(&proc->instrs, j, new_instr1);
-            insert_instr(&proc->instrs, j, new_instr0);
-            j += 2;
+                instr->loc,
+              };
+
+              remove_instr(&proc->instrs, j);
+              insert_instr(&proc->instrs, j, new_instr3);
+              insert_instr(&proc->instrs, j, new_instr2);
+              insert_instr(&proc->instrs, j, new_instr1);
+              insert_instr(&proc->instrs, j, new_instr0);
+              j += 3;
+            } else {
+              EInstr new_instr0 = {
+                EInstrKindAlloc,
+                {
+                  .alloc = {
+                    {},
+                    varss->items[i].len - 1,
+                  },
+                },
+                {},
+              };
+              EInstr new_instr1 = {
+                EInstrKindStore,
+                {
+                  .store = {
+                    {},
+                    varss->items[i].len - 1,
+                    {
+                      ETypeKindU64,
+                      {
+                        ._unsigned = 4,
+                      },
+                    },
+                  },
+                },
+                {},
+              };
+              EInstr new_instr2 = {
+                EInstrKindBinOp,
+                {
+                  .bin_op = {
+                    instr->as.copy_from_field.dest_name,
+                    instr->as.copy_from_field.dest_index,
+                    instr->as.copy_from_field.src_name,
+                    instr->as.copy_from_field.src_index,
+                    {},
+                    varss->items[i].len - 1,
+                    EBinOpKindAdd,
+                  },
+                },
+                instr->loc,
+              };
+
+              remove_instr(&proc->instrs, j);
+              insert_instr(&proc->instrs, j, new_instr2);
+              insert_instr(&proc->instrs, j, new_instr1);
+              insert_instr(&proc->instrs, j, new_instr0);
+              j += 2;
+            }
           } else {
-            EInstr replacement = {
-              EInstrKindCopyFromOffset,
-              {
-                .copy_from_offset = {
-                  instr->as.copy_from_field.dest_name,
-                  instr->as.copy_from_field.dest_index,
-                  instr->as.copy_from_field.src_name,
-                  instr->as.copy_from_field.src_index,
-                  0,
-                  instr->as.copy_from_field.take_ref,
-                  instr->as.copy_from_field.is_ref_explicit,
+            if (src->type.kind == ETypeKindPtr) {
+              Var new_var = {
+                {},
+                { ETypeKindU64, {}, {}, NULL, 0, false },
+                false,
+                {},
+                0,
+                false,
+              };
+              DA_APPEND(varss->items[i], new_var);
+
+              EInstr new_instr0 = {
+                EInstrKindAlloc,
+                {
+                  .alloc = {
+                    {},
+                    varss->items[i].len - 1,
+                  },
                 },
-              },
-              instr->loc,
-            };
-            *instr = replacement;
+                {},
+              };
+              EInstr new_instr1 = {
+                EInstrKindCopyFromOffset,
+                {
+                  .copy_from_offset = {
+                    {},
+                    varss->items[i].len - 1,
+                    instr->as.copy_from_field.src_name,
+                    instr->as.copy_from_field.src_index,
+                    0,
+                    true,
+                    false,
+                    instr->as.copy_from_field.is_ref_explicit,
+                  },
+                },
+                instr->loc,
+              };
+              EInstr new_instr2 = {
+                EInstrKindCopyFromOffset,
+                {
+                  .copy_from_offset = {
+                    instr->as.copy_from_field.dest_name,
+                    instr->as.copy_from_field.dest_index,
+                    {},
+                    varss->items[i].len - 1,
+                    0,
+                    true,
+                    instr->as.copy_from_field.take_ref,
+                    instr->as.copy_from_field.is_ref_explicit,
+                  },
+                },
+                instr->loc,
+              };
+
+              remove_instr(&proc->instrs, j);
+              insert_instr(&proc->instrs, j, new_instr2);
+              insert_instr(&proc->instrs, j, new_instr1);
+              insert_instr(&proc->instrs, j, new_instr0);
+              j += 2;
+            } else {
+              EInstr replacement = {
+                EInstrKindCopyFromOffset,
+                {
+                  .copy_from_offset = {
+                    instr->as.copy_from_field.dest_name,
+                    instr->as.copy_from_field.dest_index,
+                    instr->as.copy_from_field.src_name,
+                    instr->as.copy_from_field.src_index,
+                    0,
+                    false,
+                    instr->as.copy_from_field.take_ref,
+                    instr->as.copy_from_field.is_ref_explicit,
+                  },
+                },
+                instr->loc,
+              };
+
+              *instr = replacement;
+            }
           }
         }
 
+        instr = proc->instrs.items + j;
         dest = varss->items[i].items + instr->as.copy_from_field.dest_index;
         if (instr->as.copy_from_field.is_ref_explicit) {
           EType new_type;

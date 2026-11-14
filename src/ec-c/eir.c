@@ -114,22 +114,24 @@ u32 get_type_size(EIr *ir, EType *type) {
   return 0;
 }
 
-EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types) {
-  u32 index = str_find(name, STR_LIT("::"));
-  if (index != (u32) -1) {
-    Str prefix = { name.ptr, index };
+EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types, bool ignore_paths) {
+  if (!ignore_paths) {
+    u32 index = str_find(name, STR_LIT("::"));
+    if (index != (u32) -1) {
+      Str prefix = { name.ptr, index };
 
-    name.ptr += index + 2;
-    name.len -= index + 2;
+      name.ptr += index + 2;
+      name.len -= index + 2;
 
-    for (u32 i = 0; i < ir->module_deps.len; ++i) {
-      EModuleDep *dep = ir->module_deps.items + i;
+      for (u32 i = 0; i < ir->module_deps.len; ++i) {
+        EModuleDep *dep = ir->module_deps.items + i;
 
-      if (str_eq(dep->path.items[dep->path.len - 1], prefix))
-        return get_proc(&dep->ir, name, arg_types);
+        if (str_eq(dep->path.items[dep->path.len - 1], prefix))
+          return get_proc(&dep->ir, name, arg_types, ignore_paths);
+      }
+
+      return NULL;
     }
-
-    return NULL;
   }
 
   for (u32 i = 0; i < ir->procs.len; ++i) {
@@ -156,7 +158,13 @@ EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types) {
 
     for (u32 j = 0; j < dep->imports.len; ++j)
       if (str_eq(dep->imports.items[j], name))
-        return get_proc(&dep->ir, name, arg_types);
+        return get_proc(&dep->ir, name, arg_types, ignore_paths);
+
+    if (ignore_paths) {
+      EProc *proc = get_proc(&dep->ir, name, arg_types, ignore_paths);
+      if (proc)
+        return proc;
+    }
   }
 
   return NULL;
@@ -165,39 +173,43 @@ EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types) {
 EModulePath get_proc_path(EIr *ir, Str name,
                           Indices *arg_indices,
                           Vars *vars,
-                          EModulePath *path) {
-  u32 index = str_find(name, STR_LIT("::"));
-  if (index != (u32) -1) {
-    Str prefix = { name.ptr, index };
+                          EModulePath *path,
+                          bool ignore_paths) {
+  if (!ignore_paths) {
+    u32 index = str_find(name, STR_LIT("::"));
+    if (index != (u32) -1) {
+      Str prefix = { name.ptr, index };
 
-    name.ptr += index + 2;
-    name.len -= index + 2;
+      name.ptr += index + 2;
+      name.len -= index + 2;
 
-    EModulePath temp_path = *path;
-    if (temp_path.len > 0)
+      EModulePath temp_path = *path;
+      if (temp_path.len > 0)
       --temp_path.len;
 
-    for (u32 i = 0; i < ir->module_deps.len; ++i) {
-      EModuleDep *dep = ir->module_deps.items + i;
+      for (u32 i = 0; i < ir->module_deps.len; ++i) {
+        EModuleDep *dep = ir->module_deps.items + i;
 
-      if (str_eq(dep->path.items[dep->path.len - 1], prefix)) {
-        EModulePath new_path;
-        if (dep->is_submodule)
-          new_path = merge_module_paths(&temp_path, &dep->path);
-        else
-          new_path = dup_module_path(&dep->path);
+        if (str_eq(dep->path.items[dep->path.len - 1], prefix)) {
+          EModulePath new_path;
+          if (dep->is_submodule)
+            new_path = merge_module_paths(&temp_path, &dep->path);
+          else
+            new_path = dup_module_path(&dep->path);
 
-        EModulePath result =
-          get_proc_path(&dep->ir, name, arg_indices, vars, &new_path);
+          EModulePath result =
+            get_proc_path(&dep->ir, name, arg_indices,
+                          vars, &new_path, ignore_paths);
 
-        if (result.len == 0)
-          free(new_path.items);
+          if (result.len == 0)
+            free(new_path.items);
 
-        return result;
+          return result;
+        }
       }
-    }
 
-    return (EModulePath) {0};
+      return (EModulePath) {0};
+    }
   }
 
   for (u32 i = 0; i < ir->procs.len; ++i) {
@@ -237,13 +249,22 @@ EModulePath get_proc_path(EIr *ir, Str name,
     }
 
     if (found) {
-      EModulePath new_path;
       if (dep->is_submodule)
-        new_path = merge_module_paths(&temp_path, &dep->path);
+        return merge_module_paths(&temp_path, &dep->path);
       else
-        new_path = dup_module_path(&dep->path);
+        return dup_module_path(&dep->path);
+    }
 
-      return new_path;
+    if (ignore_paths) {
+      EModulePath new_path = merge_module_paths(&temp_path, &dep->path);
+
+      EModulePath result =
+        get_proc_path(&dep->ir, name, arg_indices,
+                      vars, &new_path, ignore_paths);
+      if (result.len > 0)
+        return result;
+      else
+        free(new_path.items);
     }
   }
 

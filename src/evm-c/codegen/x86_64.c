@@ -394,15 +394,21 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
                         Str proc_name, u32 total_space_used) {
   Instr *instr = instrs->items + index;
 
+  u32 *dest = get_dest(instr);
+  if (dest)
+    locs->items[*dest].has_imm_value = false;
+
   switch (instr->kind) {
   case InstrKindAlloc: break;
 
   case InstrKindStore: {
-    if (locs->items[instr->as.store.index].uses > 1) {
-      locs->items[instr->as.store.index].kind = instr->as.store.value.kind;
+    VarLoc *dest_loc = locs->items + instr->as.store.index;
+
+    if (dest_loc->uses > 0) {
+      dest_loc->kind = instr->as.store.value.kind;
 
       write_cstr(stream, "  mov ");
-      write_loc(stream, locs->items + instr->as.store.index);
+      write_loc(stream, dest_loc);
       write_cstr(stream, ",");
       switch (instr->as.store.value.kind) {
       case ValueKindSigned: {
@@ -414,8 +420,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       } break;
       }
     } else {
-      locs->items[instr->as.store.index].has_imm_value = true;
-      locs->items[instr->as.store.index].imm_value = instr->as.store.value.as._signed;
+      dest_loc->has_imm_value = true;
+      dest_loc->imm_value = instr->as.store.value.as._signed;
     }
   } break;
 
@@ -424,7 +430,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *src_loc = locs->items + instr->as.copy.src_index;
 
     dest_loc->kind = src_loc->kind;
-    dest_loc->has_imm_value = false;
 
     if (dest_loc->value != src_loc->value || dest_loc->is_arg != src_loc->is_arg) {
       if (dest_loc->size <= 8) {
@@ -461,8 +466,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   } break;
 
   case InstrKindBinOp: {
-    locs->items[instr->as.bin_op.dest_index].has_imm_value = false;
-
     switch (instr->as.bin_op.kind) {
     case BinOpKindAddInt: {
       write_basic_op(stream, locs, instr->as.bin_op.dest_index,
@@ -669,7 +672,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       arg_indices = &instr->as.call_assign.arg_indices;
       loc = locs->items + instr->as.call_assign.dest_index;
       loc->kind = instr->as.call_assign.return_kind;
-      loc->has_imm_value = false;
     } else if (instr->kind == InstrKindCallRef) {
       index = instr->as.call_ref.index;
       arg_indices = &instr->as.call_ref.arg_indices;
@@ -678,7 +680,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       arg_indices = &instr->as.call_ref_assign.arg_indices;
       loc = locs->items + instr->as.call_ref_assign.dest_index;
       loc->kind = instr->as.call_ref_assign.return_kind;
-      loc->has_imm_value = false;
     }
 
     bool is_tail = str_eq(name, proc_name) &&
@@ -943,7 +944,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindRef: {
     locs->items[instr->as.ref.dest_index].kind = ValueKindUnsigned;
-    locs->items[instr->as.ref.dest_index].has_imm_value = false;
 
     write_cstr(stream, "  lea ");
     write_loc_ensure_in_reg(stream, locs->items + instr->as.ref.dest_index, 0);
@@ -1037,7 +1037,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *src_loc = locs->items + instr->as.copy_from_ref.src_index;
 
     dest_loc->kind = instr->as.copy_from_ref.src_target_kind;
-    dest_loc->has_imm_value = false;
 
     if (instr->as.copy_from_ref.src_offset_index != (u32) -1) {
       if (is_valid_index_mul(dest_loc->size)) {
@@ -1139,7 +1138,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindStoreData: {
     locs->items[instr->as.store_data.index].kind = ValueKindUnsigned;
-    locs->items[instr->as.store_data.index].has_imm_value = false;
 
     write_cstr(stream, "  lea ");
     write_loc_ensure_in_reg(stream, locs->items + instr->as.store_data.index, 0);
@@ -1158,7 +1156,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindConvert: {
     locs->items[instr->as.convert.dest_index].kind = instr->as.convert.dest_kind;
-    locs->items[instr->as.convert.dest_index].has_imm_value = false;
 
     u32 dest_size = get_segments_size_x86_64(&instr->as.convert.dest_segments);
     ValueKind src_kind = locs->items[instr->as.convert.src_index].kind;
@@ -1284,7 +1281,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *src_loc = locs->items + instr->as.copy_from_ref_fixed.src_index;
 
     dest_loc->kind = instr->as.copy_from_ref_fixed.src_target_kind;
-    dest_loc->has_imm_value = false;
 
     u32 index = instr->as.copy_from_ref_fixed.src_segments.len - 1;
     i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[index].offset;
@@ -1371,7 +1367,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindRefProc: {
     locs->items[instr->as.ref_proc.dest_index].kind = ValueKindUnsigned;
-    locs->items[instr->as.ref_proc.dest_index].has_imm_value = false;
 
     write_cstr(stream, "  lea ");
     write_loc_ensure_in_reg(stream, locs->items + instr->as.ref_proc.dest_index, 0);
@@ -1394,7 +1389,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *dest_loc = locs->items + instr->as.size_of.dest_index;
     u32 size = get_segments_size_x86_64(&instr->as.size_of.segments);
 
-    if (dest_loc->uses > 1) {
+    if (dest_loc->uses > 0) {
       dest_loc->kind = ValueKindUnsigned;
 
       write_cstr(stream, "  mov ");
@@ -1408,7 +1403,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindStoreUninit: {
     locs->items[instr->as.store_uninit.index].kind = ValueKindUnsigned;
-    locs->items[instr->as.store_uninit.index].has_imm_value = false;
 
     write_cstr(stream, "  lea ");
     write_loc_ensure_in_reg(stream, locs->items + instr->as.store_uninit.index, 0);
@@ -1596,7 +1590,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       if (proc->instrs.items[j].has_label)
         fprintf(stream, ".l%u:\n", j);
       if (proc->instrs.items[j].has_label ||
-          is_jump(proc->instrs.items + j))
+          proc->instrs.items[j].kind == InstrKindCopyToRef ||
+          proc->instrs.items[j].kind == InstrKindCopyToRefFixed)
         for (u32 k = 0; k < locs.cap; ++k)
           locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->instrs, j, &locs, &jump_opt,
@@ -1619,7 +1614,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       if (proc->last_instrs.items[j].has_label)
         fprintf(stream, ".l%u:\n", j + proc->instrs.len);
       if (proc->last_instrs.items[j].has_label ||
-          is_jump(proc->last_instrs.items + j))
+          proc->last_instrs.items[j].kind == InstrKindCopyToRef ||
+          proc->last_instrs.items[j].kind == InstrKindCopyToRefFixed)
         for (u32 k = 0; k < locs.cap; ++k)
           locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->last_instrs, j, &locs, &jump_opt,

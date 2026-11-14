@@ -304,7 +304,8 @@ static void end_vars_scope(Parser *parser, u32 prev_begin) {
   EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
 
   u32 len = vars->len;
-  for (u32 i = len; i > parser->scope_begin; --i) {
+  u32 end = prev_begin == (u32) -1 ? 0 : parser->scope_begin;
+  for (u32 i = len; i > end; --i) {
     if (vars->items[i - 1].name.len > 0 &&
         vars->items[i - 1].scope_end_instr == 0) {
       Indices arg_indices = {0};
@@ -738,13 +739,12 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
     case TT_STR: {
       u32 index = parser->ir->data.len;
 
-      u8 *data = malloc(4 + token.lexeme.len - 1 + 1);
+      u8 *data = malloc(4 + token.lexeme.len - 2 + 1);
       *(u32 *) data = token.lexeme.len - 2;
       memcpy(data + 4, token.lexeme.ptr + 1, token.lexeme.len - 2);
       data[4 + token.lexeme.len - 2] = 0;
-      data[4 + token.lexeme.len - 1] = 1;
 
-      emit_data(&parser->ir->data, data, 4 + token.lexeme.len - 1 + 1);
+      emit_data(&parser->ir->data, data, 4 + token.lexeme.len - 2 + 1);
 
       emit_instr(
         &parser->ir->procs,
@@ -954,8 +954,6 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
             parser_parse_expr(parser, (Str) {0}, arg_index);
 
-            make_last_copy_returned(parser);
-
             if (parser_peek_token(parser, &token) == TokenStatusEOF || token.id != TT_CPAREN)
               parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
           }
@@ -989,8 +987,6 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             parser_expect_token(parser, MASK(TT_IDENT), "identifier");
             parser_expect_token(parser, MASK(TT_SET), "`=`");
             parser_parse_expr(parser, (Str) {0}, element_index);
-
-            make_last_copy_returned(parser); 
 
             emit_instr(
               &parser->ir->procs,
@@ -1058,8 +1054,6 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
           parser_parse_expr(parser, (Str) {0}, arg_index);
 
-          make_last_copy_returned(parser);
-
           if (parser_peek_token(parser, &token) == TokenStatusEOF || token.id != TT_CPAREN)
             parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
         }
@@ -1093,8 +1087,6 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           parser_expect_token(parser, MASK(TT_IDENT), "identifier");
           parser_expect_token(parser, MASK(TT_SET), "`=`");
           parser_parse_expr(parser, (Str) {0}, element_index);
-
-         make_last_copy_returned(parser); 
 
           emit_instr(
             &parser->ir->procs,
@@ -1270,6 +1262,7 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
             {},
             temp0_index,
             str_to_u32(field_name_token.lexeme),
+            false,
             not_last,
             ref_token != NULL,
           },
@@ -1675,8 +1668,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
       parser_expect_token(parser, MASK(TT_SET), "`=`");
       parser_parse_expr(parser, (Str) {0}, index);
 
-      make_last_copy_returned(parser);
-
       EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
 
       get_var_by_index(parser->varss, index)->name = name_token.lexeme;
@@ -1706,8 +1697,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
       parser_expect_token(parser, MASK(TT_SET), "`=`");
       parser_parse_expr(parser, (Str) {0}, index);
 
-      make_last_copy_returned(parser);
-
       for (u32 i = 0; i < name_tokens.len; ++i) {
         Token *name_token = name_tokens.items + i;
         u32 field_index = alloc_var(parser, name_token->lexeme, *name_token);
@@ -1722,6 +1711,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
             {},
             index,
             i,
+            false,
+            false,
+            false,
           },
         );
       }
@@ -1766,8 +1758,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
         parser_parse_expr(parser, name_token.lexeme, index);
       }
 
-      make_last_copy_returned(parser);
-
       EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
       EInstr *instr = proc->instrs.items + proc->instrs.len - 1;
       if (instr->kind == EInstrKindCopy)
@@ -1776,8 +1766,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
       u32 index = get_var_index(parser->varss, name_token.lexeme);
       u32 temp_index = alloc_var(parser, (Str) {0}, token);
       parser_parse_expr(parser, (Str) {0}, temp_index);
-
-      make_last_copy_returned(parser);
 
       emit_instr(
         &parser->ir->procs,
@@ -1803,8 +1791,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
         DA_APPEND(arg_indices, arg_index);
 
         parser_parse_expr(parser, (Str) {0}, arg_index);
-
-        make_last_copy_returned(parser);
 
         if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
             temp_token.id != TT_CPAREN)
@@ -1841,6 +1827,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
                 get_var_index(parser->varss, name_token.lexeme),
                 field_name_token.lexeme,
                 true,
+                false,
               },
             );
           } else {
@@ -1854,7 +1841,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
                 name_token.lexeme,
                 get_var_index(parser->varss, name_token.lexeme),
                 str_to_u32(field_name_token.lexeme),
+                false,
                 true,
+                false,
               },
             );
           }
@@ -1864,8 +1853,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
           u32 new_index = alloc_var(parser, (Str) {0}, token);
           parser_parse_expr(parser, (Str) {0}, new_index);
-
-          make_last_copy_returned(parser);
 
           if (field_name_token.id == TT_IDENT) {
             emit_instr(
@@ -1926,8 +1913,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
           u32 new_index = alloc_var(parser, (Str) {0}, token);
           parser_parse_expr(parser, (Str) {0}, new_index);
 
-          make_last_copy_returned(parser);
-
           emit_instr(
             &parser->ir->procs,
             token,
@@ -1979,6 +1964,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
                   temp0_index,
                   field_name_token.lexeme,
                   true,
+                  false,
                 },
               );
             } else {
@@ -1992,7 +1978,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
                   {},
                   temp0_index,
                   str_to_u32(field_name_token.lexeme),
+                  false,
                   true,
+                  false,
                 },
               );
             }
@@ -2020,8 +2008,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
           u32 new_index = alloc_var(parser, (Str) {0}, temp_token);
           parser_parse_expr(parser, (Str) {0}, new_index);
-
-          make_last_copy_returned(parser);
 
           if (token.id == TT_DOT) {
             if (field_name_token.id == TT_IDENT) {
@@ -2115,6 +2101,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
     }
     parser_expect_token(parser, MASK(TT_END), "`end`");
 
+    end_vars_scope(parser, prev_scope_begin);
+
     emit_instr(
       &parser->ir->procs,
       token,
@@ -2123,8 +2111,6 @@ static void parser_parse_stmt_impl(Parser *parser) {
     );
 
     instrs->items[jump_index].as.jump_if_not.target = instrs->len;
-
-    end_vars_scope(parser, prev_scope_begin);
   } else if (token.id == TT_IF) {
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
     Vars *vars = parser->varss->items + parser->varss->len - 1;

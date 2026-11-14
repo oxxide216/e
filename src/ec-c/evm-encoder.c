@@ -384,7 +384,8 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           EModulePath temp_path =
             get_proc_path(ir, instr->as.call.name,
                           &instr->as.call.arg_indices,
-                          varss->items + i, path);
+                          varss->items + i, path,
+                          str_eq(instr->as.call.name, STR_LIT("drop")));
           Str mangled_name =
             mangle_callee_name(instr->as.call.name,
                                &instr->as.call.arg_indices,
@@ -414,7 +415,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           EModulePath temp_path =
             get_proc_path(ir, instr->as.call_assign.name,
                           &instr->as.call_assign.arg_indices,
-                          varss->items + i, path);
+                          varss->items + i, path, false);
           Str mangled_name =
             mangle_callee_name(instr->as.call_assign.name,
                                &instr->as.call_assign.arg_indices,
@@ -652,7 +653,8 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           fwrite(&src_target_kind, 1, 1, stream);
         }
 
-        bool deref = src->type.kind == ETypeKindStr ||
+        bool deref = instr->as.copy_from_offset.deref ||
+                     src->type.kind == ETypeKindStr ||
                      src->type.kind == ETypeKindPtr ||
                      src->type.is_implicit_ptr;
         fwrite(&deref, 1, 1, stream);

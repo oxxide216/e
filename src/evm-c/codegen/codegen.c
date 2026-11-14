@@ -163,11 +163,10 @@ SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len,
     }
 
     i32 reg_index = get_var_loc_reg_index(&allocator, loc, i, scratch_regs_len);
-    if (reg_index == -1) {
+    if (reg_index == -1)
       loc->value = get_var_loc_stack_pos(&allocator, loc, i);
-    } else {
+    else
       loc->value = reg_index;
-    }
   }
 
   if (allocator.refs.items)

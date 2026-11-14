@@ -285,6 +285,7 @@ typedef struct {
   Str  src_name;
   u32  src_index;
   u32  src_offset;
+  bool deref;
   bool take_ref;
   bool is_ref_explicit;
 } EInstrCopyFromOffset;
@@ -446,11 +447,14 @@ void type_free(EType *type);
 
 u32 get_type_size(EIr *ir, EType *type);
 
-EProc       *get_proc(EIr *ir, Str name, ETypeRefs *arg_types);
+EProc       *get_proc(EIr *ir, Str name,
+                      ETypeRefs *arg_types,
+                      bool ignore_paths);
 EModulePath  get_proc_path(EIr *ir, Str name,
                            Indices *arg_indices,
                            Vars *vars,
-                           EModulePath *path);
+                           EModulePath *path,
+                           bool ignore_paths);
 EStruct     *get_struct(EIr *ir, Str name);
 EIr         *get_struct_ir(EIr *ir, Str name);
 EField      *get_field(EStruct *_struct, Str name);

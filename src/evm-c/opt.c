@@ -83,6 +83,8 @@ static u32 get_prop_index_by_src(CopyProps *props, u32 src) {
 static void remove_instr_props(Instrs *instrs, VarLocs *locs,
                                CopyProps *props, u32 index) {
   instrs->items[index + 1].has_label |= instrs->items[index].has_label;
+  instrs->items[instrs->len].has_label |=
+    instrs->items[instrs->len - 1].has_label;
 
   DA_REMOVE_AT(*instrs, index);
 
@@ -147,7 +149,7 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
           locs->items[prop->src].end = i;
         if (locs->items[prop->dest].uses > 0)
           --locs->items[prop->dest].uses;
-        if (locs->items[prop->dest].uses <= 1) {
+        if (locs->items[prop->dest].uses == 0) {
           remove_instr_props(instrs, locs, &props, prop->instr_index);
           --instr;
           --i;
