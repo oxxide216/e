@@ -1232,7 +1232,7 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
           {},
           temp2_index,
           not_last || ref_token != NULL,
-          not_last && ref_token != NULL,
+          !not_last && ref_token != NULL,
         },
       );
     } else if (token.id == TT_DOT) {
@@ -1257,7 +1257,7 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
             temp0_index,
             field_name_token.lexeme,
             not_last || ref_token != NULL,
-            not_last && ref_token != NULL,
+            !not_last && ref_token != NULL,
           },
         );
       } else {
