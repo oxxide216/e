@@ -157,8 +157,6 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
         return false;
       }
 
-      free(found_path.ptr);
-
       if (!check_ir(&ir->module_deps.items[i].ir,
                     &ir->module_deps.items[i].varss,
                     arena, false)) {
@@ -182,6 +180,8 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
 
         fclose(output_file);
       }
+
+      free(found_path.ptr);
     } else {
       free(full_module_path.ptr);
     }

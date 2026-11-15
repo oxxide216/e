@@ -1185,6 +1185,16 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
     if (!check_struct_existence(ir, &ir->static_vars.items[i].type))
       goto fail;
 
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    EProc *proc = ir->procs.items + i;
+
+    for (u32 j = 0; j < proc->args.len; ++j)
+      if (!check_struct_existence(ir, &proc->args.items[j].type))
+        goto fail;
+    if (!check_struct_existence(ir, &proc->return_type))
+      goto fail;
+  }
+
   u32 procs_len = ir->procs.len;
 
   u8 *amounts_of_drops_for_structs = alloca(ir->structs.len);
@@ -1201,12 +1211,6 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
         found_main = true;
       }
     }
-
-    for (u32 j = 0; j < proc->args.len; ++j)
-      if (!check_struct_existence(ir, &proc->args.items[j].type))
-        goto fail;
-    if (!check_struct_existence(ir, &proc->return_type))
-      goto fail;
 
     collect_consts(ir, &proc->instrs, varss->items + i, arena);
     patch_statics(ir, &proc->instrs, varss->items + i);

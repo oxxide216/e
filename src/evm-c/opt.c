@@ -147,6 +147,7 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
       if (index != (u32) -1) {
         CopyProp *prop = props.items + index;
         *arg = prop->src;
+        locs->items[prop->src].is_stack_only |= locs->items[prop->dest].is_stack_only;
         ++locs->items[prop->src].uses;
         if (locs->items[prop->src].end < i)
           locs->items[prop->src].end = i;

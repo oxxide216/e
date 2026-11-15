@@ -436,6 +436,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   if (dest)
     locs->items[*dest].has_imm_value = false;
 
+  if (instr->kind != InstrKindJumpIf &&
+      instr->kind != InstrKindJumpIfNot &&
+      (instr->kind != InstrKindBinOp ||
+       instr->as.bin_op.kind < BinOpKindEqInt ||
+       instr->as.bin_op.kind > BinOpKindGeInt))
+    jump_opt->applied = false;
+
   switch (instr->kind) {
   case InstrKindAlloc: break;
 
@@ -675,8 +682,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
       jump_opt->applied =
         index + 1 < instrs->len &&
-        (instr[1].kind == InstrKindJumpIf ||
-         instr[1].kind == InstrKindJumpIfNot);
+        ((instr[1].kind == InstrKindJumpIf &&
+          instr[1].as.jump_if.cond_index == instr->as.bin_op.dest_index) ||
+         (instr[1].kind == InstrKindJumpIfNot &&
+          instr[1].as.jump_if_not.cond_index == instr->as.bin_op.dest_index));
       if (jump_opt->applied) {
         jump_opt->bin_op_kind = instr->as.bin_op.kind;
         jump_opt->value_kind = locs->items[instr->as.bin_op.src0_index].kind;
@@ -684,9 +693,11 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         u32 index = instr->as.bin_op.kind - BinOpKindEqInt +
                     6 * (locs->items[instr->as.bin_op.src0_index].kind == ValueKindUnsigned);
 
-        write_cstr(stream, "  mov ");
-        write_loc(stream, locs->items + instr->as.bin_op.dest_index);
-        write_cstr(stream, ",0\n");
+        if (locs->items[instr->as.bin_op.dest_index].size > 1) {
+          write_cstr(stream, "  mov ");
+          write_loc(stream, locs->items + instr->as.bin_op.dest_index);
+          write_cstr(stream, ",0\n");
+        }
 
         write_cstr(stream, "  ");
         write_cstr(stream, cmp_mnemonics[index]);
@@ -1501,21 +1512,20 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
     dest_loc->kind = src_loc->kind;
 
-    if (dest_loc->value != src_loc->value) {
-      if (dest_loc->value < 0)
-        ensure_in_reg(stream, src_loc, 0, false);
+    ensure_not_imm(stream, src_loc, 0);
+
+    write_cstr(stream, "  cmp ");
+    write_loc_ensure_not_imm(stream, src_loc, 0);
+    write_cstr(stream, ",0\n");
+
+    if (dest_loc->size > 1) {
       write_cstr(stream, "  mov ");
       write_loc(stream, dest_loc);
-      write_cstr(stream, ",");
-      if (dest_loc->value < 0)
-        write_loc_ensure_in_reg(stream, src_loc, 0);
-      else
-        write_loc(stream, src_loc);
-      write_cstr(stream, "\n");
+      write_cstr(stream, ",0\n");
     }
 
-    write_cstr(stream, "  not ");
-    write_loc(stream, dest_loc);
+    write_cstr(stream, "  sete ");
+    write_loc_of_size(stream, dest_loc, 1);
     write_cstr(stream, "\n");
   } break;
   }

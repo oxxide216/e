@@ -114,6 +114,7 @@
   } while (0)
 
 typedef struct {
+  u32     scope_begin;
   Indices breaks;
   Indices continues;
 } LoopCtx;
@@ -312,12 +313,11 @@ static Var *get_var_by_index(Varss *varss, u32 index) {
   return varss->items[varss->len - 1].items + index;
 }
 
-static void end_vars_scope(Parser *parser, u32 prev_begin, bool is_return) {
+static void end_vars_scope(Parser *parser, u32 prev_begin, u32 end) {
   Vars *vars = parser->varss->items + parser->varss->len - 1;
   EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
 
   u32 len = vars->len;
-  u32 end = is_return ? 0 : parser->scope_begin;
   for (u32 i = len; i > end; --i) {
     if (vars->items[i - 1].name.len > 0 &&
         vars->items[i - 1].scope_end_instr == 0) {
@@ -1342,7 +1342,7 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
 
     case TT_STAR: {
       u32 temp_index = alloc_var(parser, (Str) {0}, (Token) {});
-      parser_parse_post_expr(parser, (Str) {0}, temp_index, NULL);
+      parser_parse_unary_expr(parser, (Str) {0}, temp_index);
 
       emit_instr(
         &parser->ir->procs,
@@ -1362,7 +1362,7 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
 
     case TT_LENOF: {
       u32 temp_index = alloc_var(parser, (Str) {0}, (Token) {});
-      parser_parse_post_expr(parser, (Str) {0}, temp_index, NULL);
+      parser_parse_unary_expr(parser, (Str) {0}, temp_index);
 
       emit_instr(
         &parser->ir->procs,
@@ -1394,7 +1394,7 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
 
     case TT_NOT: {
       u32 temp_index = alloc_var(parser, (Str) {0}, (Token) {});
-      parser_parse_post_expr(parser, (Str) {0}, temp_index, NULL);
+      parser_parse_unary_expr(parser, (Str) {0}, temp_index);
 
       emit_instr(
         &parser->ir->procs,
@@ -2254,7 +2254,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       }
     }
   } else if (token.id == TT_RET) {
-    end_vars_scope(parser, (u32) -1, true);
+    end_vars_scope(parser, (u32) -1, 0);
 
     emit_instr(&parser->ir->procs, token, EInstrKindRet,);
   } else if (token.id == TT_RETVAL) {
@@ -2262,7 +2262,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
     parser_parse_expr(parser, (Str) {0}, ret_val_index);
 
     make_last_copy_returned(parser);
-    end_vars_scope(parser, (u32) -1, true);
+    end_vars_scope(parser, (u32) -1, 0);
 
     emit_instr(
       &parser->ir->procs,
@@ -2292,6 +2292,8 @@ static void parser_parse_stmt_impl(Parser *parser) {
     );
 
     LoopCtx loop_ctx = {0};
+    loop_ctx.scope_begin = parser->scope_begin;
+
     LoopCtx *prev_loop_ctx = parser->loop_ctx;
     parser->loop_ctx = &loop_ctx;
 
@@ -2303,7 +2305,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
 
     parser->loop_ctx = prev_loop_ctx;
 
-    end_vars_scope(parser, prev_scope_begin, false);
+    end_vars_scope(parser, prev_scope_begin, parser->scope_begin);
 
     for (u32 i = 0; i < loop_ctx.continues.len; ++i)
       instrs->items[loop_ctx.continues.items[i]].as.jump.target = instrs->len;
@@ -2350,7 +2352,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       parser_parse_stmt(parser);
     }
 
-    end_vars_scope(parser, prev_scope_begin, false);
+    end_vars_scope(parser, prev_scope_begin, parser->scope_begin);
 
     DA_APPEND(jumps_to_end_indices, instrs->len);
 
@@ -2382,7 +2384,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
         parser_parse_stmt(parser);
       }
 
-      end_vars_scope(parser, prev_scope_begin, false);
+      end_vars_scope(parser, prev_scope_begin, parser->scope_begin);
 
       DA_APPEND(jumps_to_end_indices, instrs->len);
 
@@ -2407,7 +2409,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       }
       parser_expect_token(parser, MASK(TT_END), "`end`");
 
-      end_vars_scope(parser, prev_scope_begin, false);
+      end_vars_scope(parser, prev_scope_begin, parser->scope_begin);
 
       instrs->items[jump_index].as.jump.target = instrs->len;
     } else {
@@ -2468,7 +2470,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       return;
     }
 
-    end_vars_scope(parser, (u32) -1, false);
+    end_vars_scope(parser, (u32) -1, parser->loop_ctx->scope_begin);
 
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
     DA_APPEND(parser->loop_ctx->breaks, instrs->len);
@@ -2488,7 +2490,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       return;
     }
 
-    end_vars_scope(parser, (u32) -1, false);
+    end_vars_scope(parser, (u32) -1, parser->loop_ctx->scope_begin);
 
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
     DA_APPEND(parser->loop_ctx->continues, instrs->len);
