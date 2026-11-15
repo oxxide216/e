@@ -135,6 +135,11 @@ static bool decode_instr_impl(Decoder *decoder, Instr *instr) {
     decode_buffer(decoder, &instr->as.jump.target, sizeof(instr->as.jump.target));
   } break;
 
+  case InstrKindJumpIf: {
+    decode_buffer(decoder, &instr->as.jump_if.cond_index, sizeof(instr->as.jump_if.cond_index));
+    decode_buffer(decoder, &instr->as.jump_if.target, sizeof(instr->as.jump_if.target));
+  } break;
+
   case InstrKindJumpIfNot: {
     decode_buffer(decoder, &instr->as.jump_if_not.cond_index, sizeof(instr->as.jump_if_not.cond_index));
     decode_buffer(decoder, &instr->as.jump_if_not.target, sizeof(instr->as.jump_if_not.target));

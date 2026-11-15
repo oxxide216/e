@@ -75,8 +75,15 @@
       return;                                             \
   } while (0)
 
+#define parser_parse_log(parser, dest_name, dest_index)   \
+  do {                                                    \
+    parser_parse_log_impl(parser, dest_name, dest_index); \
+    if ((parser)->has_error)                              \
+      return;                                             \
+  } while (0)
+
 #define parser_parse_expr(parser, dest_name, dest_index) \
-  parser_parse_cmp(parser, dest_name, dest_index)
+  parser_parse_log(parser, dest_name, dest_index)
 
 #define parser_parse_stmt(parser)   \
   do {                              \
@@ -404,6 +411,7 @@ static void backpatch_dest(EProc *proc, u32 starting_index, Str new_dest_name,
     case EInstrKindRet:       break;
     case EInstrKindRetVal:    break;
     case EInstrKindJump:      break;
+    case EInstrKindJumpIf:    break;
     case EInstrKindJumpIfNot: break;
 
     case EInstrKindRef: {
@@ -558,6 +566,7 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
     case EInstrKindRet:       break;
     case EInstrKindRetVal:    break;
     case EInstrKindJump:      break;
+    case EInstrKindJumpIf:    break;
     case EInstrKindJumpIfNot: break;
 
     case EInstrKindRef: {
@@ -681,7 +690,7 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
   }
 }
 
-static void parser_parse_cmp_impl(Parser *parser, Str dest_name, u32 dest_index);
+static void parser_parse_log_impl(Parser *parser, Str dest_name, u32 dest_index);
 
 static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
                                            u32 dest_index, bool is_const) {
@@ -1583,7 +1592,7 @@ static void parser_parse_bit_impl(Parser *parser, Str dest_name, u32 dest_index)
   Token token;
   u32 temp1_index = (u32) -1;
   while (parser_peek_token(parser, &token) != TokenStatusEOF &&
-         (token.id == TT_AND || token.id == TT_OR || token.id == TT_XOR)) {
+         token.id == TT_XOR) {
     parser_next_token(parser, NULL);
 
     index = (u32) -1;
@@ -1603,8 +1612,7 @@ static void parser_parse_bit_impl(Parser *parser, Str dest_name, u32 dest_index)
         temp0_index,
         {},
         temp1_index,
-        token.id == TT_AND ? EBinOpKindAnd :
-          token.id == TT_OR ? EBinOpKindOr : EBinOpKindXor,
+        EBinOpKindXor,
       },
     );
   }
@@ -1675,6 +1683,157 @@ static void parser_parse_cmp_impl(Parser *parser, Str dest_name, u32 dest_index)
   }
 
   if (index != (u32) -1) {
+    DA_REMOVE_AT(parser->ir->procs.items[parser->ir->procs.len - 1].instrs, alloc_index);
+    backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
+                   index, dest_name, dest_index, temp0_index);
+    Vars *vars = parser->varss->items + parser->varss->len - 1;
+    vars->items[dest_index].type = vars->items[temp0_index].type;
+  }
+}
+
+static void parser_parse_log_impl(Parser *parser, Str dest_name, u32 dest_index) {
+  u32 alloc_index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len;
+  u32 temp0_index = alloc_var(parser, (Str) {0}, (Token) {});
+  parser_parse_cmp(parser, (Str) {0}, temp0_index);
+  u32 index = parser->ir->procs.items[parser->ir->procs.len - 1].instrs.len - 2;
+
+  Token token;
+  while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+         (token.id == TT_AND || token.id == TT_OR)) {
+    parser_next_token(parser, NULL);
+
+    Token temp_token;
+    if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+        (temp_token.id != TT_AND && temp_token.id != TT_OR)) {
+      index = (u32) -1;
+      u32 temp1_index = alloc_var(parser, (Str) {0}, token);
+
+      parser_parse_cmp(parser, (Str) {0}, temp1_index);
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindBinOp,
+        .bin_op = {
+          {},
+          temp0_index,
+          {},
+          temp0_index,
+          {},
+          temp1_index,
+          token.id == TT_AND ? EBinOpKindAnd : EBinOpKindOr,
+        },
+      );
+
+      continue;
+    }
+
+    if (token.id == TT_AND)
+      parser_expect_token(parser, MASK(TT_AND), "`&`");
+    else if (token.id == TT_OR)
+      parser_expect_token(parser, MASK(TT_OR), "`|`");
+
+    if (token.id == TT_AND) {
+      EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+
+      u32 cond_jump_index = instrs->len;
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindJumpIfNot,
+        .jump_if_not = { temp0_index, 0 },
+      );
+
+      index = (u32) -1;
+
+      parser_parse_cmp(parser, (Str) {0}, temp0_index);
+
+      u32 jump_index = instrs->len;
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindJump,
+        .jump = { 0 },
+      );
+
+      instrs->items[cond_jump_index].as.jump_if_not.target = instrs->len;
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindStore,
+        .store = {
+          {},
+          temp0_index,
+          {
+            ETypeKindBool,
+            { ._unsigned = 0 },
+          },
+        },
+      );
+
+      instrs->items[jump_index].as.jump.target = instrs->len;
+    } else if (token.id == TT_OR) {
+      EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+
+      u32 cond_jump_index = instrs->len;
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindJumpIf,
+        .jump_if = { temp0_index, 0 },
+      );
+
+      index = (u32) -1;
+
+      parser_parse_cmp(parser, (Str) {0}, temp0_index);
+
+      u32 jump_index = instrs->len;
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindJump,
+        .jump = { 0 },
+      );
+
+      instrs->items[cond_jump_index].as.jump_if.target = instrs->len;
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindStore,
+        .store = {
+          {},
+          temp0_index,
+          {
+            ETypeKindBool,
+            { ._unsigned = 1 },
+          },
+        },
+      );
+
+      instrs->items[jump_index].as.jump.target = instrs->len;
+    }
+  }
+
+  if (index == (u32) -1) {
+    emit_instr(
+      &parser->ir->procs,
+      (Token) {},
+      EInstrKindCopy,
+      .copy = {
+        dest_name,
+        dest_index,
+        {},
+        temp0_index,
+        false,
+      },
+    );
+  } else {
     DA_REMOVE_AT(parser->ir->procs.items[parser->ir->procs.len - 1].instrs, alloc_index);
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);

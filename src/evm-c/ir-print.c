@@ -96,6 +96,12 @@ static void instr_print(Instr *instr, VarLocs *locs) {
     printf("  jump %u\n", instr->as.jump.target);
   } break;
 
+  case InstrKindJumpIf: {
+    printf("  jump %u if $%u != 0\n",
+           instr->as.jump_if.target,
+           instr->as.jump_if.cond_index);
+  } break;
+
   case InstrKindJumpIfNot: {
     printf("  jump %u if $%u == 0\n",
            instr->as.jump_if_not.target,

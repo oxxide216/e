@@ -151,6 +151,12 @@ void proc_print(EProc *proc) {
       printf("  jump to %u\n", instr->as.jump.target);
     } break;
 
+    case EInstrKindJumpIf: {
+      printf("  jump to %u if $%u != 0\n",
+             instr->as.jump_if.target,
+             instr->as.jump_if.cond_index);
+    } break;
+
     case EInstrKindJumpIfNot: {
       printf("  jump to %u if $%u == 0\n",
              instr->as.jump_if_not.target,

@@ -87,6 +87,7 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   case EInstrKindRet:            return InstrKindRet;
   case EInstrKindRetVal:         return InstrKindRetVal;
   case EInstrKindJump:           return InstrKindJump;
+  case EInstrKindJumpIf:         return InstrKindJumpIf;
   case EInstrKindJumpIfNot:      return InstrKindJumpIfNot;
   case EInstrKindRef:            return InstrKindRef;
   case EInstrKindCopyToRef:      return InstrKindCopyToRef;
@@ -442,6 +443,11 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
       case EInstrKindJump: {
         fwrite(&instr->as.jump.target, sizeof(instr->as.jump.target), 1, stream);
+      } break;
+
+      case EInstrKindJumpIf: {
+        fwrite(&instr->as.jump_if.cond_index, sizeof(instr->as.jump_if.cond_index), 1, stream);
+        fwrite(&instr->as.jump_if.target, sizeof(instr->as.jump_if.target), 1, stream);
       } break;
 
       case EInstrKindJumpIfNot: {

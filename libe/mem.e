@@ -41,9 +41,9 @@ proc alloc(size: u64) -> &u8
     let aligned_size = align(size, 16 as u64)
 
     while segment != null
-      if !segment.is_consumed &
-         ((segment.size == size) as u64 |
-          (segment.size >= aligned_size + sizeof SegmentHeader + 8 as u64) as u64) as u64
+      if !(segment.is_consumed as bool) &&
+         (segment.size == size as u64 ||
+          segment.size >= aligned_size + sizeof SegmentHeader + 8 as u64 as u64)
         break
       end
 

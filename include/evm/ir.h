@@ -29,6 +29,7 @@ typedef enum {
   InstrKindRet,
   InstrKindRetVal,
   InstrKindJump,
+  InstrKindJumpIf,
   InstrKindJumpIfNot,
   InstrKindRef,
   InstrKindCopyToRef,
@@ -116,6 +117,11 @@ typedef struct {
 typedef struct {
   u32 target;
 } InstrJump;
+
+typedef struct {
+  u32 cond_index;
+  u32 target;
+} InstrJumpIf;
 
 typedef struct {
   u32 cond_index;
@@ -227,6 +233,7 @@ typedef union {
   InstrCallAssign       call_assign;
   InstrRetVal           ret_val;
   InstrJump             jump;
+  InstrJumpIf           jump_if;
   InstrJumpIfNot        jump_if_not;
   InstrRef              ref;
   InstrCopyToRef        copy_to_ref;

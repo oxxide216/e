@@ -27,7 +27,10 @@ i32 align(i32 value, i32 base) {
 }
 
 bool is_jump(Instr *instr) {
-  return instr->kind == InstrKindJump || instr->kind == InstrKindJumpIfNot;
+  return
+    instr->kind == InstrKindJump ||
+    instr->kind == InstrKindJumpIf ||
+    instr->kind == InstrKindJumpIfNot;
 }
 
 u32 *get_dest(Instr *instr) {
@@ -57,6 +60,7 @@ u32 *get_dest(Instr *instr) {
   case InstrKindRet:       break;
   case InstrKindRetVal:    break;
   case InstrKindJump:      break;
+  case InstrKindJumpIf:    break;
   case InstrKindJumpIfNot: break;
 
   case InstrKindRef: {
@@ -114,7 +118,6 @@ u32 *get_dest(Instr *instr) {
 u32 *get_nth_arg(Instr *instr, u32 n) {
   switch (instr->kind) {
   case InstrKindAlloc: break;
-
   case InstrKindStore: break;
 
   case InstrKindCopy: {
@@ -147,6 +150,11 @@ u32 *get_nth_arg(Instr *instr, u32 n) {
   } break;
 
   case InstrKindJump: break;
+
+  case InstrKindJumpIf: {
+    if (n == 0)
+      return &instr->as.jump_if.cond_index;
+  } break;
 
   case InstrKindJumpIfNot: {
     if (n == 0)
@@ -270,6 +278,8 @@ void setup_labels(Instrs *instrs) {
 
     if (instr->kind == InstrKindJump && instr->as.jump.target <= instrs->len)
       instrs->items[instr->as.jump.target].has_label = true;
+    else if (instr->kind == InstrKindJumpIf && instr->as.jump_if.target <= instrs->len)
+      instrs->items[instr->as.jump_if.target].has_label = true;
     else if (instr->kind == InstrKindJumpIfNot && instr->as.jump_if_not.target <= instrs->len)
       instrs->items[instr->as.jump_if_not.target].has_label = true;
   }

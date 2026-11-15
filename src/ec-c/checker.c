@@ -289,6 +289,11 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
 
     case EInstrKindJump: break;
 
+    case EInstrKindJumpIf: {
+      if (instr->as.jump_if.cond_index == var_index)
+        instr->as.jump_if.cond_index = src_index;
+    } break;
+
     case EInstrKindJumpIfNot: {
       if (instr->as.jump_if_not.cond_index == var_index)
         instr->as.jump_if_not.cond_index = src_index;
@@ -872,6 +877,9 @@ static void remove_instr(EInstrs *instrs, u32 index) {
     if (instrs->items[i].kind == EInstrKindJump &&
         instrs->items[i].as.jump.target > index)
       --instrs->items[i].as.jump.target;
+    else if (instrs->items[i].kind == EInstrKindJumpIf &&
+             instrs->items[i].as.jump_if.target > index)
+      --instrs->items[i].as.jump_if.target;
     else if (instrs->items[i].kind == EInstrKindJumpIfNot &&
              instrs->items[i].as.jump_if_not.target > index)
       --instrs->items[i].as.jump_if_not.target;
@@ -1283,8 +1291,10 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
         } else if (!type_eq(&src->type, &dest->type)) {
           Str src_type_str = get_type_str(&src->type);
           Str dest_type_str = get_type_str(&dest->type);
+          --instr;
           CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
                   STR_ARG(src_type_str), STR_ARG(dest_type_str));
+          ++instr;
           free_type_str(src_type_str, &src->type);
           free_type_str(dest_type_str, &dest->type);
           goto fail;
@@ -1320,27 +1330,27 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           goto fail;
         }
 
-        EType dest_type;
+        EType new_dest_type;
         if (instr->as.bin_op.kind >= EBinOpKindEq &&
             instr->as.bin_op.kind <= EBinOpKindGe)
-          dest_type = (EType) { ETypeKindBool, {}, {}, NULL, 0, false };
+          new_dest_type = (EType) { ETypeKindBool, {}, {}, NULL, 0, false };
         else
-          dest_type = type_clone(&src0->type);
+          new_dest_type = type_clone(&src0->type);
 
         if (dest->type.kind == ETypeKindUnit) {
-          dest->type = dest_type;
-        } else if (!type_eq(&src0->type, &dest->type)) {
-          Str src0_type_str = get_type_str(&src0->type);
+          dest->type = type_clone(&new_dest_type);
+        } else if (!type_eq(&new_dest_type, &dest->type)) {
+          Str new_dest_type_str = get_type_str(&new_dest_type);
           Str dest_type_str = get_type_str(&dest->type);
           CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
-                  STR_ARG(src0_type_str), STR_ARG(dest_type_str));
-          free_type_str(src0_type_str, &src0->type);
+                  STR_ARG(new_dest_type_str), STR_ARG(dest_type_str));
+          free_type_str(new_dest_type_str, &new_dest_type);
           free_type_str(dest_type_str, &dest->type);
-          type_free(&dest_type);
+          type_free(&new_dest_type);
           goto fail;
         }
 
-        type_free(&dest_type);
+        type_free(&new_dest_type);
       } break;
 
       case EInstrKindCall: {
@@ -1464,6 +1474,17 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
       } break;
 
       case EInstrKindJump: break;
+
+      case EInstrKindJumpIf: {
+        Var *cond = varss->items[i].items + instr->as.jump_if.cond_index;
+        if (cond->type.kind < ETypeKindS8 && cond->type.kind > ETypeKindBool) {
+          Str cond_type_str = get_type_str(&cond->type);
+          CERRORF("Unexpected condition type: "STR_FMT", expected integer or boolean\n",
+                  STR_ARG(cond_type_str));
+          free_type_str(cond_type_str, &cond->type);
+          goto fail;
+        }
+      } break;
 
       case EInstrKindJumpIfNot: {
         Var *cond = varss->items[i].items + instr->as.jump_if_not.cond_index;

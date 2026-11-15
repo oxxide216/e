@@ -673,7 +673,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_loc_ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 1);
       write_cstr(stream, "\n");
 
-      jump_opt->applied = index + 1 < instrs->len && instr[1].kind == InstrKindJumpIfNot;
+      jump_opt->applied =
+        index + 1 < instrs->len &&
+        (instr[1].kind == InstrKindJumpIf ||
+         instr[1].kind == InstrKindJumpIfNot);
       if (jump_opt->applied) {
         jump_opt->bin_op_kind = instr->as.bin_op.kind;
         jump_opt->value_kind = locs->items[instr->as.bin_op.src0_index].kind;
@@ -949,6 +952,38 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindJump: {
     fprintf(stream, "  jmp .l%u\n", instr->as.jump.target);
+  } break;
+
+  case InstrKindJumpIf: {
+    if (jump_opt->applied) {
+      static char *cmp_mnemonics[] = {
+        "je",
+        "jne",
+        "jl",
+        "jle",
+        "jg",
+        "jge",
+        "je",
+        "jne",
+        "jb",
+        "jbe",
+        "ja",
+        "jae",
+      };
+
+      u32 index = jump_opt->bin_op_kind - BinOpKindEqInt +
+                  6 * (jump_opt->value_kind == ValueKindUnsigned);
+
+      write_cstr(stream, "  ");
+      write_cstr(stream, cmp_mnemonics[index]);
+      fprintf(stream, " .l%u\n", instr->as.jump_if.target);
+    } else {
+      ensure_not_imm(stream, locs->items + instr->as.jump_if.cond_index, 0);
+
+      write_cstr(stream, "  cmp ");
+      write_loc_ensure_not_imm(stream, locs->items + instr->as.jump_if.cond_index, 0);
+      fprintf(stream, ",0\n  jne .l%u\n", instr->as.jump_if.target);
+    }
   } break;
 
   case InstrKindJumpIfNot: {

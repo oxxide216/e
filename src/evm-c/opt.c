@@ -94,6 +94,9 @@ static void remove_instr_props(Instrs *instrs, VarLocs *locs,
     if (instr->kind == InstrKindJump &&
         instr->as.jump.target > index)
       --instr->as.jump.target;
+    else if (instr->kind == InstrKindJumpIf &&
+             instr->as.jump_if.target > index)
+      --instr->as.jump_if.target;
     else if (instr->kind == InstrKindJumpIfNot &&
              instr->as.jump_if_not.target > index)
       --instr->as.jump_if_not.target;
