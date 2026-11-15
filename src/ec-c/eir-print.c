@@ -303,6 +303,16 @@ void proc_print(EProc *proc) {
                 instr->as.copy_from_static.dest_name);
       printf(" = $%u\n", instr->as.copy_from_static.src_index);
     } break;
+
+    case EInstrKindNot: {
+      printf("  ");
+      var_print(instr->as.not.dest_index,
+                instr->as.not.dest_name);
+      printf(" = !");
+      var_print(instr->as.not.src_index,
+                instr->as.not.src_name);
+      printf("\n");
+    } break;
     }
   }
 

@@ -512,6 +512,13 @@ static void backpatch_dest(EProc *proc, u32 starting_index, Str new_dest_name,
         instr->as.copy_from_static.dest_index = new_dest_index;
       }
     } break;
+
+    case EInstrKindNot: {
+      if (instr->as.not.dest_index == prev_dest_index) {
+        instr->as.not.dest_name = new_dest_name;
+        instr->as.not.dest_index = new_dest_index;
+      }
+    } break;
     }
   }
 }
@@ -620,6 +627,11 @@ static void backpatch_dest_ref(EProc *proc, u32 starting_index, Str new_dest_nam
 
     case EInstrKindCopyFromStatic: {
       if (instr->as.copy_from_static.dest_index == prev_dest_index)
+        first_index = i - 1;
+    } break;
+
+    case EInstrKindNot: {
+      if (instr->as.not.dest_index == prev_dest_index)
         first_index = i - 1;
     } break;
     }
@@ -1310,7 +1322,8 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
   parser_peek_token(parser, &token);
 
   if (token.id == TT_AND || token.id == TT_STAR ||
-      token.id == TT_LENOF || token.id == TT_SIZEOF) {
+      token.id == TT_LENOF || token.id == TT_SIZEOF ||
+      token.id == TT_NOT) {
     parser_next_token(parser, NULL);
 
     switch (token.id) {
@@ -1366,6 +1379,23 @@ static void parser_parse_unary_expr_impl(Parser *parser, Str dest_name, u32 dest
           dest_name,
           dest_index,
           parser->last_type,
+        },
+      );
+    } break;
+
+    case TT_NOT: {
+      u32 temp_index = alloc_var(parser, (Str) {0}, (Token) {});
+      parser_parse_post_expr(parser, (Str) {0}, temp_index, NULL);
+
+      emit_instr(
+        &parser->ir->procs,
+        token,
+        EInstrKindNot,
+        .not = {
+          dest_name,
+          dest_index,
+          {},
+          temp_index,
         },
       );
     } break;

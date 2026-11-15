@@ -54,6 +54,7 @@ coloncolon=::
 colonset=:=
 semi=;
 dot=.
+not=!
 
 int=\-?0-9+
 ident=(a-z|A-Z|_)(a-z|A-Z|_|0-9)*

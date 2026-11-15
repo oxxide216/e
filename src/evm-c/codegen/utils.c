@@ -102,6 +102,10 @@ u32 *get_dest(Instr *instr) {
   case InstrKindStoreUninit: {
     return &instr->as.store_uninit.index;
   }
+
+  case InstrKindNot: {
+    return &instr->as.not.dest_index;
+  }
   }
 
   return NULL;
@@ -210,6 +214,11 @@ u32 *get_nth_arg(Instr *instr, u32 n) {
 
   case InstrKindSizeOf:      break;
   case InstrKindStoreUninit: break;
+
+  case InstrKindNot: {
+    if (n == 0)
+      return &instr->as.not.src_index;
+  } break;
   }
 
   return NULL;

@@ -43,6 +43,7 @@ typedef enum {
   InstrKindCallRefAssign,
   InstrKindSizeOf,
   InstrKindStoreUninit,
+  InstrKindNot,
 } InstrKind;
 
 typedef struct {
@@ -212,6 +213,11 @@ typedef struct {
   u32 uninit_index;
 } InstrStoreUninit;
 
+typedef struct {
+  u32 dest_index;
+  u32 src_index;
+} InstrNot;
+
 typedef union {
   InstrAlloc            alloc;
   InstrStore            store;
@@ -235,6 +241,7 @@ typedef union {
   InstrCallRefAssign    call_ref_assign;
   InstrSizeOf           size_of;
   InstrStoreUninit      store_uninit;
+  InstrNot              not;
 } InstrAs;
 
 typedef struct {

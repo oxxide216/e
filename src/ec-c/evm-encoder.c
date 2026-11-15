@@ -105,6 +105,7 @@ static InstrKind e_instr_kind_to_evm_instr_kind(EInstrKind kind) {
   case EInstrKindStaticRef:      return InstrKindStoreUninit;
   case EInstrKindCopyToStatic:   return InstrKindCopyToRefFixed;
   case EInstrKindCopyFromStatic: return InstrKindCopyFromRefFixed;
+  case EInstrKindNot:            return InstrKindNot;
   }
 
   return 0;
@@ -714,6 +715,11 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         bool take_ref = false;
         fwrite(&take_ref, 1, 1, stream);
        } break;
+
+      case EInstrKindNot: {
+        fwrite(&instr->as.not.dest_index, sizeof(instr->as.not.dest_index), 1, stream);
+        fwrite(&instr->as.not.src_index, sizeof(instr->as.not.src_index), 1, stream);
+      } break;
       }
     }
 

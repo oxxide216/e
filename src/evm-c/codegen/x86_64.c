@@ -1459,6 +1459,30 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "\n");
     }
   } break;
+
+  case InstrKindNot: {
+    VarLoc *dest_loc = locs->items + instr->as.not.dest_index;
+    VarLoc *src_loc = locs->items + instr->as.not.src_index;
+
+    dest_loc->kind = src_loc->kind;
+
+    if (dest_loc->value != src_loc->value) {
+      if (dest_loc->value < 0)
+        ensure_in_reg(stream, src_loc, 0, false);
+      write_cstr(stream, "  mov ");
+      write_loc(stream, dest_loc);
+      write_cstr(stream, ",");
+      if (dest_loc->value < 0)
+        write_loc_ensure_in_reg(stream, src_loc, 0);
+      else
+        write_loc(stream, src_loc);
+      write_cstr(stream, "\n");
+    }
+
+    write_cstr(stream, "  not ");
+    write_loc(stream, dest_loc);
+    write_cstr(stream, "\n");
+  } break;
   }
 }
 

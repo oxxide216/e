@@ -94,6 +94,7 @@ typedef enum {
   EInstrKindStaticRef,
   EInstrKindCopyToStatic,
   EInstrKindCopyFromStatic,
+  EInstrKindNot,
 } EInstrKind;
 
 typedef struct {
@@ -313,6 +314,13 @@ typedef struct {
   u32 src_index;
 } EInstrCopyFromStatic;
 
+typedef struct {
+  Str dest_name;
+  u32 dest_index;
+  Str src_name;
+  u32 src_index;
+} EInstrNot;
+
 typedef union {
   EInstrAlloc          alloc;
   EInstrStore          store;
@@ -340,6 +348,7 @@ typedef union {
   EInstrStaticRef      static_ref;
   EInstrCopyToStatic   copy_to_static;
   EInstrCopyFromStatic copy_from_static;
+  EInstrNot            not;
 } EInstrAs;
 
 typedef ETypeLoc EInstrLoc;

@@ -236,6 +236,12 @@ static void instr_print(Instr *instr, VarLocs *locs) {
            instr->as.store_uninit.index,
            instr->as.store_uninit.uninit_index);
   } break;
+
+  case InstrKindNot: {
+    printf("  $%u = !$%u\n",
+           instr->as.not.dest_index,
+           instr->as.not.src_index);
+  } break;
   }
 }
 

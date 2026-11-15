@@ -409,6 +409,13 @@ static void substitute_var_uses_with_its_src(EProc *proc, VarSubstitution *var_s
       if (instr->as.copy_from_static.dest_index == var_index)
         return;
     } break;
+
+    case EInstrKindNot: {
+      if (instr->as.not.src_index == var_index)
+        instr->as.not.src_index = src_index;
+      if (instr->as.not.dest_index == var_index)
+        return;
+    } break;
     }
   }
 }
@@ -2369,6 +2376,35 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
                   STR_ARG(src_type_str), STR_ARG(dest_type_str));
           free_type_str(src_type_str, src->type.ptr_target);
+          free_type_str(dest_type_str, &dest->type);
+          goto fail;
+        }
+      } break;
+
+      case EInstrKindNot: {
+        CHECK_VAR(instr->as.not.dest_index, instr->as.not.dest_name, 0, false);
+        CHECK_VAR(instr->as.not.src_index, instr->as.not.src_name, 1, true);
+
+        Var *dest = varss->items[i].items + instr->as.not.dest_index;
+        Var *src = varss->items[i].items + instr->as.not.src_index;
+
+        if (src->type.kind != ETypeKindBool && !is_int(&src->type)) {
+          Str src_type_str = get_type_str(&src->type);
+          CERRORF("Cannot perform !"STR_FMT"\n",
+                  STR_ARG(src_type_str));
+          free_type_str(src_type_str, &src->type);
+          goto fail;
+        }
+
+        if (dest->type.kind == ETypeKindUnit) {
+          dest->type = type_clone(&src->type);
+        } else if (!type_eq(&dest->type, &src->type)) {
+          Str src_type_str = get_type_str(&src->type);
+          Str dest_type_str = get_type_str(&dest->type);
+         CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
+                 STR_ARG(src_type_str),
+                 STR_ARG(dest_type_str));
+          free_type_str(src_type_str, &src->type);
           free_type_str(dest_type_str, &dest->type);
           goto fail;
         }

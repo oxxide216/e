@@ -317,6 +317,11 @@ static bool decode_instr_impl(Decoder *decoder, Instr *instr) {
     decode_buffer(decoder, &instr->as.store_uninit.index, sizeof(instr->as.store_uninit.index));
     decode_buffer(decoder, &instr->as.store_uninit.uninit_index, sizeof(instr->as.store_uninit.uninit_index));
   } break;
+
+  case InstrKindNot: {
+    decode_buffer(decoder, &instr->as.not.dest_index, sizeof(instr->as.not.dest_index));
+    decode_buffer(decoder, &instr->as.not.src_index, sizeof(instr->as.not.src_index));
+  } break;
   }
 
   return true;
