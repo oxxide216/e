@@ -107,6 +107,11 @@
   } while (0)
 
 typedef struct {
+  Indices breaks;
+  Indices continues;
+} LoopCtx;
+
+typedef struct {
   EIr         *ir;
   Varss       *varss;
   EValue       last_const_value;
@@ -117,6 +122,7 @@ typedef struct {
   Str          moduled_ident;
   Str          file_path;
   u32          scope_begin;
+  LoopCtx     *loop_ctx;
   bool         has_error;
 } Parser;
 
@@ -299,12 +305,12 @@ static Var *get_var_by_index(Varss *varss, u32 index) {
   return varss->items[varss->len - 1].items + index;
 }
 
-static void end_vars_scope(Parser *parser, u32 prev_begin) {
+static void end_vars_scope(Parser *parser, u32 prev_begin, bool is_return) {
   Vars *vars = parser->varss->items + parser->varss->len - 1;
   EProc *proc = parser->ir->procs.items + parser->ir->procs.len - 1;
 
   u32 len = vars->len;
-  u32 end = prev_begin == (u32) -1 ? 0 : parser->scope_begin;
+  u32 end = is_return ? 0 : parser->scope_begin;
   for (u32 i = len; i > end; --i) {
     if (vars->items[i - 1].name.len > 0 &&
         vars->items[i - 1].scope_end_instr == 0) {
@@ -1654,8 +1660,9 @@ static void parser_parse_stmt_impl(Parser *parser) {
                       MASK(TT_LET) | MASK(TT_IDENT) |
                       MASK(TT_RET) | MASK(TT_RETVAL) |
                       MASK(TT_WHILE) | MASK(TT_IF) |
-                      MASK(TT_ASM),
-                      "`let`, identifier, `ret`, `retval`, `while`, `if` or `asm`");
+                      MASK(TT_ASM) | MASK(TT_BREAK) |
+                      MASK(TT_CONTINUE),
+                      "`let`, identifier, `ret`, `retval`, `while`, `if`, `asm`, `break` or `continue`");
 
   if (token.id == TT_LET) {
     Token name_token;
@@ -2058,7 +2065,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       }
     }
   } else if (token.id == TT_RET) {
-    end_vars_scope(parser, (u32) -1);
+    end_vars_scope(parser, (u32) -1, true);
 
     emit_instr(&parser->ir->procs, token, EInstrKindRet,);
   } else if (token.id == TT_RETVAL) {
@@ -2066,7 +2073,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
     parser_parse_expr(parser, (Str) {0}, ret_val_index);
 
     make_last_copy_returned(parser);
-    end_vars_scope(parser, (u32) -1);
+    end_vars_scope(parser, (u32) -1, true);
 
     emit_instr(
       &parser->ir->procs,
@@ -2095,13 +2102,25 @@ static void parser_parse_stmt_impl(Parser *parser) {
       .jump_if_not = { cond_index, 0 },
     );
 
+    LoopCtx loop_ctx = {0};
+    LoopCtx *prev_loop_ctx = parser->loop_ctx;
+    parser->loop_ctx = &loop_ctx;
+
     while (parser_peek_token(parser, &token) != TokenStatusEOF &&
            token.id != TT_END) {
       parser_parse_stmt(parser);
     }
     parser_expect_token(parser, MASK(TT_END), "`end`");
 
-    end_vars_scope(parser, prev_scope_begin);
+    parser->loop_ctx = prev_loop_ctx;
+
+    end_vars_scope(parser, prev_scope_begin, false);
+
+    for (u32 i = 0; i < loop_ctx.continues.len; ++i)
+      instrs->items[loop_ctx.continues.items[i]].as.jump.target = instrs->len;
+
+    if (loop_ctx.continues.items)
+      free(loop_ctx.continues.items);
 
     emit_instr(
       &parser->ir->procs,
@@ -2111,6 +2130,12 @@ static void parser_parse_stmt_impl(Parser *parser) {
     );
 
     instrs->items[jump_index].as.jump_if_not.target = instrs->len;
+
+    for (u32 i = 0; i < loop_ctx.breaks.len; ++i)
+      instrs->items[loop_ctx.breaks.items[i]].as.jump.target = instrs->len;
+
+    if (loop_ctx.breaks.items)
+      free(loop_ctx.breaks.items);
   } else if (token.id == TT_IF) {
     EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
     Vars *vars = parser->varss->items + parser->varss->len - 1;
@@ -2136,7 +2161,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       parser_parse_stmt(parser);
     }
 
-    end_vars_scope(parser, prev_scope_begin);
+    end_vars_scope(parser, prev_scope_begin, false);
 
     DA_APPEND(jumps_to_end_indices, instrs->len);
 
@@ -2168,7 +2193,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
         parser_parse_stmt(parser);
       }
 
-      end_vars_scope(parser, prev_scope_begin);
+      end_vars_scope(parser, prev_scope_begin, false);
 
       DA_APPEND(jumps_to_end_indices, instrs->len);
 
@@ -2193,7 +2218,7 @@ static void parser_parse_stmt_impl(Parser *parser) {
       }
       parser_expect_token(parser, MASK(TT_END), "`end`");
 
-      end_vars_scope(parser, prev_scope_begin);
+      end_vars_scope(parser, prev_scope_begin, false);
 
       instrs->items[jump_index].as.jump.target = instrs->len;
     } else {
@@ -2244,6 +2269,46 @@ static void parser_parse_stmt_impl(Parser *parser) {
       token,
       EInstrKindInlineAsm,
       .inline_asm = { asm_segments },
+    );
+  } else if (token.id == TT_BREAK) {
+    if (!parser->loop_ctx) {
+      PERROR(STR_FMT":%u:%u: ", "`break` not inside of a loop\n",
+             STR_ARG(parser->file_path), token.row + 1,
+             token.col + 1);
+      parser->has_error = true;
+      return;
+    }
+
+    end_vars_scope(parser, (u32) -1, false);
+
+    EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+    DA_APPEND(parser->loop_ctx->breaks, instrs->len);
+
+    emit_instr(
+      &parser->ir->procs,
+      token,
+      EInstrKindJump,
+      .jump = { 0 },
+    );
+  } else if (token.id == TT_CONTINUE) {
+    if (!parser->loop_ctx) {
+      PERROR(STR_FMT":%u:%u: ", "`continue` not inside of a loop\n",
+             STR_ARG(parser->file_path), token.row + 1,
+             token.col + 1);
+      parser->has_error = true;
+      return;
+    }
+
+    end_vars_scope(parser, (u32) -1, false);
+
+    EInstrs *instrs = &parser->ir->procs.items[parser->ir->procs.len - 1].instrs;
+    DA_APPEND(parser->loop_ctx->continues, instrs->len);
+
+    emit_instr(
+      &parser->ir->procs,
+      token,
+      EInstrKindJump,
+      .jump = { 0 },
     );
   }
 }
@@ -2304,7 +2369,7 @@ static void parser_parse_proc_impl(Parser *parser) {
   if (instrs->len == 0 ||
       (instrs->items[instrs->len - 1].kind != EInstrKindRet &&
        instrs->items[instrs->len - 1].kind != EInstrKindRetVal))
-  end_vars_scope(parser, 0);
+  end_vars_scope(parser, 0, true);
 
   parser_expect_token(parser, MASK(TT_END), "`end`");
 }
@@ -2422,6 +2487,7 @@ bool parse(EIr *ir, Varss *varss, Arena *arena, Str code, Str file_path) {
     {},
     file_path,
     0,
+    NULL,
     false,
   };
 

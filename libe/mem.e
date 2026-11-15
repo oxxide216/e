@@ -39,9 +39,8 @@ proc alloc(size: u64) -> &u8
     let segment_ptr = &region.first_segment
     let segment = region.first_segment
     let aligned_size = align(size, 16 as u64)
-    let not_found = true
 
-    while not_found & (segment != null)
+    while segment != null
       if segment.is_consumed |
          (segment.size < size) as u64 |
          ((segment.size != size) as u64 &
@@ -49,7 +48,7 @@ proc alloc(size: u64) -> &u8
         segment_ptr = &segment.next
         segment = segment.next
       else
-        not_found = false
+        break
       end
     end
 

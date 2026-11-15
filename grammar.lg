@@ -22,6 +22,8 @@ lenof=lenof
 struct=struct
 sizeof=sizeof
 static=static
+break=break
+continue=continue
 
 oparen=\(
 cparen=\)

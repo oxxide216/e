@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] break/continue
+- [*] break/continue
 - [ ] &&/||/!
 - [ ] enums (algebraic data types)
 - [ ] Generics

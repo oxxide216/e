@@ -21,5 +21,6 @@
 /sizeof
 /static
 /cat
+/break-continue
 /test*
 /.idea/*
