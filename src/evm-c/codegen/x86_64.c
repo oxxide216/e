@@ -272,6 +272,36 @@ static void write_loc_ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_inde
   write_loc_of_size_ensure_in_reg(stream, loc, loc->size, temp_reg_index);
 }
 
+static void write_loc_ensure_not_imm(FILE *stream, VarLoc *loc, u32 temp_reg_index) {
+  if (loc->has_imm_value) {
+    write_str(stream, get_temp_regs(loc->size)[temp_reg_index]);
+
+    return;
+  }
+
+  if (loc->is_ret) {
+    write_str(stream, get_return_reg(loc->size));
+
+    return;
+  }
+
+  if (loc->is_arg) {
+    if (loc->value >= 0) {
+      write_str(stream, get_arg_regs(loc->size)[loc->value]);
+    } else {
+      u32 reg_size = loc->size <= 8 ? loc->size : 8;
+      fprintf(stream, STR_FMT"[rbp+%d]", STR_ARG(get_mem_prefix(reg_size)), -loc->value);
+    }
+  } else {
+    if (loc->value >= 0) {
+      fprintf(stream, STR_FMT, STR_ARG(get_scratch_regs(loc->size)[loc->value]));
+    } else {
+      u32 reg_size = loc->size <= 8 ? loc->size : 8;
+      fprintf(stream, STR_FMT"[rbp-%d]", STR_ARG(get_mem_prefix(reg_size)), -loc->value);
+    }
+  }
+}
+
 static void write_loc_part_of_size(FILE *stream, VarLoc *loc, u32 offset, u32 size) {
   if (loc->value >= 0) {
     if (offset != 0) {
@@ -314,6 +344,14 @@ static void ensure_in_reg_of_size(FILE *stream, VarLoc *loc, u32 size, u32 temp_
 
 static void ensure_in_reg(FILE *stream, VarLoc *loc, u32 temp_reg_index, bool ref) {
   ensure_in_reg_of_size(stream, loc, loc->size, temp_reg_index, ref);
+}
+
+static void ensure_not_imm(FILE *stream, VarLoc *loc, u32 temp_reg_index) {
+  if (loc->has_imm_value) {
+    fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(loc->size)[temp_reg_index]));
+    write_loc(stream, loc);
+    write_cstr(stream, "\n");
+  }
 }
 
 static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
@@ -626,12 +664,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         "setae",
       };
 
-      ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 0, false);
+      ensure_not_imm(stream, locs->items + instr->as.bin_op.src0_index, 0);
+      ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 1, false);
 
       write_cstr(stream, "  cmp ");
-      write_loc(stream, locs->items + instr->as.bin_op.src0_index);
+      write_loc_ensure_not_imm(stream, locs->items + instr->as.bin_op.src0_index, 0);
       write_cstr(stream, ",");
-      write_loc_ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 0);
+      write_loc_ensure_in_reg(stream, locs->items + instr->as.bin_op.src1_index, 1);
       write_cstr(stream, "\n");
 
       jump_opt->applied = index + 1 < instrs->len && instr[1].kind == InstrKindJumpIfNot;
@@ -936,8 +975,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, cmp_mnemonics[index]);
       fprintf(stream, " .l%u\n", instr->as.jump_if_not.target);
     } else {
+      ensure_not_imm(stream, locs->items + instr->as.jump_if_not.cond_index, 0);
+
       write_cstr(stream, "  cmp ");
-      write_loc(stream, locs->items + instr->as.jump_if_not.cond_index);
+      write_loc_ensure_not_imm(stream, locs->items + instr->as.jump_if_not.cond_index, 0);
       fprintf(stream, ",0\n  je .l%u\n", instr->as.jump_if_not.target);
     }
   } break;
