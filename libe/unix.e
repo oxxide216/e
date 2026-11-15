@@ -58,6 +58,19 @@ const POLLERR: s16 = 8
 const POLLHUP: s16 = 16
 const POLLNVAL: s16 = 32
 
+const AT_FDCWD: s32 = -100
+const AT_REMOVEDIR: s32 = 512
+const AT_SYMLINK_NOFOLLOW: s32 = 256
+
+const O_CREAT: s32 = 64
+const O_EXCL: s32 = 128
+const O_TRUNC: s32 = 512
+const O_APPEND: s32 = 1024
+const O_NONBLOCK: s32 = 2048
+const O_DIRECTORY: s32 = 65536
+const O_NOFOLLOW: s32 = 131072
+const O_CLOEXEC: s32 = 524288
+
 struct PollFd
   fd: s32,
   events: s16,   # Requested events
@@ -196,4 +209,71 @@ end
 
 proc exit(code: u8) -> s64
   retval syscall(60, code as s64)
+end
+
+# Open file relative to directory FD
+proc openat(dirfd: s32, filename: &u8, flags: s32, mode: s32) -> s64
+  retval syscall(257, dirfd as s64, filename as s64, flags as s64, mode as s64)
+end
+
+# Get file metadata relative to directory FD
+proc newfstatat(dirfd: s32, filename: &u8, statbuf: &FileStat, flags: s32) -> s64
+  retval syscall(262, dirfd as s64, filename as s64, statbuf as s64, flags as s64)
+end
+
+# Read directory entries
+proc getdents64(fd: s32, dirp: &u8, count: u64) -> s64
+  retval syscall(217, fd as s64, dirp as s64, count as s64)
+end
+
+# Create directory
+proc mkdirat(dirfd: s32, pathname: &u8, mode: s32) -> s64
+  retval syscall(258, dirfd as s64, pathname as s64, mode as s64)
+end
+
+# Remove file or directory
+proc unlinkat(dirfd: s32, pathname: &u8, flags: s32) -> s64
+  retval syscall(263, dirfd as s64, pathname as s64, flags as s64)
+end
+
+# Rename file
+proc renameat(olddirfd: s32, oldpath: &u8, newdirfd: s32, newpath: &u8) -> s64
+  retval syscall(264, olddirfd as s64, oldpath as s64, newdirfd as s64, newpath as s64)
+end
+
+# Create symbolic link
+proc symlinkat(target: &u8, newdirfd: s32, linkpath: &u8) -> s64
+  retval syscall(266, target as s64, newdirfd as s64, linkpath as s64)
+end
+
+# Read symbolic link
+proc readlinkat(dirfd: s32, pathname: &u8, buf: &u8, bufsiz: u64) -> s64
+  retval syscall(267, dirfd as s64, pathname as s64, buf as s64, bufsiz as s64)
+end
+
+# Duplicate file descriptor
+proc dup(fd: s32) -> s64
+  retval syscall(32, fd as s64)
+end
+
+# Duplicate file descriptor to specific number
+proc dup2(oldfd: s32, newfd: s32) -> s64
+  retval syscall(33, oldfd as s64, newfd as s64)
+end
+
+# Control file descriptor
+proc fcntl(fd: s32, cmd: s32, arg: s64) -> s64
+  retval syscall(72, fd as s64, cmd as s64, arg)
+end
+
+proc fsync(fd: s32) -> s64
+  retval syscall(74, fd as s64)
+end
+
+proc fdatasync(fd: s32) -> s64
+  retval syscall(75, fd as s64)
+end
+
+proc ftruncate(fd: s32, length: s64) -> s64
+  retval syscall(77, fd as s64, length)
 end
