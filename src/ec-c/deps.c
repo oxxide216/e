@@ -99,10 +99,7 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
               return false;
   
             loaded_cache = true;
-
-            // TODO: remove this
-            printf("Loaded "STR_FMT"\n", STR_ARG(full_cache_path));
-        } else {
+          } else {
             ERROR("Invalid cache in %s\n", full_cache_path.ptr);
             ir->module_deps.items[i].ir = (EIr) {0};
           }
@@ -127,9 +124,6 @@ bool load_module_deps(EIr *ir, Arena *arena, Str input_path,
         fprintf(stderr, "\n");
         return false;
       }
-
-      // TODO: remove this
-      printf("Compiling "STR_FMT"\n", STR_ARG(found_path));
 
       u64 hash = str_hash(code);
 
