@@ -1,5 +1,6 @@
 #include "eir.h"
 #include "utils.h"
+#include "shl/shl-log.h"
 
 EType type_clone(EType *type) {
   EType new_type = *type;
@@ -351,6 +352,61 @@ EStaticVar *get_static_var(EIr *ir, Str name) {
       return ir->static_vars.items + i;
 
   return NULL;
+}
+
+
+bool check_struct_existence(EIr *ir, EType *type) {
+  if (type->kind == ETypeKindStruct) {
+    type->_struct = get_struct(ir, type->name);
+    if (!type->_struct) {
+      PERROR(STR_FMT":%u:%u: ", "Structure "STR_FMT" was not defined\n",
+             STR_ARG(type->loc.file_path),
+             type->loc.row + 1,
+             type->loc.col + 1,
+             STR_ARG(type->name));
+      return false;
+    }
+  } else if (type->kind == ETypeKindPtr) {
+    return check_struct_existence(ir, type->ptr_target);
+  } else if (type->kind == ETypeKindArray) {
+    return check_struct_existence(ir, type->array_element);
+  } else if (type->kind == ETypeKindTuple) {
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      if (!check_struct_existence(ir, type->tuple_types.items + i))
+        return false;
+  }
+
+  return true;
+}
+
+bool populate_type_struct_ptrs(EIr *ir) {
+  for (u32 i = 0; i < ir->structs.len; ++i) {
+    EStruct *_struct = ir->structs.items + i;
+
+    for (u32 j = 0; j < _struct->fields.len; ++j)
+      if (!check_struct_existence(ir, &_struct->fields.items[j].type))
+        return false;
+  }
+
+  for (u32 i = 0; i < ir->consts.len; ++i)
+    if (!check_struct_existence(ir, &ir->consts.items[i].type))
+      return false;
+
+  for (u32 i = 0; i < ir->static_vars.len; ++i)
+    if (!check_struct_existence(ir, &ir->static_vars.items[i].type))
+      return false;
+
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    EProc *proc = ir->procs.items + i;
+
+    for (u32 j = 0; j < proc->args.len; ++j)
+      if (!check_struct_existence(ir, &proc->args.items[j].type))
+        return false;
+    if (!check_struct_existence(ir, &proc->return_type))
+      return false;
+  }
+
+  return true;
 }
 
 void varss_destroy(Varss *varss) {

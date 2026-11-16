@@ -435,6 +435,7 @@ typedef struct {
   EStaticVars static_vars;
   EModuleDeps module_deps;
   bool        is_copy;
+  bool        is_from_cache;
 } EIr;
 
 typedef struct {
@@ -475,6 +476,9 @@ EStruct     *get_struct(EIr *ir, Str name);
 EIr         *get_struct_ir(EIr *ir, Str name);
 EField      *get_field(EStruct *_struct, Str name);
 EStaticVar  *get_static_var(EIr *ir, Str name);
+
+bool check_struct_existence(EIr *ir, EType *type);
+bool populate_type_struct_ptrs(EIr *ir);
 
 void varss_destroy(Varss *varss);
 bool proc_destroy(EIr *ir, Varss *varss, EProc *proc);

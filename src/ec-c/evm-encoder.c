@@ -760,20 +760,52 @@ static void encode_procs_as_imports_no_len(FILE *stream,
   }
 }
 
-static void traverse_deps(EIr *ir, u32 *procs_len,
-                          u32 *data_len, u32 *static_vars_len) {
+static void traverse_deps(EIr *ir,
+                          u32 *procs_len,
+                          u32 *data_len,
+                          u32 *static_vars_len,
+                          u32 *procs_as_imports_len) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
+
     if (dep->ir.is_copy)
       continue;
 
-    if (procs_len)
-      *procs_len += dep->ir.procs.len;
-    if (data_len)
-      *data_len += dep->ir.data.len;
-    if (static_vars_len)
-      *static_vars_len += dep->ir.static_vars.len;
-    traverse_deps(&dep->ir, procs_len, data_len, static_vars_len);
+    if (!dep->ir.is_from_cache) {
+      if (procs_len)
+        *procs_len += dep->ir.procs.len;
+      if (data_len)
+        *data_len += dep->ir.data.len;
+      if (static_vars_len)
+        *static_vars_len += dep->ir.static_vars.len;
+    } else if (procs_as_imports_len) {
+      *procs_as_imports_len += dep->ir.procs.len;
+    }
+    traverse_deps(&dep->ir, procs_len, data_len,
+                  static_vars_len, procs_as_imports_len);
+  }
+}
+
+static void traverse_all_deps(EIr *ir,
+                              u32 *procs_len,
+                              u32 *data_len,
+                              u32 *static_vars_len,
+                              u32 *procs_as_imports_len) {
+  for (u32 i = 0; i < ir->module_deps.len; ++i) {
+    EModuleDep *dep = ir->module_deps.items + i;
+
+    if (!dep->ir.is_from_cache) {
+      if (procs_len)
+        *procs_len += dep->ir.procs.len;
+      if (data_len)
+        *data_len += dep->ir.data.len;
+      if (static_vars_len)
+        *static_vars_len += dep->ir.static_vars.len;
+    }
+    if (procs_as_imports_len)
+      *procs_as_imports_len += dep->ir.procs.len;
+    traverse_all_deps(&dep->ir, procs_len, data_len,
+                      static_vars_len, procs_as_imports_len);
   }
 }
 
@@ -787,7 +819,7 @@ static void encode_deps_procs(FILE *stream, EIr *ir,
 
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
-    if (dep->ir.is_copy)
+    if (dep->ir.is_copy || dep->ir.is_from_cache)
       continue;
 
     EModulePath new_path;
@@ -810,7 +842,7 @@ static void encode_deps_procs(FILE *stream, EIr *ir,
 static void encode_deps_data(FILE *stream, EIr *ir) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
-    if (dep->ir.is_copy)
+    if (dep->ir.is_copy || dep->ir.is_from_cache)
       continue;
 
     encode_data_no_len(stream, &dep->ir.data);
@@ -821,7 +853,7 @@ static void encode_deps_data(FILE *stream, EIr *ir) {
 static void encode_deps_static_vars(FILE *stream, EIr *ir) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
-    if (dep->ir.is_copy)
+    if (dep->ir.is_copy || dep->ir.is_from_cache)
       continue;
 
     encode_static_vars_no_len(stream, &dep->ir);
@@ -829,16 +861,14 @@ static void encode_deps_static_vars(FILE *stream, EIr *ir) {
   }
 }
 
-static void encode_deps_procs_as_imports(FILE *stream, EIr *ir,
-                                         EModulePath *path) {
+static void encode_all_deps_procs_as_imports(FILE *stream, EIr *ir,
+                                             EModulePath *path) {
   EModulePath temp_path = *path;
   if (temp_path.len > 0)
     --temp_path.len;
 
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
-    if (dep->ir.is_copy)
-      continue;
 
     EModulePath new_path;
     if (dep->is_submodule)
@@ -847,28 +877,28 @@ static void encode_deps_procs_as_imports(FILE *stream, EIr *ir,
       new_path = dep->path;
 
     encode_procs_as_imports_no_len(stream, &dep->ir.procs, &new_path);
-    encode_deps_procs_as_imports(stream, &dep->ir, &new_path);
+    encode_all_deps_procs_as_imports(stream, &dep->ir, &new_path);
 
     if (dep->is_submodule)
       free(new_path.items);
   }
 }
 
-void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps) {
+void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss,
+                         EModulePath *path,
+                         bool include_deps, bool import_deps) {
   u32 procs_len = ir->procs.len;
   u32 data_len = ir->data.len;
   u32 static_vars_len = ir->static_vars.len;
   if (include_deps)
-    traverse_deps(ir, &procs_len, &data_len, &static_vars_len);
-
-  EModulePath path = {0};
+    traverse_deps(ir, &procs_len, &data_len, &static_vars_len, NULL);
 
   fwrite(&procs_len, sizeof(procs_len), 1, stream);
-  encode_procs_no_len(stream, ir, &path, varss, 0, 0);
+  encode_procs_no_len(stream, ir, path, varss, 0, 0);
   if (include_deps) {
     u32 data_base = ir->data.len;
     u32 static_base = ir->static_vars.len;
-    encode_deps_procs(stream, ir, &path, &data_base, &static_base);
+    encode_deps_procs(stream, ir, path, &data_base, &static_base);
   }
 
   fwrite(&data_len, sizeof(data_len), 1, stream);
@@ -881,13 +911,10 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps)
   if (include_deps)
     encode_deps_static_vars(stream, ir);
 
-  if (include_deps) {
-    u32 imports_len = 0;
-    fwrite(&imports_len, sizeof(imports_len), 1, stream);
-  } else {
-    traverse_deps(ir, &procs_len, NULL, NULL);
-    u32 imports_len = procs_len - ir->procs.len;
-    fwrite(&imports_len, sizeof(imports_len), 1, stream);
-    encode_deps_procs_as_imports(stream, ir, &path);
-  }
+  u32 imports_len = 0;
+  if (import_deps)
+    traverse_all_deps(ir, NULL, NULL, NULL, &imports_len);
+  fwrite(&imports_len, sizeof(imports_len), 1, stream);
+  if (import_deps)
+    encode_all_deps_procs_as_imports(stream, ir, path);
 }

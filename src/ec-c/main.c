@@ -6,6 +6,7 @@
 #include "deps.h"
 #include "checker.h"
 #include "evm-encoder.h"
+#include "utils.h"
 #define SHL_STR_IMPLEMENTATION
 #include "shl/shl-str.h"
 #ifndef NDEBUG
@@ -37,7 +38,7 @@ static void print_usage(char *program_name) {
   fprintf(stderr, "       -I <search paths>         Specify included module search path\n");
 }
 
-static char *make_ir_path(char *input_path) {
+static char *make_ir_path(char *input_path, bool add_prefix) {
   u32 len = strlen(input_path);
   u32 begin = len;
   while (begin > 0 && input_path[begin - 1] != '/')
@@ -46,19 +47,22 @@ static char *make_ir_path(char *input_path) {
   input_path += begin;
   len -= begin;
 
+  u32 prefix_len = add_prefix ? 5 : 0;
   if (len > 2 && strcmp(input_path + len - 2, ".e") == 0) {
-    char *result = malloc(5 + len - 2 + 4 + 1);
+    char *result = malloc(prefix_len + len - 2 + 4 + 1);
+    if (add_prefix)
     strcpy(result, "/tmp/");
-    memcpy(result + 5, input_path, len - 2);
-    strcpy(result + 5 + len - 2, ".eir");
-    result[5 + len - 2 + 4] = '\0';
+    memcpy(result + prefix_len, input_path, len - 2);
+    strcpy(result + prefix_len + len - 2, ".eir");
+    result[prefix_len + len - 2 + 4] = '\0';
     return result;
   } else {
-    char *result = malloc(5 + len + 5 + 1);
-    strcpy(result, "/tmp/");
-    strcpy(result + 5, input_path);
-    strcpy(result + 5 + len, ".eir");
-    result[5 + len + 5] = '\0';
+    char *result = malloc(prefix_len + len + 5 + 1);
+    if (add_prefix)
+      strcpy(result, "/tmp/");
+    strcpy(result + prefix_len, input_path);
+    strcpy(result + prefix_len + len, ".eir");
+    result[prefix_len + len + 5] = '\0';
     return result;
   }
 }
@@ -158,7 +162,7 @@ static Config config_create(i32 argc, char **argv) {
     config.is_output_path_malloced = true;
   }
 
-  config.ir_path = make_ir_path(config.input_path);
+  config.ir_path = make_ir_path(config.input_path, !config.cache_path);
   config.asm_path = make_asm_path(config.ir_path);
   u32 output_path_len = strlen(config.output_path);
   if (output_path_len > 2 &&
@@ -188,6 +192,50 @@ static void config_destroy(Config *config) {
     free(config->include_paths.items);
 }
 
+static bool compile_object_file(StringBuilder *sb,
+                                char *ir_path,
+                                char *asm_path,
+                                char *obj_path,
+                                EIr *ir, Varss *varss,
+                                EModulePath *path,
+                                bool include_deps,
+                                bool import_deps) {
+  remove(ir_path);
+  FILE *ir_file = fopen(ir_path, "wb");
+  if (!ir_file) {
+    ERROR("Could not write %s\n", ir_path);
+    return false;
+  }
+
+  encode_ir_as_evm_ir(ir_file, ir, varss, path, include_deps, import_deps);
+
+  fclose(ir_file);
+
+  sb->len = 0;
+
+  sb_push(sb, EVM_PREFIX);
+  sb_push(sb, asm_path);
+  sb_push_char(sb, ' ');
+  sb_push(sb, ir_path);
+  sb_push_char(sb, '\0');
+
+  if (system(sb->buffer) != 0)
+    return false;
+
+  sb->len = 0;
+
+  sb_push(sb, YASM_PREFIX);
+  sb_push(sb, obj_path);
+  sb_push_char(sb, ' ');
+  sb_push(sb, asm_path);
+  sb_push_char(sb, '\0');
+
+  if (system(sb->buffer) != 0)
+    return false;
+
+  return true;
+}
+
 i32 main(i32 argc, char **argv) {
   Config config = config_create(argc, argv);
 
@@ -214,13 +262,14 @@ i32 main(i32 argc, char **argv) {
   free(code.ptr);
 
   Str cache_path_str = { NULL, (u32) -1 };
-  if (config.cache_path && config.link_only)
+  if (config.cache_path)
     cache_path_str = str_new(config.cache_path);
 
   IncludedDeps included_deps = {0};
+  EModulePath path = {0};
   if (!load_module_deps(&ir, &arena, input_path_str,
                         cache_path_str, &config.include_paths,
-                        &included_deps)) {
+                        &included_deps, &path, STR_LIT(".o"))) {
     if (included_deps.items)
       free(included_deps.items);
     arena_free(&arena);
@@ -245,65 +294,96 @@ i32 main(i32 argc, char **argv) {
     proc_print(ir.procs.items + i);
 #endif
 
-  remove(config.ir_path);
-  FILE *ir_file = fopen(config.ir_path, "wb");
-  if (!ir_file) {
-    ERROR("Could not write %s\n", config.ir_path);
-    arena_free(&arena);
-    varss_destroy(&varss);
-    ir_destroy(&ir);
-    config_destroy(&config);
-    return 1;
-  }
-
-  encode_ir_as_evm_ir(ir_file, &ir, &varss, !config.link_only);
-
-  fclose(ir_file);
-
   i32 result = 0;
   StringBuilder sb = {0};
 
-  sb_push(&sb, EVM_PREFIX);
-  sb_push(&sb, config.asm_path);
-  sb_push_char(&sb, ' ');
-  sb_push(&sb, config.ir_path);
-  sb_push_char(&sb, '\0');
+  if (config.cache_path) {
+    if (config.link_only) {
+      ERROR("TODO\n");
+      return 1;
+    } else {
+      Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.ir_path), STR_LIT(""), &arena, false);
+      Str asm_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.asm_path), STR_LIT(""), &arena, false);
+      Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.obj_path), STR_LIT(""), &arena, false);
 
-  if (system(sb.buffer) != 0) {
-    result = 1;
-    goto end;
-  }
+      EModulePath module_path = {0};
+      if (!compile_object_file(&sb, ir_path.ptr, asm_path.ptr, obj_path.ptr,
+                               &ir, &varss, &module_path, false, true)) {
+        result = 1;
+        goto end;
+      }
 
-  sb.len = 0;
+      for (u32 i = 0; i < included_deps.len; ++i) {
+        if (included_deps.items[i].dep->ir.is_copy ||
+            included_deps.items[i].dep->ir.is_from_cache)
+          continue;
 
-  sb_push(&sb, YASM_PREFIX);
-  sb_push(&sb, config.obj_path);
-  sb_push_char(&sb, ' ');
-  sb_push(&sb, config.asm_path);
-  sb_push_char(&sb, '\0');
+        Str path = merge_module_path(&included_deps.items[i].dep->path, &arena);
+        Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, path, STR_LIT(".eir"), &arena, false);
+        Str asm_path = prefix_module_path_with_other_path_zero_term(cache_path_str, path, STR_LIT(".s"), &arena, false);
+        Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, path, STR_LIT(".o"), &arena, false);
 
-  if (system(sb.buffer) != 0) {
-    result = 1;
-    goto end;
-  }
+        if (!compile_object_file(&sb, ir_path.ptr, asm_path.ptr, obj_path.ptr,
+                                 &included_deps.items[i].dep->ir,
+                                 &included_deps.items[i].dep->varss,
+                                 &included_deps.items[i].dep->path,
+                                 false, true)) {
+          result = 1;
+          goto end;
+        }
+      }
 
-  if (!config.link_only) {
-    sb.len = 0;
+      sb.len = 0;
 
-    sb_push(&sb, LD_PREFIX);
-    sb_push(&sb, config.output_path);
-    sb_push_char(&sb, ' ');
-    sb_push(&sb, config.obj_path);
-    sb_push_char(&sb, '\0');
+      sb_push(&sb, LD_PREFIX);
+      sb_push(&sb, config.output_path);
+      sb_push_char(&sb, ' ');
+      sb_push_str(&sb, obj_path);
+      for (u32 i = 0; i < included_deps.len; ++i) {
+        if (included_deps.items[i].dep->ir.is_copy)
+          continue;
 
-    if (system(sb.buffer) != 0) {
+        Str path = merge_module_path(&included_deps.items[i].dep->path, &arena);
+        Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, path, STR_LIT(".o"), &arena, false);
+
+        sb_push_char(&sb, ' ');
+        sb_push_str(&sb, obj_path);
+      }
+      sb_push_char(&sb, '\0');
+
+      if (system(sb.buffer) != 0) {
+        result = 1;
+        goto end;
+      }
+    }
+  } else {
+    EModulePath module_path = {0};
+    if (!compile_object_file(&sb, config.ir_path, config.asm_path,
+                             config.obj_path, &ir, &varss, &module_path,
+                             !config.link_only, false)) {
       result = 1;
       goto end;
+    }
+
+    if (!config.link_only) {
+      sb.len = 0;
+
+      sb_push(&sb, LD_PREFIX);
+      sb_push(&sb, config.output_path);
+      sb_push_char(&sb, ' ');
+      sb_push(&sb, config.obj_path);
+      sb_push_char(&sb, '\0');
+
+      if (system(sb.buffer) != 0) {
+        result = 1;
+        goto end;
+      }
     }
   }
 
 end:
-  free(sb.buffer);
+  if (sb.buffer)
+    free(sb.buffer);
   if (included_deps.items)
     free(included_deps.items);
   arena_free(&arena);

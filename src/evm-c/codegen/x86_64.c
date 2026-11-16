@@ -1532,15 +1532,26 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 }
 
 void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
+  bool has_main = false;
+
+  for (u32 i = 0; i < ir->procs.len; ++i) {
+    if (str_eq(ir->procs.items[i].name, STR_LIT("main"))) {
+      has_main = true;
+      break;
+    }
+  }
+
   write_cstr(stream, "section '.text'\n");
-  write_cstr(stream, "global _start\n");
-  write_cstr(stream, "_start:\n");
-  write_cstr(stream, "  lea rsi,[rsp+8]\n");
-  write_cstr(stream, "  mov rdi,[rsp]\n");
-  write_cstr(stream, "  call $main\n");
-  write_cstr(stream, "  mov rdi,rax\n");
-  write_cstr(stream, "  mov rax,60\n");
-  write_cstr(stream, "  syscall\n");
+  if (has_main) {
+    write_cstr(stream, "global _start\n");
+    write_cstr(stream, "_start:\n");
+    write_cstr(stream, "  lea rsi,[rsp+8]\n");
+    write_cstr(stream, "  mov rdi,[rsp]\n");
+    write_cstr(stream, "  call $main\n");
+    write_cstr(stream, "  mov rdi,rax\n");
+    write_cstr(stream, "  mov rax,60\n");
+    write_cstr(stream, "  syscall\n");
+  }
 
   VarLocs locs = {0};
 

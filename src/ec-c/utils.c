@@ -69,3 +69,46 @@ EModulePath dup_module_path(EModulePath *path) {
   memcpy(result.items, path->items, path->len * sizeof(*result.items));
   return result;
 }
+
+Str merge_module_path(EModulePath *path, Arena *arena) {
+  StringBuilder sb = {0};
+  for (u32 i = 0; i < path->len; ++i) {
+    if (i > 0)
+      sb_push_char(&sb, '/');
+    if (str_eq(path->items[i], STR_LIT("super")))
+      sb_push(&sb, "..");
+    else
+      sb_push_str(&sb, path->items[i]);
+  }
+
+  Str result = {0};
+  if (sb.len > 0) {
+    result.len = sb.len;
+    result.ptr = arena_alloc(arena, result.len);
+    memcpy(result.ptr, sb.buffer, result.len);
+    free(sb.buffer);
+  }
+
+  return result;
+}
+
+Str prefix_module_path_with_other_path_zero_term(Str prefix_path, Str module_path, Str ext, Arena *arena, bool truncate_prefix_path) {
+  if (truncate_prefix_path)
+    while (prefix_path.len > 0 && prefix_path.ptr[prefix_path.len - 1] != '/')
+      --prefix_path.len;
+
+  bool has_trailing_slash =
+    prefix_path.len > 0 &&
+    prefix_path.ptr[prefix_path.len - 1] != '/';
+
+  Str result;
+  result.len = prefix_path.len + has_trailing_slash + module_path.len + ext.len;
+  result.ptr = arena_alloc(arena, result.len + 1);
+  memcpy(result.ptr, prefix_path.ptr, prefix_path.len);
+  if (has_trailing_slash)
+    result.ptr[prefix_path.len] = '/';
+  memcpy(result.ptr + prefix_path.len + has_trailing_slash, module_path.ptr, module_path.len);
+  memcpy(result.ptr + prefix_path.len + has_trailing_slash + module_path.len, ext.ptr, ext.len);
+  result.ptr[result.len] = '\0';
+  return result;
+}
