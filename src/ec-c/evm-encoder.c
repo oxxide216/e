@@ -750,10 +750,11 @@ static void encode_static_vars_no_len(FILE *stream, EIr *ir) {
   }
 }
 
-static void encode_imports_no_len(FILE *stream, EProcs *imports) {
-  EModulePath path = {0};
-  for (u32 i = 0; i < imports->len; ++i) {
-    Str mangled_name = mangle_proc_name(imports->items + i, &path);
+static void encode_procs_as_imports_no_len(FILE *stream,
+                                           EProcs *procs,
+                                           EModulePath *path) {
+  for (u32 i = 0; i < procs->len; ++i) {
+    Str mangled_name = mangle_proc_name(procs->items + i, path);
     encode_str(stream, mangled_name);
     free(mangled_name.ptr);
   }
@@ -828,14 +829,28 @@ static void encode_deps_static_vars(FILE *stream, EIr *ir) {
   }
 }
 
-static void encode_deps_imports(FILE *stream, EIr *ir) {
+static void encode_deps_procs_as_imports(FILE *stream, EIr *ir,
+                                         EModulePath *path) {
+  EModulePath temp_path = *path;
+  if (temp_path.len > 0)
+    --temp_path.len;
+
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
     if (dep->ir.is_copy)
       continue;
 
-    encode_imports_no_len(stream, &dep->ir.procs);
-    encode_deps_imports(stream, &dep->ir);
+    EModulePath new_path;
+    if (dep->is_submodule)
+      new_path = merge_module_paths(&temp_path, &dep->path);
+    else
+      new_path = dep->path;
+
+    encode_procs_as_imports_no_len(stream, &dep->ir.procs, &new_path);
+    encode_deps_procs_as_imports(stream, &dep->ir, &new_path);
+
+    if (dep->is_submodule)
+      free(new_path.items);
   }
 }
 
@@ -866,9 +881,6 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps)
   if (include_deps)
     encode_deps_static_vars(stream, ir);
 
-  u32 zero = 0;
-  fwrite(&zero, sizeof(zero), 1, stream);
-
   if (include_deps) {
     u32 imports_len = 0;
     fwrite(&imports_len, sizeof(imports_len), 1, stream);
@@ -876,6 +888,6 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss, bool include_deps)
     traverse_deps(ir, &procs_len, NULL, NULL);
     u32 imports_len = procs_len - ir->procs.len;
     fwrite(&imports_len, sizeof(imports_len), 1, stream);
-    encode_deps_imports(stream, ir);
+    encode_deps_procs_as_imports(stream, ir, &path);
   }
 }
