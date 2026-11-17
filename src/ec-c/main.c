@@ -279,58 +279,73 @@ i32 main(i32 argc, char **argv) {
     return 1;
   }
 
-  if (!check_ir(&ir, &varss, &arena, !config.link_only)) {
-    if (included_deps.items)
-      free(included_deps.items);
-    arena_free(&arena);
-    varss_destroy(&varss);
-    ir_destroy(&ir);
-    config_destroy(&config);
-    return 1;
-  }
-
-#ifndef NDEBUG
-  for (u32 i = 0; i < ir.procs.len; ++i)
-    proc_print(ir.procs.items + i);
-#endif
-
   i32 result = 0;
   StringBuilder sb = {0};
 
   if (config.cache_path) {
     if (config.link_only) {
-      Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.ir_path), STR_LIT(""), &arena, false);
-      Str asm_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.asm_path), STR_LIT(""), &arena, false);
-      Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.obj_path), STR_LIT(""), &arena, false);
+      if (needs_recompilation(config.input_path, config.output_path)) {
+        if (!check_ir(&ir, &varss, &arena, !config.link_only)) {
+          result = 1;
+          goto end;
+        }
 
-      EModulePath module_path = {0};
-      if (!compile_object_file(&sb, ir_path.ptr, asm_path.ptr, obj_path.ptr,
-                               &ir, &varss, &module_path, false, true)) {
-        result = 1;
-        goto end;
-      }
+#ifndef NDEBUG
+        for (u32 i = 0; i < ir.procs.len; ++i)
+          proc_print(ir.procs.items + i);
+#endif
 
-      if (!copy_file(obj_path.ptr, config.output_path)) {
-        ERROR("Could not copy %s to %s\n", obj_path.ptr, config.output_path);
-        result = 1;
-        goto end;
+        Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.ir_path), STR_LIT(""), &arena, false);
+        Str asm_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.asm_path), STR_LIT(""), &arena, false);
+        Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.obj_path), STR_LIT(""), &arena, false);
+
+        EModulePath module_path = {0};
+        if (!compile_object_file(&sb, ir_path.ptr, asm_path.ptr, obj_path.ptr,
+                                 &ir, &varss, &module_path, false, true)) {
+          result = 1;
+          goto end;
+        }
+
+        if (!copy_file(obj_path.ptr, config.output_path)) {
+          ERROR("Could not copy %s to %s\n", obj_path.ptr, config.output_path);
+          result = 1;
+          goto end;
+        }
       }
     } else {
+      bool relink = false;
+
       Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.ir_path), STR_LIT(""), &arena, false);
       Str asm_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.asm_path), STR_LIT(""), &arena, false);
       Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.obj_path), STR_LIT(""), &arena, false);
 
-      EModulePath module_path = {0};
-      if (!compile_object_file(&sb, ir_path.ptr, asm_path.ptr, obj_path.ptr,
-                               &ir, &varss, &module_path, false, true)) {
-        result = 1;
-        goto end;
+      if (needs_recompilation(config.input_path, obj_path.ptr)) {
+        relink = true;
+
+        if (!check_ir(&ir, &varss, &arena, !config.link_only)) {
+          result = 1;
+          goto end;
+        }
+
+#ifndef NDEBUG
+        for (u32 i = 0; i < ir.procs.len; ++i)
+          proc_print(ir.procs.items + i);
+#endif
+
+        EModulePath module_path = {0};
+        if (!compile_object_file(&sb, ir_path.ptr, asm_path.ptr, obj_path.ptr,
+                                 &ir, &varss, &module_path, false, true)) {
+          result = 1;
+          goto end;
+        }
       }
 
       for (u32 i = 0; i < included_deps.len; ++i) {
         if (included_deps.items[i].dep->ir.is_copy ||
             included_deps.items[i].dep->ir.is_from_cache)
           continue;
+
+        relink = true;
 
         Str path = merge_module_path(&included_deps.items[i].dep->path, &arena);
         Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, path, STR_LIT(".eir"), &arena, false);
@@ -347,30 +362,42 @@ i32 main(i32 argc, char **argv) {
         }
       }
 
-      sb.len = 0;
+      if (relink) {
+        sb.len = 0;
 
-      sb_push(&sb, LD_PREFIX);
-      sb_push(&sb, config.output_path);
-      sb_push_char(&sb, ' ');
-      sb_push_str(&sb, obj_path);
-      for (u32 i = 0; i < included_deps.len; ++i) {
-        if (included_deps.items[i].dep->ir.is_copy)
-          continue;
-
-        Str path = merge_module_path(&included_deps.items[i].dep->path, &arena);
-        Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, path, STR_LIT(".o"), &arena, false);
-
+        sb_push(&sb, LD_PREFIX);
+        sb_push(&sb, config.output_path);
         sb_push_char(&sb, ' ');
         sb_push_str(&sb, obj_path);
-      }
-      sb_push_char(&sb, '\0');
+        for (u32 i = 0; i < included_deps.len; ++i) {
+          if (included_deps.items[i].dep->ir.is_copy)
+            continue;
 
-      if (system(sb.buffer) != 0) {
-        result = 1;
-        goto end;
+          Str path = merge_module_path(&included_deps.items[i].dep->path, &arena);
+          Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, path, STR_LIT(".o"), &arena, false);
+
+          sb_push_char(&sb, ' ');
+          sb_push_str(&sb, obj_path);
+        }
+        sb_push_char(&sb, '\0');
+
+        if (system(sb.buffer) != 0) {
+          result = 1;
+          goto end;
+        }
       }
     }
   } else {
+    if (!check_ir(&ir, &varss, &arena, !config.link_only)) {
+      result = 1;
+      goto end;
+    }
+
+#ifndef NDEBUG
+    for (u32 i = 0; i < ir.procs.len; ++i)
+      proc_print(ir.procs.items + i);
+#endif
+
     EModulePath module_path = {0};
     if (!compile_object_file(&sb, config.ir_path, config.asm_path,
                              config.obj_path, &ir, &varss, &module_path,
