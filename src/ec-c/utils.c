@@ -40,6 +40,28 @@ void make_directory(Str path, bool is_file_path) {
   }
 }
 
+bool copy_file(char *src_path, char *dest_path) {
+  FILE *src = fopen(src_path, "rb");
+  if (!src)
+    return false;
+
+  FILE *dest = fopen(dest_path, "wb");
+  if (!dest) {
+    fclose(src);
+    return false;
+  }
+
+  char buffer[1024];
+  i32 len;
+  while ((len = fread(buffer, 1, sizeof(buffer), src)) > 0)
+    fwrite(buffer, 1, len, dest);
+
+  fclose(src);
+  fclose(dest);
+
+  return true;
+}
+
 u32 str_find(Str str, Str sub) {
   if (str.len < sub.len)
     return (u32) -1;

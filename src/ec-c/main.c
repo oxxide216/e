@@ -299,8 +299,22 @@ i32 main(i32 argc, char **argv) {
 
   if (config.cache_path) {
     if (config.link_only) {
-      ERROR("TODO\n");
-      return 1;
+      Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.ir_path), STR_LIT(""), &arena, false);
+      Str asm_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.asm_path), STR_LIT(""), &arena, false);
+      Str obj_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.obj_path), STR_LIT(""), &arena, false);
+
+      EModulePath module_path = {0};
+      if (!compile_object_file(&sb, ir_path.ptr, asm_path.ptr, obj_path.ptr,
+                               &ir, &varss, &module_path, false, true)) {
+        result = 1;
+        goto end;
+      }
+
+      if (!copy_file(obj_path.ptr, config.output_path)) {
+        ERROR("Could not copy %s to %s\n", obj_path.ptr, config.output_path);
+        result = 1;
+        goto end;
+      }
     } else {
       Str ir_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.ir_path), STR_LIT(""), &arena, false);
       Str asm_path = prefix_module_path_with_other_path_zero_term(cache_path_str, str_new(config.asm_path), STR_LIT(""), &arena, false);
@@ -360,7 +374,7 @@ i32 main(i32 argc, char **argv) {
     EModulePath module_path = {0};
     if (!compile_object_file(&sb, config.ir_path, config.asm_path,
                              config.obj_path, &ir, &varss, &module_path,
-                             !config.link_only, false)) {
+                             !config.link_only, config.link_only)) {
       result = 1;
       goto end;
     }
