@@ -83,10 +83,11 @@ static u32 get_prop_index_by_src(CopyProps *props, u32 src) {
 static void remove_instr_props(Instrs *instrs, VarLocs *locs,
                                CopyProps *props, u32 index) {
   instrs->items[index + 1].has_label |= instrs->items[index].has_label;
-  instrs->items[instrs->len].has_label |=
-    instrs->items[instrs->len - 1].has_label;
 
   DA_REMOVE_AT(*instrs, index);
+
+  instrs->items[instrs->len].has_label |=
+    instrs->items[instrs->len + 1].has_label;
 
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
