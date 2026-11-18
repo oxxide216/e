@@ -27,6 +27,7 @@ typedef struct {
   bool  is_output_path_malloced;
   bool  is_obj_path_malloced;
   bool  link_only;
+  bool  run;
   Strs  include_paths;
 } Config;
 
@@ -34,8 +35,9 @@ static void print_usage(char *program_name) {
   fprintf(stderr, "Usage: %s <options...> <input file>\n\n", program_name);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "       -o <output file>          Specify output file\n");
-  fprintf(stderr, "       -c <cache path>           Specify IR cache path\n");
+  fprintf(stderr, "       -C <cache path>           Specify IR cache path\n");
   fprintf(stderr, "       -I <search paths>         Specify included module search path\n");
+  fprintf(stderr, "       -r                        Immediately run compiled file\n");
 }
 
 static char *make_ir_path(char *input_path, bool add_prefix) {
@@ -119,7 +121,7 @@ static Config config_create(i32 argc, char **argv) {
       }
 
       config.output_path = argv[++i];
-    } else if (strcmp(argv[i], "-c") == 0) {
+    } else if (strcmp(argv[i], "-C") == 0) {
       if (i + 1 == (u32) argc) {
         print_usage(argv[0]);
         ERROR("Option %s requires an argument\n", argv[i]);
@@ -136,6 +138,8 @@ static Config config_create(i32 argc, char **argv) {
 
       Str include_path = str_new(argv[++i]);
       DA_APPEND(config.include_paths, include_path);
+    } else if (strcmp(argv[i], "-r") == 0) {
+      config.run = true;
     } else if (argv[i][0] == '-') {
       print_usage(argv[0]);
       ERROR("Unknown option: %s\n", argv[i]);
@@ -420,6 +424,32 @@ i32 main(i32 argc, char **argv) {
         goto end;
       }
     }
+  }
+
+  if (config.run) {
+    char *run_path = config.output_path;
+    bool malloced = true;
+
+    u32 len = strlen(run_path);
+    for (u32 i = 0; i < len; ++i) {
+      if (run_path[i] == '/') {
+        malloced = false;
+        break;
+      }
+    }
+
+    if (malloced) {
+      char *temp_path = malloc(2 + len);
+      temp_path[0] = '.';
+      temp_path[1] = '/';
+      strcpy(temp_path + 2, run_path);
+      run_path = temp_path;
+    }
+
+    result = system(run_path);
+
+    if (malloced)
+      free(run_path);
   }
 
 end:
