@@ -26,4 +26,5 @@
 /implicit-copy
 /explicit-copy
 /test*
+!/tests/
 /.idea/*
