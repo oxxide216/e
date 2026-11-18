@@ -141,23 +141,29 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
       }
     }
 
-    u32 j = 0;
-    u32 *arg;
-    while ((arg = get_nth_arg(instr, j++))) {
-      u32 index = get_prop_index_by_dest(&props, *arg);
-      if (index != (u32) -1) {
-        CopyProp *prop = props.items + index;
-        *arg = prop->src;
-        locs->items[prop->src].is_stack_only |= locs->items[prop->dest].is_stack_only;
-        ++locs->items[prop->src].uses;
-        if (locs->items[prop->src].end < i)
-          locs->items[prop->src].end = i;
-        if (locs->items[prop->dest].uses > 0)
-          --locs->items[prop->dest].uses;
-        if (locs->items[prop->dest].uses <= 1) {
-          remove_instr_props(instrs, locs, &props, prop->instr_index);
-          --instr;
-          --i;
+    if (instr->kind != InstrKindRef &&
+        (instr->kind != InstrKindCopyFromRef ||
+         !instr->as.copy_from_ref.take_ref) &&
+        (instr->kind != InstrKindCopyFromRefFixed ||
+         !instr->as.copy_from_ref_fixed.take_ref)) {
+      u32 j = 0;
+      u32 *arg;
+      while ((arg = get_nth_arg(instr, j++))) {
+        u32 index = get_prop_index_by_dest(&props, *arg);
+        if (index != (u32) -1) {
+          CopyProp *prop = props.items + index;
+          *arg = prop->src;
+          locs->items[prop->src].is_stack_only |= locs->items[prop->dest].is_stack_only;
+            ++locs->items[prop->src].uses;
+          if (locs->items[prop->src].end < i)
+            locs->items[prop->src].end = i;
+          if (locs->items[prop->dest].uses > 0)
+            --locs->items[prop->dest].uses;
+          if (locs->items[prop->dest].uses <= 1) {
+            remove_instr_props(instrs, locs, &props, prop->instr_index);
+            --instr;
+            --i;
+          }
         }
       }
     }

@@ -159,6 +159,10 @@ static bool decode_instr_impl(Decoder *decoder, Instr *instr) {
     else
       instr->as.copy_to_ref.dest_offset_index = (u32) -1;
     decode_buffer(decoder, &instr->as.copy_to_ref.src_index, sizeof(instr->as.copy_to_ref.src_index));
+
+    u8 deref;
+    decode_buffer(decoder, &deref, 1);
+    instr->as.copy_to_ref.deref = deref;
   } break;
 
   case InstrKindCopyFromRef: {
@@ -174,6 +178,10 @@ static bool decode_instr_impl(Decoder *decoder, Instr *instr) {
     u8 src_target_kind;
     decode_buffer(decoder, &src_target_kind, 1);
     instr->as.copy_from_ref.src_target_kind = src_target_kind;
+
+    u8 deref;
+    decode_buffer(decoder, &deref, 1);
+    instr->as.copy_from_ref.deref = deref;
 
     u8 take_ref;
     decode_buffer(decoder, &take_ref, 1);

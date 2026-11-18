@@ -332,13 +332,38 @@ static void write_loc_part_of_size(FILE *stream, VarLoc *loc, u32 offset, u32 si
 }
 
 static void ensure_in_reg_of_size(FILE *stream, VarLoc *loc, u32 size, u32 temp_reg_index, bool ref) {
-  if (!loc->has_imm_value && loc->value < 0) {
+  if (loc->has_imm_value)
+    return;
+
+  if (loc->value < 0) {
     if (ref)
       fprintf(stream, "  lea "STR_FMT",", STR_ARG(get_temp_regs(8)[temp_reg_index]));
     else
       fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(size)[temp_reg_index]));
     write_loc_of_size(stream, loc, size);
     write_cstr(stream, "\n");
+  } else if (!ref && size > loc->size) {
+    if (loc->size == 4) {
+      if (loc->kind == ValueKindSigned) {
+        write_cstr(stream, "  movsxd ");
+        write_loc_of_size(stream, loc, size);
+        write_cstr(stream, ",");
+        write_loc(stream, loc);
+        write_cstr(stream, "\n");
+      } else {
+        write_cstr(stream, "  mov ");
+        write_loc(stream, loc);
+        write_cstr(stream, ",");
+        write_loc(stream, loc);
+        write_cstr(stream, "\n");
+      }
+    } else {
+      write_cstr(stream, loc->kind == ValueKindSigned ? "  movsx " : "  movzx ");
+      write_loc_of_size(stream, loc, size);
+      write_cstr(stream, ",");
+      write_loc(stream, loc);
+      write_cstr(stream, "\n");
+    }
   }
 }
 
@@ -1063,7 +1088,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(8)[0]));
       }
     }
-    ensure_in_reg(stream, dest_loc, 0, src_loc->size > 8);
+    ensure_in_reg(stream, dest_loc, 0, !instr->as.copy_to_ref.deref);
 
     if (src_loc->size <= 8) {
       ensure_in_reg(stream, src_loc, 1, false);
@@ -1137,9 +1162,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(8)[0]));
       }
     }
-    ensure_in_reg(stream, src_loc, 0,
-                  instr->as.copy_from_ref.take_ref ||
-                  src_loc->size > 8);
+    ensure_in_reg(stream, src_loc, 0, !instr->as.copy_from_ref.deref);
 
     if (dest_loc->size <= 8 ||
         instr->as.copy_from_ref.take_ref) {

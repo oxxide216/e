@@ -137,6 +137,7 @@ typedef struct {
   u32  dest_index;
   u32  dest_offset_index;
   u32  src_index;
+  bool deref; // Basically true for pointers and false for arrays
 } InstrCopyToRef;
 
 typedef struct {
@@ -144,6 +145,7 @@ typedef struct {
   u32       src_index;
   u32       src_offset_index;
   ValueKind src_target_kind;
+  bool      deref; // Basically true for pointers and false for arrays
   bool      take_ref;
 } InstrCopyFromRef;
 

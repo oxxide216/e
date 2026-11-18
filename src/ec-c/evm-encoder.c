@@ -466,6 +466,10 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         if (instr->as.copy_to_ref.has_offset)
           fwrite(&instr->as.copy_to_ref.dest_offset_index, sizeof(instr->as.copy_to_ref.dest_offset_index), 1, stream);
         fwrite(&instr->as.copy_to_ref.src_index, sizeof(instr->as.copy_to_ref.src_index), 1, stream);
+
+        Var *dest = varss->items[i].items + instr->as.copy_to_ref.dest_index;
+        bool deref = dest->type.kind == ETypeKindPtr || dest->type.is_implicit_ptr;
+        fwrite(&deref, 1, 1, stream);
       } break;
 
       case EInstrKindCopyFromRef: {
@@ -476,8 +480,12 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           fwrite(&instr->as.copy_from_ref.src_offset_index, sizeof(instr->as.copy_from_ref.src_offset_index), 1, stream);
 
         Var *src = varss->items[i].items + instr->as.copy_from_ref.src_index;
+
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(src->type.ptr_target->kind);
         fwrite(&src_target_kind, 1, 1, stream);
+
+        bool deref = src->type.kind == ETypeKindPtr || src->type.is_implicit_ptr;
+        fwrite(&deref, 1, 1, stream);
         fwrite(&instr->as.copy_from_ref.take_ref, 1, 1, stream);
       } break;
 

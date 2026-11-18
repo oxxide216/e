@@ -1322,7 +1322,7 @@ static void parser_parse_post_expr_impl(Parser *parser, Str dest_name,
     else
       backpatch_dest(proc, index, dest_name, dest_index, temp0_index);
     Vars *vars = parser->varss->items + parser->varss->len - 1;
-    vars->items[dest_index].type = vars->items[temp0_index].type;
+    vars->items[dest_index].type = type_clone(&vars->items[temp0_index].type);
   }
 }
 
@@ -1467,7 +1467,7 @@ static void parser_parse_mul_impl(Parser *parser, Str dest_name, u32 dest_index)
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);
     Vars *vars = parser->varss->items + parser->varss->len - 1;
-    vars->items[dest_index].type = vars->items[temp0_index].type;
+    vars->items[dest_index].type = type_clone(&vars->items[temp0_index].type);
   }
 }
 
@@ -1523,7 +1523,7 @@ static void parser_parse_add_impl(Parser *parser, Str dest_name, u32 dest_index)
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);
     Vars *vars = parser->varss->items + parser->varss->len - 1;
-    vars->items[dest_index].type = vars->items[temp0_index].type;
+    vars->items[dest_index].type = type_clone(&vars->items[temp0_index].type);
   }
 }
 
@@ -1579,7 +1579,7 @@ static void parser_parse_shift_impl(Parser *parser, Str dest_name, u32 dest_inde
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);
     Vars *vars = parser->varss->items + parser->varss->len - 1;
-    vars->items[dest_index].type = vars->items[temp0_index].type;
+    vars->items[dest_index].type = type_clone(&vars->items[temp0_index].type);
   }
 }
 
@@ -1635,7 +1635,7 @@ static void parser_parse_bit_impl(Parser *parser, Str dest_name, u32 dest_index)
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);
     Vars *vars = parser->varss->items + parser->varss->len - 1;
-    vars->items[dest_index].type = vars->items[temp0_index].type;
+    vars->items[dest_index].type = type_clone(&vars->items[temp0_index].type);
   }
 }
 
@@ -1687,7 +1687,7 @@ static void parser_parse_cmp_impl(Parser *parser, Str dest_name, u32 dest_index)
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);
     Vars *vars = parser->varss->items + parser->varss->len - 1;
-    vars->items[dest_index].type = vars->items[temp0_index].type;
+    vars->items[dest_index].type = type_clone(&vars->items[temp0_index].type);
   }
 }
 
@@ -1838,7 +1838,7 @@ static void parser_parse_log_impl(Parser *parser, Str dest_name, u32 dest_index)
     backpatch_dest(parser->ir->procs.items + parser->ir->procs.len - 1,
                    index, dest_name, dest_index, temp0_index);
     Vars *vars = parser->varss->items + parser->varss->len - 1;
-    vars->items[dest_index].type = vars->items[temp0_index].type;
+    vars->items[dest_index].type = type_clone(&vars->items[temp0_index].type);
   }
 }
 

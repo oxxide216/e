@@ -452,6 +452,7 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
     0,
     false,
   };
+  check_struct_existence(ir, struct_type);
   EType arg_type = {
     ETypeKindPtr,
     { .ptr_target = struct_type },
@@ -603,6 +604,7 @@ static bool generate_drops_for_structs(EIr *ir, Varss *varss,
       0,
       false,
     };
+    check_struct_existence(ir, &target_type);
     EType arg_type = {
       ETypeKindPtr,
       { .ptr_target = &target_type },
