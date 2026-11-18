@@ -23,5 +23,7 @@
 /cat
 /break-continue
 /land-lor
+/implicit-copy
+/explicit-copy
 /test*
 /.idea/*

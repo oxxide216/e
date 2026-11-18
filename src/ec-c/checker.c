@@ -1180,6 +1180,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
       EInstr *instr = proc->instrs.items + j;
 
       if (instr->kind == EInstrKindCopy &&
+          !instr->as.copy.is_explicit &&
           instr->as.copy.src_index < varss->items[i].len) {
         Var *src = varss->items[i].items + instr->as.copy.src_index;
         if (is_movable(ir, &src->type)) {
@@ -1252,10 +1253,8 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
         } else if (!type_eq(&src->type, &dest->type)) {
           Str src_type_str = get_type_str(&src->type);
           Str dest_type_str = get_type_str(&dest->type);
-          --instr;
           CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
                   STR_ARG(src_type_str), STR_ARG(dest_type_str));
-          ++instr;
           free_type_str(src_type_str, &src->type);
           free_type_str(dest_type_str, &dest->type);
           goto fail;
@@ -1376,15 +1375,29 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           DA_APPEND(arg_types, &arg->type);
         }
 
-        instr->as.call_assign.callee = get_proc(ir, instr->as.call_assign.name, &arg_types, false);
-        if (!instr->as.call_assign.callee) {
-          CERROR("Procedure ");
-          fprintf_proc_signature(stderr, instr->as.call_assign.name, &arg_types);
-          fprintf(stderr, " was not declared or defined\n");
-          if (arg_types.items)
-            free(arg_types.items);
-          goto fail;
+        bool is_copy =
+          arg_types.len == 1 &&
+          arg_types.items[0]->kind == ETypeKindPtr &&
+          str_eq(instr->as.call_assign.name, STR_LIT("copy"));
+
+        if (is_copy) {
+          instr->as.call_assign.callee = get_proc(ir, instr->as.call_assign.name, &arg_types, true);
+        } else {
+          instr->as.call_assign.callee = get_proc(ir, instr->as.call_assign.name, &arg_types, false);
+          if (!instr->as.call_assign.callee) {
+            CERROR("Procedure ");
+            fprintf_proc_signature(stderr, instr->as.call_assign.name, &arg_types);
+            fprintf(stderr, " was not declared or defined\n");
+            if (arg_types.items)
+              free(arg_types.items);
+            goto fail;
+          }
         }
+
+        EType *return_type =
+          (is_copy && !instr->as.call_assign.callee) ?
+          arg_types.items[0]->ptr_target :
+          &instr->as.call_assign.callee->return_type;
 
         if (arg_types.items)
           free(arg_types.items);
@@ -1392,7 +1405,6 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
         Var *dest = varss->items[i].items + instr->as.call_assign.dest_index;
         dest->moved = false;
 
-        EType *return_type = &instr->as.call_assign.callee->return_type;
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(return_type);
         } else if (!type_eq(return_type, &dest->type)) {
@@ -1403,6 +1415,27 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
           free_type_str(return_type_str, return_type);
           free_type_str(dest_type_str, &dest->type);
           goto fail;
+        }
+
+        if (is_copy && !instr->as.call_assign.callee) {
+          EInstr replacement = {
+            EInstrKindCopyFromRef,
+            {
+              .copy_from_ref = {
+                instr->as.call_assign.dest_name,
+                instr->as.call_assign.dest_index,
+                {},
+                instr->as.call_assign.arg_indices.items[0],
+                false,
+                {},
+                0,
+                false,
+                false,
+              },
+            },
+            instr->loc,
+          };
+          *instr = replacement;
         }
       } break;
 
