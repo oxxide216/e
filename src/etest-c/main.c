@@ -162,6 +162,11 @@ static bool tester_step(Tester *tester) {
   }
 
   for (u32 i = 0; i < tester->running.len; ++i) {
+    char buffer[1024];
+    i32 len;
+    while ((len = read(tester->running.items[i].output_fd, buffer, sizeof(buffer))) > 0)
+      sb_push_str(&tester->running.items[i].output_sb, STR(buffer, len));
+
     i32 status;
     pid_t pid = waitpid(tester->running.items[i].pid, &status, WNOHANG);
     if (pid > 0) {
@@ -176,11 +181,6 @@ static bool tester_step(Tester *tester) {
         free(tester->running.items[i].output_sb.buffer);
       DA_REMOVE_AT(tester->running, i);
       --i;
-    } else {
-      char buffer[1024];
-      i32 len;
-      while ((len = read(tester->running.items[i].output_fd, buffer, sizeof(buffer))) > 0)
-        sb_push_str(&tester->running.items[i].output_sb, STR(buffer, len));
     }
   }
 
