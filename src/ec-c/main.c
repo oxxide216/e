@@ -28,16 +28,18 @@ typedef struct {
   bool  is_obj_path_malloced;
   bool  link_only;
   bool  run;
+  bool  print_help;
   Strs  include_paths;
 } Config;
 
-static void print_usage(char *program_name) {
-  fprintf(stderr, "Usage: %s <options...> <input file>\n\n", program_name);
-  fprintf(stderr, "Options:\n");
-  fprintf(stderr, "       -o <output file>          Specify output file\n");
-  fprintf(stderr, "       -C <cache path>           Specify IR cache path\n");
-  fprintf(stderr, "       -I <search paths>         Specify included module search path\n");
-  fprintf(stderr, "       -r                        Immediately run compiled file\n");
+static void print_usage(FILE *stream, char *program_name) {
+  fprintf(stream, "Usage: %s <options...> <input file>\n\n", program_name);
+  fprintf(stream, "Options:\n");
+  fprintf(stream, "       -h --help                 Print this message and exit immediately\n");
+  fprintf(stream, "       -o <output file>          Specify output file\n");
+  fprintf(stream, "       -C <cache path>           Specify cache path (enables incremental compilation)\n");
+  fprintf(stream, "       -I <search paths>         Specify included module search path\n");
+  fprintf(stream, "       -r                        Immediately run compiled file\n");
 }
 
 static char *make_ir_path(char *input_path, bool add_prefix) {
@@ -115,7 +117,7 @@ static Config config_create(i32 argc, char **argv) {
   for (u32 i = 1; i < (u32) argc; ++i) {
     if (strcmp(argv[i], "-o") == 0) {
       if (i + 1 == (u32) argc) {
-        print_usage(argv[0]);
+        print_usage(stderr, argv[0]);
         ERROR("Option %s requires an argument\n", argv[i]);
         exit(1);
       }
@@ -123,7 +125,7 @@ static Config config_create(i32 argc, char **argv) {
       config.output_path = argv[++i];
     } else if (strcmp(argv[i], "-C") == 0) {
       if (i + 1 == (u32) argc) {
-        print_usage(argv[0]);
+        print_usage(stderr, argv[0]);
         ERROR("Option %s requires an argument\n", argv[i]);
         exit(1);
       }
@@ -131,7 +133,7 @@ static Config config_create(i32 argc, char **argv) {
       config.cache_path = argv[++i];
     } else if (strcmp(argv[i], "-I") == 0) {
       if (i + 1 == (u32) argc) {
-        print_usage(argv[0]);
+        print_usage(stderr, argv[0]);
         ERROR("Option %s requires an argument\n", argv[i]);
         exit(1);
       }
@@ -140,13 +142,15 @@ static Config config_create(i32 argc, char **argv) {
       DA_APPEND(config.include_paths, include_path);
     } else if (strcmp(argv[i], "-r") == 0) {
       config.run = true;
+    } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+      config.print_help = true;
     } else if (argv[i][0] == '-') {
-      print_usage(argv[0]);
+      print_usage(stderr, argv[0]);
       ERROR("Unknown option: %s\n", argv[i]);
       exit(1);
     } else {
       if (config.input_path) {
-        print_usage(argv[0]);
+        print_usage(stderr, argv[0]);
         ERROR("More than one input file was provided\n");
         exit(1);
       }
@@ -155,8 +159,15 @@ static Config config_create(i32 argc, char **argv) {
     }
   }
 
+  if (config.print_help) {
+    if (config.include_paths.items)
+      free(config.include_paths.items);
+    print_usage(stdout, argv[0]);
+    exit(0);
+  }
+
   if (!config.input_path) {
-    print_usage(argv[0]);
+    print_usage(stderr, argv[0]);
     ERROR("Input file was not provided\n");
     exit(1);
   }
