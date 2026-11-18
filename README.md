@@ -16,7 +16,7 @@ For more examples, see [examples directory](./examples).
 ## Building
 
 E uses my custom build system [nsb](https://github.com/oxxide216/nsb).
-To build it, do the following:
+To build E, do the following:
 
 ```shell
 cc -o nsb nsb.c
