@@ -6,7 +6,7 @@ My own low-level, strictly statically typed language compiled to native code.
 use libe::io
 
 proc main() -> s64
-  println("Hello, World!")
+  io::println("Hello, World!")
   retval 0
 end
 ```
