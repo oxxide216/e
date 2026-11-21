@@ -375,11 +375,14 @@ typedef struct {
 
 typedef Da(EArg) EArgs;
 
+typedef ETypeLoc EProcLoc;
+
 struct EProc {
-  Str     name;
-  EArgs   args;
-  EType   return_type;
-  EInstrs instrs;
+  Str      name;
+  EArgs    args;
+  EType    return_type;
+  EInstrs  instrs;
+  EProcLoc loc;
 };
 
 typedef Da(EProc) EProcs;

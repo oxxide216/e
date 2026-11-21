@@ -559,7 +559,8 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
     has_drop ? STR_LIT("?drop") : STR_LIT("drop"),
     args,
     { ETypeKindUnit },
-    instrs
+    instrs,
+    {},
   };
   DA_APPEND(ir->procs, proc);
 
@@ -761,7 +762,8 @@ static void generate_drop_for_tuple(EIr *ir, Varss *varss, EType *type) {
     STR_LIT("drop"),
     args,
     { ETypeKindUnit },
-    instrs
+    instrs,
+    {},
   };
   DA_APPEND(ir->procs, proc);
 
@@ -2432,7 +2434,12 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
     if (proc->return_type.kind != ETypeKindUnit &&
         (proc->instrs.len == 0 ||
          proc->instrs.items[proc->instrs.len - 1].kind != EInstrKindRetVal)) {
-      ERROR("`"STR_FMT"` has no trailing return with a value\n", STR_ARG(proc->name));
+      PERROR(STR_FMT":%u:%u: ",
+             "`"STR_FMT"` has no trailing return with a value\n",
+             STR_ARG(proc->loc.file_path),
+             proc->loc.row + 1,
+             proc->loc.col + 1,
+             STR_ARG(proc->name));
       goto fail;
     }
   }

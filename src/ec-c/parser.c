@@ -2510,7 +2510,7 @@ static void parser_parse_proc_impl(Parser *parser) {
   parser_expect_token(parser, MASK(TT_IDENT), "identifier");
   Str name = token.lexeme;
 
-  emit_proc(&parser->ir->procs, name);
+  emit_proc(&parser->ir->procs, name, token);
   DA_APPEND(*parser->varss, (Vars) {0});
 
   parser_expect_token(parser, MASK(TT_OPAREN), "`(`");
