@@ -34,11 +34,13 @@ static Test tests[] = {
   { "scope",             true,  0,   "" },
   { "sized-arrays",      false, 14,  "" },
   { "sizeof",            false, 144, "" },
-  { "static",            false, 4, "" },
-  { "struct-field-copy", false, 10, "" },
-  { "structs",           false, 9, "drop!\n" },
-  { "temp-ref",          false, 4, "" },
+  { "static",            false, 4,   "" },
+  { "struct-field-copy", false, 10,  "" },
+  { "structs",           false, 9,   "drop!\n" },
+  { "temp-ref",          false, 4,   "" },
   { "tuples",            false, 138, "" },
+  { "vec-invalid",       true,  0,   "" },
+  { "vec-valid",         false, 0,   "" },
 };
 
 typedef struct {

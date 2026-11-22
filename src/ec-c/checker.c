@@ -60,8 +60,8 @@
     }                                                              \
   } while (0)
 
-#define FIELD_INDEX(_struct, field)    \
-  ((field) - (_struct)->fields.items)
+#define FIELD_INDEX(_struct, field) \
+  (field - _struct->fields.items)
 
 typedef struct {
   u32 beginning;
@@ -452,7 +452,7 @@ static void generate_drop_for_struct(EIr *ir, Varss *varss,
     0,
     false,
   };
-  check_struct_existence(ir, struct_type);
+  check_struct_existence(ir, struct_type, NULL, NULL);
   EType arg_type = {
     ETypeKindPtr,
     { .ptr_target = struct_type },
@@ -605,7 +605,7 @@ static bool generate_drops_for_structs(EIr *ir, Varss *varss,
       0,
       false,
     };
-    check_struct_existence(ir, &target_type);
+    check_struct_existence(ir, &target_type, NULL, NULL);
     EType arg_type = {
       ETypeKindPtr,
       { .ptr_target = &target_type },
@@ -1177,7 +1177,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
     patch_statics(ir, &proc->instrs, varss->items + i);
 
     for (u32 j = 0; j < varss->items[i].len; ++j)
-      if (!check_struct_existence(ir, &varss->items[i].items[j].type))
+      if (!check_struct_existence(ir, &varss->items[i].items[j].type, NULL, NULL))
         goto fail;
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
@@ -1220,6 +1220,21 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
             CERRORF("Structure "STR_FMT" was not defined\n",
                     STR_ARG(dest->type.name));
             goto fail;
+          }
+
+          if (dest->type.generics.len != _struct->generics.len) {
+            CERRORF("Invalid amount of generic arguments for "STR_FMT": %u/%u\n",
+                    STR_ARG(dest->type.name),
+                    dest->type.generics.len,
+                    _struct->generics.len);
+            goto fail;
+          }
+
+          if (dest->type.generics.len > 0) {
+            for (u32 k = 0; k < _struct->fields.len; ++k)
+              if (!check_struct_existence(ir, &_struct->fields.items[k].type,
+                                          &_struct->generics, &dest->type.generics))
+                goto fail;
           }
         }
       } break;
@@ -1692,7 +1707,7 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
 
         if (dest->type.kind == ETypeKindUnit) {
           dest->type = type_clone(&instr->as.cast.dest_type);
-          if (!check_struct_existence(ir, &dest->type))
+          if (!check_struct_existence(ir, &dest->type, NULL, NULL))
             goto fail;
         } else if (!type_eq(&instr->as.cast.dest_type, &dest->type)) {
           Str dest_type_str = get_type_str(&dest->type);
@@ -1780,13 +1795,24 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
             goto fail;
           }
 
-          if (!type_eq(&src->type, &field->type)) {
-            Str field_type_str = get_type_str(&field->type);
+          bool cloned = type_contains_generics(&field->type);
+          EType field_type;
+          if (cloned)
+            field_type = type_replace_generics(&field->type,
+                                               &_struct->generics,
+                                               &dest_type->generics);
+          else
+            field_type = field->type;
+
+          if (!type_eq(&src->type, &field_type)) {
+            Str field_type_str = get_type_str(&field_type);
             Str src_type_str = get_type_str(&src->type);
             CERRORF("Cannot assign value of type "STR_FMT" to a field of type "STR_FMT"\n",
                     STR_ARG(src_type_str), STR_ARG(field_type_str));
-            free_type_str(field_type_str, &field->type);
+            free_type_str(field_type_str, &field_type);
             free_type_str(src_type_str, &src->type);
+            if (cloned)
+              type_free(&field_type);
             goto fail;
           }
 
@@ -1797,6 +1823,9 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
             src->moved = true;
             src->moved_loc = instr->loc;
           }
+
+          if (cloned)
+            type_free(&field_type);
         } else {
           bool is_ptr = str_eq(instr->as.copy_to_field.dest_field_name, STR_LIT("ptr"));
           if (!is_ptr && !str_eq(instr->as.copy_to_field.dest_field_name, STR_LIT("len"))) {
@@ -1846,27 +1875,39 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
             goto fail;
           }
 
-          CHECK_MEMBER(src_type, FIELD_INDEX(_struct, field), field->name);
+          bool cloned = type_contains_generics(&field->type);
+          EType field_type;
+          if (cloned)
+            field_type = type_replace_generics(&field->type,
+                                               &_struct->generics,
+                                               &src_type->generics);
+          else
+            field_type = field->type;
 
-          if (field->type.kind == ETypeKindPtr &&
+          CHECK_MEMBER(src_type, FIELD_INDEX(_struct, field),
+                       instr->as.copy_from_field.src_field_name);
+
+          if (field_type.kind == ETypeKindPtr &&
               instr->as.copy_from_field.take_ref &&
               !instr->as.copy_from_field.is_ref_explicit)
             instr->as.copy_from_field.take_ref = false;
 
           EType ptr_type = {0};
           ptr_type.kind = ETypeKindPtr;
-          ptr_type.ptr_target = &field->type;
+          ptr_type.ptr_target = &field_type;
 
           if (dest->type.kind == ETypeKindUnit) {
-            dest->type = type_clone(&field->type);
+            dest->type = type_clone(&field_type);
           } else if (!instr->as.copy_from_field.take_ref &&
-                     !type_eq(&field->type, &dest->type)) {
+                     !type_eq(&field_type, &dest->type)) {
             Str dest_type_str = get_type_str(&dest->type);
-            Str field_type_str = get_type_str(&field->type);
+            Str field_type_str = get_type_str(&field_type);
             CERRORF("Cannot assign value of field of type "STR_FMT" to a variable of type "STR_FMT"\n",
                     STR_ARG(field_type_str), STR_ARG(dest_type_str));
             free_type_str(dest_type_str, &dest->type);
-            free_type_str(field_type_str, &field->type);
+            free_type_str(field_type_str, &field_type);
+            if (cloned)
+              type_free(&field_type);
             goto fail;
           } else if (instr->as.copy_from_field.take_ref &&
                      !type_eq(&ptr_type, &dest->type)) {
@@ -1876,6 +1917,8 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
                     STR_ARG(ptr_type_str), STR_ARG(dest_type_str));
             free_type_str(dest_type_str, &dest->type);
             free_type_str(ptr_type_str, &ptr_type);
+            if (cloned)
+              type_free(&field_type);
             goto fail;
           }
 
@@ -1884,6 +1927,9 @@ bool check_ir(EIr *ir, Varss *varss, Arena *arena, bool require_main) {
                dest->type.kind == ETypeKindArray ||
                dest->type.kind == ETypeKindTuple))
             set_member_moved(src_type, FIELD_INDEX(_struct, field), true);
+
+          if (cloned)
+            type_free(&field_type);
         } else {
           bool is_ptr = str_eq(instr->as.copy_from_field.src_field_name, STR_LIT("ptr"));
           if (!is_ptr && !str_eq(instr->as.copy_from_field.src_field_name, STR_LIT("len"))) {

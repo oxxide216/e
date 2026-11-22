@@ -1000,8 +1000,29 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
           parser_expect_token(parser, MASK(TT_CPAREN), "`)`");
         } else if (parser_peek_token(parser, &token) != TokenStatusEOF &&
-                   token.id == TT_COLON) {
+                   (token.id == TT_COLON || token.id == TT_BACKSLASH)) {
           parser_next_token(parser, NULL);
+
+          ETypes generics = {0};
+
+          if (token.id == TT_BACKSLASH) {
+            Token temp_token;
+            while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+                   temp_token.id != TT_BACKSLASH) {
+              parser_parse_type(parser);
+              DA_APPEND(generics, parser->last_type);
+
+              if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+                  temp_token.id != TT_BACKSLASH)
+                parser_expect_token(parser,
+                                    MASK(TT_COMMA) |
+                                    MASK(TT_BACKSLASH),
+                                    "`,` or `\\`");
+            }
+
+            parser_expect_token(parser, MASK(TT_BACKSLASH), "`\\`");
+            parser_expect_token(parser, MASK(TT_COLON), "`:`");
+          }
 
           u32 i = 0;
 
@@ -1044,6 +1065,7 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
             ETypeKindStruct,
             {
               .name = name_token.lexeme,
+              .generics = generics,
             },
             {
               token.file_path,
@@ -2570,7 +2592,30 @@ static void parser_parse_struct_impl(Parser *parser) {
   parser_peek_token(parser, &token);
   parser_expect_token(parser, MASK(TT_IDENT), "identifier");
 
-  emit_struct(&parser->ir->structs, token.lexeme);
+  Token name_token = token;
+  ENames generics = {0};
+
+  if (parser_peek_token(parser, &token) != TokenStatusEOF &&
+      token.id == TT_BACKSLASH) {
+    parser_next_token(parser, NULL);
+    while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+           token.id != TT_BACKSLASH) {
+      parser_peek_token(parser, &token);
+      parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+
+      DA_APPEND(generics, token.lexeme);
+
+      if (parser_peek_token(parser, &token) == TokenStatusEOF ||
+          token.id != TT_BACKSLASH)
+        parser_expect_token(parser,
+                            MASK(TT_COMMA) |
+                            MASK(TT_BACKSLASH),
+                            "`,` or `\\`");
+    }
+    parser_expect_token(parser, MASK(TT_BACKSLASH), "`\\`");
+  }
+
+  emit_struct(&parser->ir->structs, name_token.lexeme, generics);
 
   while (parser_peek_token(parser, &token) != TokenStatusEOF &&
          token.id != TT_END) {

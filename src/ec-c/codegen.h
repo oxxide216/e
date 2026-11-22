@@ -35,10 +35,10 @@
     DA_APPEND((procs)->items[(procs)->len - 1].instrs, instr); \
   } while (0)
 
-#define emit_struct(structs, name)  \
-  do {                              \
-    EStruct _struct = { name, {} }; \
-    DA_APPEND(*(structs), _struct); \
+#define emit_struct(structs, name, generics)  \
+  do {                                        \
+    EStruct _struct = { name, generics, {} }; \
+    DA_APPEND(*(structs), _struct);           \
   } while (0)
 
 #define emit_field(structs, name, type)                            \

@@ -40,6 +40,7 @@ struct EType {
   union {
     struct {
       Str      name;
+      ETypes   generics;
       EStruct *_struct;
     };
     EType     *ptr_target;
@@ -387,6 +388,8 @@ struct EProc {
 
 typedef Da(EProc) EProcs;
 
+typedef Da(Str) ENames;
+
 typedef struct {
   Str   name;
   EType type;
@@ -396,6 +399,7 @@ typedef Da(EField) EFields;
 
 struct EStruct {
   Str     name;
+  ENames  generics;
   EFields fields;
 };
 
@@ -480,7 +484,12 @@ EIr         *get_struct_ir(EIr *ir, Str name);
 EField      *get_field(EStruct *_struct, Str name);
 EStaticVar  *get_static_var(EIr *ir, Str name);
 
-bool check_struct_existence(EIr *ir, EType *type);
+bool  type_contains_generics(EType *type);
+EType type_replace_generics(EType *type, ENames *generic_names, ETypes *generics);
+
+bool check_struct_existence(EIr *ir, EType *type,
+                            ENames *generic_names,
+                            ETypes *generics);
 bool populate_type_struct_ptrs(EIr *ir);
 
 void varss_destroy(Varss *varss);

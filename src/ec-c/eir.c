@@ -18,6 +18,12 @@ EType type_clone(EType *type) {
       malloc(new_type.tuple_types.cap * sizeof(*new_type.tuple_types.items));
     for (u32 i = 0; i < new_type.tuple_types.len; ++i)
       new_type.tuple_types.items[i] = type_clone(type->tuple_types.items + i);
+  } else if (new_type.kind == ETypeKindStruct) {
+    new_type.generics.cap = new_type.generics.len;
+    new_type.generics.items =
+      malloc(new_type.generics.cap * sizeof(*new_type.generics.items));
+    for (u32 i = 0; i < new_type.generics.len; ++i)
+      new_type.generics.items[i] = type_clone(type->generics.items + i);
   }
   if (new_type.moved_members) {
     new_type.moved_members = malloc(new_type.moved_members_len);
@@ -67,6 +73,9 @@ void type_free(EType *type) {
       type_free(type->tuple_types.items + i);
     if (type->tuple_types.items)
       free(type->tuple_types.items);
+  } else if (type->kind == ETypeKindStruct) {
+    if (type->generics.items)
+      free(type->generics.items);
   }
   if (type->moved_members)
     free(type->moved_members);
@@ -355,8 +364,65 @@ EStaticVar *get_static_var(EIr *ir, Str name) {
 }
 
 
-bool check_struct_existence(EIr *ir, EType *type) {
+bool type_contains_generics(EType *type) {
   if (type->kind == ETypeKindStruct) {
+    if (!type->_struct)
+      return true;
+
+    for (u32 i = 0; i < type->_struct->fields.len; ++i)
+      if (type_contains_generics(&type->_struct->fields.items[i].type))
+        return true;
+  } else if (type->kind == ETypeKindPtr) {
+    return type_contains_generics(type->ptr_target);
+  } else if (type->kind == ETypeKindArray) {
+    return type_contains_generics(type->array_element);
+  } else if (type->kind == ETypeKindTuple) {
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      if (type_contains_generics(type->tuple_types.items + i))
+        return true;
+  }
+
+  return false;
+}
+
+void _type_replace_generics(EType *type, ENames *generic_names, ETypes *generics) {
+  if (type->kind == ETypeKindStruct) {
+    if (type->_struct) {
+      _type_replace_generics(type, &type->_struct->generics, &type->generics);
+    } else {
+      for (u32 i = 0; i < generic_names->len; ++i) {
+        if (str_eq(generic_names->items[i], type->name)) {
+          *type = type_clone(generics->items + i);
+          break;
+        }
+      }
+    }
+  } else if (type->kind == ETypeKindPtr) {
+    _type_replace_generics(type->ptr_target, generic_names, generics);
+  } else if (type->kind == ETypeKindArray) {
+    _type_replace_generics(type->array_element, generic_names, generics);
+  } else if (type->kind == ETypeKindTuple) {
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      _type_replace_generics(type->tuple_types.items + i, generic_names, generics);
+  }
+}
+
+EType type_replace_generics(EType *type, ENames *generic_names, ETypes *generics) {
+  EType result = type_clone(type);
+  _type_replace_generics(&result, generic_names, generics);
+  return result;
+}
+
+bool check_struct_existence(EIr *ir, EType *type,
+                            ENames *generic_names,
+                            ETypes *generics) {
+  if (type->kind == ETypeKindStruct) {
+    if (generic_names)
+      for (u32 i = 0; i < generic_names->len; ++i)
+        if (str_eq(generic_names->items[i], type->name))
+          return !generics || check_struct_existence(ir, generics->items + i,
+                                                     generic_names, generics);
+
     type->_struct = get_struct(ir, type->name);
     if (!type->_struct) {
       PERROR(STR_FMT":%u:%u: ", "Structure "STR_FMT" was not defined\n",
@@ -367,12 +433,12 @@ bool check_struct_existence(EIr *ir, EType *type) {
       return false;
     }
   } else if (type->kind == ETypeKindPtr) {
-    return check_struct_existence(ir, type->ptr_target);
+    return check_struct_existence(ir, type->ptr_target, generic_names, generics);
   } else if (type->kind == ETypeKindArray) {
-    return check_struct_existence(ir, type->array_element);
+    return check_struct_existence(ir, type->array_element, generic_names, generics);
   } else if (type->kind == ETypeKindTuple) {
     for (u32 i = 0; i < type->tuple_types.len; ++i)
-      if (!check_struct_existence(ir, type->tuple_types.items + i))
+      if (!check_struct_existence(ir, type->tuple_types.items + i, generic_names, generics))
         return false;
   }
 
@@ -383,26 +449,28 @@ bool populate_type_struct_ptrs(EIr *ir) {
   for (u32 i = 0; i < ir->structs.len; ++i) {
     EStruct *_struct = ir->structs.items + i;
 
-    for (u32 j = 0; j < _struct->fields.len; ++j)
-      if (!check_struct_existence(ir, &_struct->fields.items[j].type))
+    for (u32 j = 0; j < _struct->fields.len; ++j) {
+      if (!check_struct_existence(ir, &_struct->fields.items[j].type,
+                                  &_struct->generics, NULL))
         return false;
+    }
   }
 
   for (u32 i = 0; i < ir->consts.len; ++i)
-    if (!check_struct_existence(ir, &ir->consts.items[i].type))
+    if (!check_struct_existence(ir, &ir->consts.items[i].type, NULL, NULL))
       return false;
 
   for (u32 i = 0; i < ir->static_vars.len; ++i)
-    if (!check_struct_existence(ir, &ir->static_vars.items[i].type))
+    if (!check_struct_existence(ir, &ir->static_vars.items[i].type, NULL, NULL))
       return false;
 
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
 
     for (u32 j = 0; j < proc->args.len; ++j)
-      if (!check_struct_existence(ir, &proc->args.items[j].type))
+      if (!check_struct_existence(ir, &proc->args.items[j].type, NULL, NULL))
         return false;
-    if (!check_struct_existence(ir, &proc->return_type))
+    if (!check_struct_existence(ir, &proc->return_type, NULL, NULL))
       return false;
   }
 
