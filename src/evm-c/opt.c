@@ -201,7 +201,8 @@ void opt_const_prop(Instrs *instrs, VarLocs *locs) {
       }
     }
 
-    if (instr->kind != InstrKindJumpIfNot) {
+    if (instr->kind != InstrKindJumpIfNot &&
+        instr->kind != InstrKindRef) {
       u32 j = 0;
       u32 *arg;
       while ((arg = get_nth_arg(instr, j++))) {
