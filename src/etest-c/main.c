@@ -40,7 +40,7 @@ static Test tests[] = {
   { "temp-ref",          false, 4,   "" },
   { "tuples",            false, 138, "" },
   { "vec-invalid",       true,  0,   "" },
-  { "vec-valid",         false, 0,   "" },
+  { "vec-valid",         false, 13,  "" },
 };
 
 typedef struct {
