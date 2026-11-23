@@ -5,10 +5,10 @@
 #define MATER_COMPILER
 #include "evm/ir.h"
 
-#define emit_proc(procs, name, token)                  \
+#define emit_proc(procs, name, generics, token)        \
   do {                                                 \
     EProc proc = {                                     \
-      name, {}, {}, {},                                \
+      name, generics, {}, {}, {},                      \
       { (token).file_path, (token).row, (token).col }, \
     };                                                 \
     DA_APPEND(*(procs), proc);                         \

@@ -5,7 +5,7 @@ build_dir = build
 src = src/ec-c/**.c src/common-c/**.c
 deps = lexgen
 ghost_deps = src/ec-c/grammar.h
-cflags = $cflags
+cflags = $cflags -DNDEBUG
 incpath = $build_dir
 
 [evm]

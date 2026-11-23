@@ -151,6 +151,7 @@ typedef struct {
 
 typedef struct {
   Str     name;
+  ETypes  generics;
   Indices arg_indices;
 } EInstrCall;
 
@@ -161,6 +162,7 @@ typedef struct {
   u32      dest_index;
   Str      name;
   EProc   *callee;
+  ETypes   generics;
   Indices  arg_indices;
 } EInstrCallAssign;
 
@@ -369,6 +371,8 @@ typedef struct {
 
 typedef Da(EInstr) EInstrs;
 
+typedef Da(Str) ENames;
+
 typedef struct {
   Str   name;
   EType type;
@@ -380,6 +384,7 @@ typedef ETypeLoc EProcLoc;
 
 struct EProc {
   Str      name;
+  ENames   generics;
   EArgs    args;
   EType    return_type;
   EInstrs  instrs;
@@ -387,8 +392,6 @@ struct EProc {
 };
 
 typedef Da(EProc) EProcs;
-
-typedef Da(Str) ENames;
 
 typedef struct {
   Str   name;
@@ -469,11 +472,11 @@ EType type_clone(EType *type);
 bool type_eq(EType *a, EType *b);
 void type_free(EType *type);
 
-u32 get_type_size(EIr *ir, EType *type);
+u32 get_type_size(EType *type);
 
-EProc       *get_proc(EIr *ir, Str name,
-                      ETypeRefs *arg_types,
-                      bool ignore_paths);
+EProc       *get_proc(EIr *ir, Str name, ETypeRefs *arg_types,
+                      bool ignore_paths, bool ignore_generics,
+                      EIr **out_ir, Varss **out_varss);
 EModulePath  get_proc_path(EIr *ir, Str name,
                            Indices *arg_indices,
                            Vars *vars,
@@ -491,6 +494,8 @@ bool check_struct_existence(EIr *ir, EType *type,
                             ENames *generic_names,
                             ETypes *generics);
 bool populate_type_struct_ptrs(EIr *ir);
+
+void proc_clone(EIr *ir, Varss *varss, EProc *proc, EProc *out_proc, Vars *out_vars);
 
 void varss_destroy(Varss *varss);
 bool proc_destroy(EIr *ir, Varss *varss, EProc *proc);

@@ -559,11 +559,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_loc(stream, locs->items + instr->as.bin_op.src0_index);
       write_cstr(stream, "\n");
 
+      ensure_not_imm(stream, locs->items + instr->as.bin_op.src1_index, 0);
+
       if (locs->items[instr->as.bin_op.dest_index].kind == ValueKindSigned)
         write_cstr(stream, "  imul ");
       else
         write_cstr(stream, "  mul ");
-      write_loc(stream, locs->items + instr->as.bin_op.src1_index);
+      write_loc_ensure_not_imm(stream, locs->items + instr->as.bin_op.src1_index, 0);
       write_cstr(stream, "\n");
 
       write_cstr(stream, "  mov ");
@@ -598,11 +600,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       } break;
       }
 
+      ensure_not_imm(stream, locs->items + instr->as.bin_op.src1_index, 0);
+
       if (locs->items[instr->as.bin_op.dest_index].kind == ValueKindSigned)
         write_cstr(stream, "  idiv ");
       else
         write_cstr(stream, "  div ");
-      write_loc(stream, locs->items + instr->as.bin_op.src1_index);
+      write_loc_ensure_not_imm(stream, locs->items + instr->as.bin_op.src1_index, 0);
       write_cstr(stream, "\n");
 
       write_cstr(stream, "  mov ");
@@ -1080,12 +1084,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       if (is_valid_index_mul(src_loc->size)) {
         ensure_in_reg_of_size(stream, locs->items + instr->as.copy_to_ref.dest_offset_index, 8, 2, false);
       } else {
-        fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[2]));
+        u32 index_size = locs->items[instr->as.copy_to_ref.dest_offset_index].size;
+        fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(index_size)[2]));
         write_loc(stream, locs->items + instr->as.copy_to_ref.dest_offset_index);
         write_cstr(stream, "\n");
         fprintf(stream, "  mov "STR_FMT",%u\n",
-                STR_ARG(get_temp_regs(8)[0]), src_loc->size);
-        fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(8)[0]));
+                STR_ARG(get_temp_regs(index_size)[0]), src_loc->size);
+        fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(index_size)[0]));
       }
     }
     ensure_in_reg(stream, dest_loc, 0, !instr->as.copy_to_ref.deref);
@@ -1154,12 +1159,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       if (is_valid_index_mul(dest_loc->size)) {
         ensure_in_reg_of_size(stream, locs->items + instr->as.copy_from_ref.src_offset_index, 8, 2, false);
       } else {
-        fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[2]));
+        u32 index_size = locs->items[instr->as.copy_from_ref.src_offset_index].size;
+        fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(index_size)[2]));
         write_loc(stream, locs->items + instr->as.copy_from_ref.src_offset_index);
         write_cstr(stream, "\n");
         fprintf(stream, "  mov "STR_FMT",%u\n",
-                STR_ARG(get_temp_regs(8)[0]), dest_loc->size);
-        fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(8)[0]));
+                STR_ARG(get_temp_regs(index_size)[0]), dest_loc->size);
+        fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(index_size)[0]));
       }
     }
     ensure_in_reg(stream, src_loc, 0, !instr->as.copy_from_ref.deref);

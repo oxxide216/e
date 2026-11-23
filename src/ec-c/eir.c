@@ -52,9 +52,14 @@ bool type_eq(EType *a, EType *b) {
       if (!type_eq(a->tuple_types.items + i, b->tuple_types.items + i))
         return false;
     return true;
+  } else if (a->kind == ETypeKindStruct && a->kind != b->kind) {
+    return a->_struct == NULL;
+  } else if (b->kind == ETypeKindStruct && a->kind != b->kind) {
+    return b->_struct == NULL;
   } else {
     return a->kind == b->kind &&
            (a->kind != ETypeKindStruct ||
+            !a->_struct || !b->_struct ||
             a->_struct == b->_struct);
   }
 }
@@ -81,7 +86,7 @@ void type_free(EType *type) {
     free(type->moved_members);
 }
 
-u32 get_type_size(EIr *ir, EType *type) {
+u32 get_type_size(EType *type) {
   switch (type->kind) {
   case ETypeKindUnit: return 0;
   case ETypeKindS8:   return 1;
@@ -97,22 +102,21 @@ u32 get_type_size(EIr *ir, EType *type) {
   case ETypeKindStruct: {
     u32 size = 0;
 
-    EStruct *_struct = get_struct(ir, type->name);
-    for (u32 i = 0; i < _struct->fields.len; ++i)
-      size += get_type_size(ir, &_struct->fields.items[i].type);
+    for (u32 i = 0; i < type->_struct->fields.len; ++i)
+      size += get_type_size(&type->_struct->fields.items[i].type);
 
     return size == 0 ? 1 : size;
   }
 
   case ETypeKindArray: {
-    return get_type_size(ir, type->array_element) * type->array_len;
+    return get_type_size(type->array_element) * type->array_len;
   }
 
   case ETypeKindTuple: {
     u32 size = 0;
 
     for (u32 i = 0; i < type->tuple_types.len; ++i)
-      size += get_type_size(ir, type->tuple_types.items + i);
+      size += get_type_size(type->tuple_types.items + i);
 
     return size;
   }
@@ -124,7 +128,9 @@ u32 get_type_size(EIr *ir, EType *type) {
   return 0;
 }
 
-EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types, bool ignore_paths) {
+EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types,
+                bool ignore_paths, bool ignore_generics,
+                EIr **out_ir, Varss **out_varss) {
   if (!ignore_paths) {
     u32 index = str_find(name, STR_LIT("::"));
     if (index != (u32) -1) {
@@ -136,8 +142,14 @@ EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types, bool ignore_paths) {
       for (u32 i = 0; i < ir->module_deps.len; ++i) {
         EModuleDep *dep = ir->module_deps.items + i;
 
-        if (str_eq(dep->path.items[dep->path.len - 1], prefix))
-          return get_proc(&dep->ir, name, arg_types, ignore_paths);
+        if (str_eq(dep->path.items[dep->path.len - 1], prefix)) {
+          if (out_ir)
+            *out_ir = &dep->ir;
+          if (out_varss)
+            *out_varss = &dep->varss;
+          return get_proc(&dep->ir, name, arg_types, ignore_paths,
+                          ignore_generics, out_ir, out_varss);
+        }
       }
 
       return NULL;
@@ -148,6 +160,9 @@ EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types, bool ignore_paths) {
     EProc *proc = ir->procs.items + i;
 
     if (!str_eq(proc->name, name) || proc->args.len != arg_types->len)
+      continue;
+
+    if (ignore_generics && proc->generics.len > 0)
       continue;
 
     bool all = true;
@@ -166,14 +181,28 @@ EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types, bool ignore_paths) {
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
 
-    for (u32 j = 0; j < dep->imports.len; ++j)
-      if (str_eq(dep->imports.items[j], name))
-        return get_proc(&dep->ir, name, arg_types, ignore_paths);
+    for (u32 j = 0; j < dep->imports.len; ++j) {
+      if (str_eq(dep->imports.items[j], name)) {
+        if (out_ir)
+          *out_ir = &dep->ir;
+        if (out_varss)
+          *out_varss = &dep->varss;
+        return get_proc(&dep->ir, name, arg_types, ignore_paths,
+                        ignore_generics, out_ir, out_varss);
+      }
+    }
 
     if (ignore_paths) {
-      EProc *proc = get_proc(&dep->ir, name, arg_types, ignore_paths);
-      if (proc)
+      EProc *proc = get_proc(&dep->ir, name, arg_types,
+                             ignore_paths, ignore_generics,
+                             out_ir, out_varss);
+      if (proc) {
+        if (out_ir)
+          *out_ir = &dep->ir;
+        if (out_varss)
+          *out_varss = &dep->varss;
         return proc;
+      }
     }
   }
 
@@ -369,8 +398,8 @@ bool type_contains_generics(EType *type) {
     if (!type->_struct)
       return true;
 
-    for (u32 i = 0; i < type->_struct->fields.len; ++i)
-      if (type_contains_generics(&type->_struct->fields.items[i].type))
+    for (u32 i = 0; i < type->generics.len; ++i)
+      if (type_contains_generics(type->generics.items + i))
         return true;
   } else if (type->kind == ETypeKindPtr) {
     return type_contains_generics(type->ptr_target);
@@ -387,9 +416,10 @@ bool type_contains_generics(EType *type) {
 
 void _type_replace_generics(EType *type, ENames *generic_names, ETypes *generics) {
   if (type->kind == ETypeKindStruct) {
-    if (type->_struct) {
-      _type_replace_generics(type, &type->_struct->generics, &type->generics);
-    } else {
+    for (u32 i = 0; i < type->generics.len; ++i)
+      _type_replace_generics(type->generics.items + i, generic_names, generics);
+
+    if (!type->_struct) {
       for (u32 i = 0; i < generic_names->len; ++i) {
         if (str_eq(generic_names->items[i], type->name)) {
           *type = type_clone(generics->items + i);
@@ -468,13 +498,94 @@ bool populate_type_struct_ptrs(EIr *ir) {
     EProc *proc = ir->procs.items + i;
 
     for (u32 j = 0; j < proc->args.len; ++j)
-      if (!check_struct_existence(ir, &proc->args.items[j].type, NULL, NULL))
+      if (!check_struct_existence(ir, &proc->args.items[j].type, &proc->generics, NULL))
         return false;
-    if (!check_struct_existence(ir, &proc->return_type, NULL, NULL))
+    if (!check_struct_existence(ir, &proc->return_type, &proc->generics, NULL))
       return false;
+
+    for (u32 i = 0; i < proc->instrs.len; ++i) {
+      EInstr *instr = proc->instrs.items + i;
+
+      if (instr->kind == EInstrKindCast) {
+        if (!check_struct_existence(ir, &instr->as.cast.dest_type, &proc->generics, NULL))
+          return false;
+      } else if (instr->kind == EInstrKindSizeOf) {
+        if (!check_struct_existence(ir, &instr->as.size_of.type, &proc->generics, NULL))
+          return false;
+      }
+    }
   }
 
   return true;
+}
+
+void proc_clone(EIr *ir, Varss *varss, EProc *proc, EProc *out_proc, Vars *out_vars) {
+  EProc result = *proc;
+
+  if (result.args.len > 0) {
+    result.args.items = malloc(result.args.len * sizeof(*result.args.items));
+    for (u32 i = 0; i < proc->args.len; ++i) {
+      result.args.items[i] = proc->args.items[i];
+      result.args.items[i].type = type_clone(&result.args.items[i].type);
+    }
+  }
+
+  result.return_type = type_clone(&proc->return_type);
+
+  if (result.instrs.len > 0) {
+    result.instrs.items = malloc(result.instrs.len * sizeof(*result.instrs.items));
+    for (u32 i = 0; i < proc->instrs.len; ++i) {
+      EInstr *instr = proc->instrs.items + i;
+
+      result.instrs.items[i] = *instr;
+
+      if (instr->kind == EInstrKindCast) {
+        result.instrs.items[i].as.cast.dest_type =
+          type_clone(&instr->as.cast.dest_type);
+      } else if (instr->kind == EInstrKindSizeOf) {
+        result.instrs.items[i].as.size_of.type =
+          type_clone(&instr->as.size_of.type);
+      } else if (instr->kind == EInstrKindCall) {
+        result.instrs.items[i].as.call.arg_indices.items =
+          malloc(result.instrs.items[i].as.call.arg_indices.len *
+                 sizeof(*result.instrs.items[i].as.call.arg_indices.items));
+        memcpy(result.instrs.items[i].as.call.arg_indices.items,
+               instr->as.call.arg_indices.items,
+               instr->as.call.arg_indices.len *
+               sizeof(*instr->as.call.arg_indices.items));
+      } else if (instr->kind == EInstrKindCallAssign) {
+        result.instrs.items[i].as.call_assign.arg_indices.items =
+          malloc(result.instrs.items[i].as.call_assign.arg_indices.len *
+                 sizeof(*result.instrs.items[i].as.call_assign.arg_indices.items));
+        memcpy(result.instrs.items[i].as.call_assign.arg_indices.items,
+               instr->as.call_assign.arg_indices.items,
+               instr->as.call_assign.arg_indices.len *
+               sizeof(*instr->as.call_assign.arg_indices.items));
+      } else if (instr->kind == EInstrKindInlineAsm) {
+        result.instrs.items[i].as.inline_asm.segments.items =
+          malloc(result.instrs.items[i].as.inline_asm.segments.len *
+                 sizeof(*result.instrs.items[i].as.inline_asm.segments.items));
+        memcpy(result.instrs.items[i].as.inline_asm.segments.items,
+               instr->as.inline_asm.segments.items,
+               instr->as.inline_asm.segments.len *
+               sizeof(*instr->as.inline_asm.segments.items));
+      }
+    }
+  }
+
+  u32 proc_index = proc - ir->procs.items;
+
+  Vars new_vars;
+  new_vars.len = varss->items[proc_index].len;
+  new_vars.cap = new_vars.len;
+  new_vars.items = malloc(new_vars.cap * sizeof(*new_vars.items));
+  for (u32 i = 0; i < new_vars.len; ++i) {
+    new_vars.items[i] = varss->items[proc_index].items[i];
+    new_vars.items[i].type = type_clone(&new_vars.items[i].type);
+  }
+
+  *out_proc = result;
+  *out_vars = new_vars;
 }
 
 void varss_destroy(Varss *varss) {
@@ -503,6 +614,8 @@ void _proc_destroy(EProc *proc) {
 
     if (instr->kind == EInstrKindCast) {
       type_free(&instr->as.cast.dest_type);
+    } else if (instr->kind == EInstrKindSizeOf) {
+      type_free(&instr->as.size_of.type);
     } else if (instr->kind == EInstrKindCall) {
       if (instr->as.call.arg_indices.items)
         free(instr->as.call.arg_indices.items);

@@ -161,129 +161,109 @@ static Str mangle_callee_name(Str name, Indices *arg_indices,
   return sb_to_str(sb);
 }
 
-static void get_type_fields_len_rec(EType *type, EIr *ir, u32 *result);
+static void get_type_fields_len_rec(EType *type, u32 *result);
 
-static void get_type_fields_len_until_rec(EType *type, u32 end,
-                                          EIr *ir, u32 *result) {
+static void get_type_fields_len_until_rec(EType *type, u32 end, u32 *result) {
   if (type->kind == ETypeKindStruct) {
-    EStruct *_struct = get_struct(ir, type->name);
-    EIr *struct_ir = get_struct_ir(ir, type->name);
     for (u32 i = 0; i < end; ++i) {
-      EField *field = _struct->fields.items + i;
-      get_type_fields_len_rec(&field->type, struct_ir, result);
+      EField *field = type->_struct->fields.items + i;
+      get_type_fields_len_rec(&field->type, result);
     }
   } else if (type->kind == ETypeKindTuple) {
     for (u32 i = 0; i < end; ++i) {
       EType *field_type = type->tuple_types.items + i;
-      get_type_fields_len_rec(field_type, ir, result);
+      get_type_fields_len_rec(field_type, result);
     }
   } else {
     ++*result;
   }
 }
 
-static void get_type_fields_len_rec(EType *type, EIr *ir, u32 *result) {
+static void get_type_fields_len_rec(EType *type, u32 *result) {
   u32 end = 0;
-  if (type->kind == ETypeKindStruct) {
-    EStruct *_struct = get_struct(ir, type->name);
-    end = _struct->fields.len;
-  } else if (type->kind == ETypeKindTuple) {
+  if (type->kind == ETypeKindStruct)
+    end = type->_struct->fields.len;
+  else if (type->kind == ETypeKindTuple)
     end = type->tuple_types.len;
-  }
 
-  get_type_fields_len_until_rec(type, end, ir, result);
+  get_type_fields_len_until_rec(type, end, result);
 }
 
-static void encode_type_fields_as_aligned_segments_rec(FILE *stream, EType *type,
-                                                       EIr *ir, u32 *offset);
+static void encode_type_fields_as_aligned_segments_rec(FILE *stream, EType *type, u32 *offset);
 
 static void encode_type_fields_as_aligned_segments_until_rec(FILE *stream, EType *type,
-                                                             u32 end, EIr *ir,
-                                                             u32 *offset) {
+                                                             u32 end, u32 *offset) {
   if (type->kind == ETypeKindStruct) {
-    EStruct *_struct = get_struct(ir, type->name);
-    EIr *struct_ir = get_struct_ir(ir, type->name);
     for (u32 i = 0; i < end; ++i) {
-      EField *field = _struct->fields.items + i;
-      encode_type_fields_as_aligned_segments_rec(stream, &field->type,
-                                                 struct_ir, offset);
+      EField *field = type->_struct->fields.items + i;
+      encode_type_fields_as_aligned_segments_rec(stream, &field->type, offset);
     }
   } else if (type->kind == ETypeKindTuple) {
     for (u32 i = 0; i < end; ++i) {
       EType *field_type = type->tuple_types.items + i;
-      encode_type_fields_as_aligned_segments_rec(stream, field_type, ir, offset);
+      encode_type_fields_as_aligned_segments_rec(stream, field_type, offset);
     }
   } else {
-    u32 size = get_type_size(ir, type);
+    u32 size = get_type_size(type);
     fwrite(offset, sizeof(*offset), 1, stream);
     fwrite(&size, sizeof(size), 1, stream);
     *offset += size;
   }
 }
 
-static void encode_type_fields_as_aligned_segments_rec(FILE *stream, EType *type,
-                                                       EIr *ir, u32 *offset) {
+static void encode_type_fields_as_aligned_segments_rec(FILE *stream, EType *type, u32 *offset) {
   u32 end = 0;
-  if (type->kind == ETypeKindStruct) {
-    EStruct *_struct = get_struct(ir, type->name);
-    end = _struct->fields.len;
-  } else if (type->kind == ETypeKindTuple) {
+  if (type->kind == ETypeKindStruct)
+    end = type->_struct->fields.len;
+  else if (type->kind == ETypeKindTuple)
     end = type->tuple_types.len;
-  }
 
-  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, ir, offset);
+  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, offset);
 }
 
-static void encode_type_fields_as_aligned_segments_until(FILE *stream, EType *type,
-                                                         u32 end, EIr *ir) {
+static void encode_type_fields_as_aligned_segments_until(FILE *stream, EType *type, u32 end) {
   u32 len = 0;
-  get_type_fields_len_until_rec(type, end, ir, &len);
+  get_type_fields_len_until_rec(type, end, &len);
 
   fwrite(&len, sizeof(len), 1, stream);
   u32 offset = 0;
-  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, ir, &offset);
+  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, &offset);
 }
 
-static void encode_type_fields_as_aligned_segments(FILE *stream, EType *type,
-                                                   EIr *ir) {
+static void encode_type_fields_as_aligned_segments(FILE *stream, EType *type) {
   u32 end = 0;
-  if (type->kind == ETypeKindStruct) {
-    EStruct *_struct = get_struct(ir, type->name);
-    end = _struct->fields.len;
-  } else if (type->kind == ETypeKindTuple) {
+  if (type->kind == ETypeKindStruct)
+    end = type->_struct->fields.len;
+  else if (type->kind == ETypeKindTuple)
     end = type->tuple_types.len;
-  }
 
-  encode_type_fields_as_aligned_segments_until(stream, type, end, ir);
+  encode_type_fields_as_aligned_segments_until(stream, type, end);
 }
 
 static void encode_type_fields_as_aligned_segments_until_for_field_access(FILE *stream,
                                                                           EType *type,
-                                                                          u32 end,
-                                                                          EIr *ir) {
+                                                                          u32 end) {
   EType *last = NULL;
-  if (type->kind == ETypeKindStruct) {
-    EStruct *_struct = get_struct(ir, type->name);
-    last = &_struct->fields.items[end - 1].type;
-  } else if (type->kind == ETypeKindTuple) {
+  if (type->kind == ETypeKindStruct)
+    last = &type->_struct->fields.items[end - 1].type;
+  else if (type->kind == ETypeKindTuple)
     last = type->tuple_types.items + end - 1;
-  }
 
   if (last)
     --end;
 
   u32 len = 0;
-  get_type_fields_len_until_rec(type, end, ir, &len);
+  get_type_fields_len_until_rec(type, end, &len);
 
   if (last)
     ++len;
 
   fwrite(&len, sizeof(len), 1, stream);
   u32 offset = 0;
-  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, ir, &offset);
+  encode_type_fields_as_aligned_segments_until_rec(stream, type, end, &offset);
 
   if (last) {
-    u32 size = get_type_size(ir, last);
+    u32 size = get_type_size(last);
     fwrite(&offset, sizeof(offset), 1, stream);
     fwrite(&size, sizeof(size), 1, stream);
   }
@@ -296,6 +276,9 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
                                 u32 static_base) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     EProc *proc = ir->procs.items + i;
+
+    if (proc->generics.len > 0)
+      continue;
 
     if (str_eq(proc->name, STR_LIT("main"))) {
       encode_str(stream, proc->name);
@@ -310,12 +293,12 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
       EType *arg_type = &proc->args.items[j].type;
       ValueKind arg_kind = e_type_kind_to_evm_value_kind(arg_type->kind);
       fwrite(&arg_kind, 1, 1, stream);
-      encode_type_fields_as_aligned_segments(stream, arg_type, ir);
+      encode_type_fields_as_aligned_segments(stream, arg_type);
     }
 
     ValueKind return_kind = e_type_kind_to_evm_value_kind(proc->return_type.kind);
     fwrite(&return_kind, 1, 1, stream);
-    encode_type_fields_as_aligned_segments(stream, &proc->return_type, ir);
+    encode_type_fields_as_aligned_segments(stream, &proc->return_type);
 
     u32 len_without_tuples = 0;
     for (u32 j = 0; j < proc->instrs.len; ++j)
@@ -339,11 +322,11 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         Var *var = varss->items[i].items + instr->as.alloc.index;
         if (var->type.kind == ETypeKindStruct || var->type.kind == ETypeKindTuple) {
-          encode_type_fields_as_aligned_segments(stream, &var->type, ir);
+          encode_type_fields_as_aligned_segments(stream, &var->type);
         } else {
           u32 len = 1;
           u32 offset = 0;
-          u32 size = get_type_size(ir, &var->type);
+          u32 size = get_type_size(&var->type);
           fwrite(&len, sizeof(len), 1, stream);
           fwrite(&offset, sizeof(offset), 1, stream);
           fwrite(&size, sizeof(size), 1, stream);
@@ -522,7 +505,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         ValueKind dest_kind = e_type_kind_to_evm_value_kind(instr->as.cast.dest_type.kind);
         fwrite(&dest_kind, 1, 1, stream);
-        encode_type_fields_as_aligned_segments(stream, &instr->as.cast.dest_type, ir);
+        encode_type_fields_as_aligned_segments(stream, &instr->as.cast.dest_type);
 
         fwrite(&instr->as.cast.src_index, sizeof(instr->as.cast.src_index), 1, stream);
       } break;
@@ -547,7 +530,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         if (dest_type->kind == ETypeKindPtr)
           dest_type = dest_type->ptr_target;
 
-        EStruct *_struct = get_struct(ir, dest_type->name);
+        EStruct *_struct = dest_type->_struct;
         u32 index = 0;
 
         while (!str_eq(_struct->fields.items[index].name, instr->as.copy_to_field.dest_field_name))
@@ -555,7 +538,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         ++index;
 
 
-        encode_type_fields_as_aligned_segments_until_for_field_access(stream, dest_type, index, ir);
+        encode_type_fields_as_aligned_segments_until_for_field_access(stream, dest_type, index);
 
         fwrite(&instr->as.copy_to_field.src_index, sizeof(instr->as.copy_to_field.src_index), 1, stream);
 
@@ -574,14 +557,14 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         if (src_type->kind == ETypeKindPtr)
           src_type = src_type->ptr_target;
 
-        EStruct *_struct = get_struct(ir, src_type->name);
+        EStruct *_struct = src_type->_struct;
         u32 index = 0;
 
         while (!str_eq(_struct->fields.items[index].name, instr->as.copy_from_field.src_field_name))
           ++index;
         ++index;
 
-        encode_type_fields_as_aligned_segments_until_for_field_access(stream, src_type, index, ir);
+        encode_type_fields_as_aligned_segments_until_for_field_access(stream, src_type, index);
 
         EField *field = _struct->fields.items + index - 1;
         ValueKind src_target_kind = e_type_kind_to_evm_value_kind(field->type.kind);
@@ -611,8 +594,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           fwrite(&size, sizeof(size), 1, stream);
         } else {
           encode_type_fields_as_aligned_segments_until_for_field_access(stream, &dest->type,
-                                                                        instr->as.copy_to_offset.dest_offset + 1,
-                                                                        ir);
+                                                                        instr->as.copy_to_offset.dest_offset + 1);
         }
 
         fwrite(&instr->as.copy_to_offset.src_index, sizeof(instr->as.copy_to_offset.src_index), 1, stream);
@@ -652,8 +634,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           fwrite(&src_target_kind, 1, 1, stream);
         } else {
           encode_type_fields_as_aligned_segments_until_for_field_access(stream, &src->type,
-                                                                        instr->as.copy_from_offset.src_offset + 1,
-                                                                        ir);
+                                                                        instr->as.copy_from_offset.src_offset + 1);
 
           ValueKind src_target_kind = ValueKindUnsigned;
           if (src->type.kind == ETypeKindStruct) {
@@ -680,7 +661,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
       case EInstrKindSizeOf: {
         fwrite(&instr->as.size_of.dest_index, sizeof(instr->as.size_of.dest_index), 1, stream);
 
-        encode_type_fields_as_aligned_segments(stream, &instr->as.size_of.type, ir);
+        encode_type_fields_as_aligned_segments(stream, &instr->as.size_of.type);
       } break;
 
       case EInstrKindStaticRef: {
@@ -696,7 +677,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         u32 len = 1;
         i32 offset = 0;
-        u32 size = get_type_size(ir, &src->type);
+        u32 size = get_type_size(&src->type);
         fwrite(&len, sizeof(len), 1, stream);
         fwrite(&offset, sizeof(offset), 1, stream);
         fwrite(&size, sizeof(size), 1, stream);
@@ -715,7 +696,7 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
 
         u32 len = 1;
         i32 offset = 0;
-        u32 size = get_type_size(ir, &dest->type);
+        u32 size = get_type_size(&dest->type);
         fwrite(&len, sizeof(len), 1, stream);
         fwrite(&offset, sizeof(offset), 1, stream);
         fwrite(&size, sizeof(size), 1, stream);
@@ -754,7 +735,7 @@ static void encode_data_no_len(FILE *stream, EData *data) {
 static void encode_static_vars_no_len(FILE *stream, EIr *ir) {
   for (u32 i = 0; i < ir->static_vars.len; ++i) {
     EStaticVar *var = ir->static_vars.items + i;
-    encode_type_fields_as_aligned_segments(stream, &var->type, ir);
+    encode_type_fields_as_aligned_segments(stream, &var->type);
   }
 }
 
@@ -779,15 +760,22 @@ static void traverse_deps(EIr *ir,
     if (dep->ir.is_copy)
       continue;
 
+    for (u32 j = 0; j < dep->ir.procs.len; ++j) {
+      if (dep->ir.procs.items[j].generics.len == 0) {
+        if (!dep->ir.is_from_cache) {
+          if (procs_len)
+            ++*procs_len;
+        } else if (procs_as_imports_len) {
+          ++*procs_as_imports_len;
+        }
+      }
+    }
+
     if (!dep->ir.is_from_cache) {
-      if (procs_len)
-        *procs_len += dep->ir.procs.len;
       if (data_len)
         *data_len += dep->ir.data.len;
       if (static_vars_len)
         *static_vars_len += dep->ir.static_vars.len;
-    } else if (procs_as_imports_len) {
-      *procs_as_imports_len += dep->ir.procs.len;
     }
     traverse_deps(&dep->ir, procs_len, data_len,
                   static_vars_len, procs_as_imports_len);
@@ -802,16 +790,24 @@ static void traverse_all_deps(EIr *ir,
   for (u32 i = 0; i < ir->module_deps.len; ++i) {
     EModuleDep *dep = ir->module_deps.items + i;
 
+    for (u32 j = 0; j < dep->ir.procs.len; ++j) {
+      if (dep->ir.procs.items[j].generics.len == 0) {
+        if (!dep->ir.is_from_cache) {
+          if (procs_len)
+            ++*procs_len;
+        }
+        if (procs_as_imports_len) {
+          ++*procs_as_imports_len;
+        }
+      }
+    }
+
     if (!dep->ir.is_from_cache) {
-      if (procs_len)
-        *procs_len += dep->ir.procs.len;
       if (data_len)
         *data_len += dep->ir.data.len;
       if (static_vars_len)
         *static_vars_len += dep->ir.static_vars.len;
     }
-    if (procs_as_imports_len)
-      *procs_as_imports_len += dep->ir.procs.len;
     traverse_all_deps(&dep->ir, procs_len, data_len,
                       static_vars_len, procs_as_imports_len);
   }
