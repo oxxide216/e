@@ -57,10 +57,22 @@ bool type_eq(EType *a, EType *b) {
   } else if (b->kind == ETypeKindStruct && a->kind != b->kind) {
     return b->_struct == NULL;
   } else {
-    return a->kind == b->kind &&
-           (a->kind != ETypeKindStruct ||
-            !a->_struct || !b->_struct ||
-            a->_struct == b->_struct);
+    if (a->kind != b->kind ||
+        (a->kind == ETypeKindStruct &&
+         a->_struct && b->_struct &&
+         a->_struct != b->_struct))
+      return false;
+
+    if (a->kind == ETypeKindStruct) {
+      if (a->generics.len != b->generics.len)
+        return false;
+
+      for (u32 i = 0; i < a->generics.len; ++i)
+        if (!type_eq(a->generics.items + i, b->generics.items + i))
+          return false;
+    }
+
+    return true;
   }
 }
 

@@ -39,7 +39,8 @@ static Test tests[] = {
   { "structs",           false, 9,   "drop!\n" },
   { "temp-ref",          false, 4,   "" },
   { "tuples",            false, 138, "" },
-  { "vec-invalid",       true,  0,   "" },
+  { "vec-invalid0",      true,  0,   "" },
+  { "vec-invalid1",      true,  0,   "" },
   { "vec-valid",         false, 13,  "" },
 };
 
@@ -101,7 +102,7 @@ static void tester_finalize_test_on_compilation_fail(Tester *tester, u32 index) 
   tester->statuses[index] = status;
 
   if (status != StatusOk)
-    INFO("%s: Compilation failure\n", test->name);
+    INFO("%s: Unexpected compilation failure\n", test->name);
 }
 
 static void tester_finalize_test(Tester *tester, Process *process,
@@ -147,12 +148,22 @@ static bool tester_step(Tester *tester) {
       close(pipe_fds[1]);
 
       if (WEXITSTATUS(status) == 0) {
-        Process process = {0};
-        process.test_index = tester->compilations.items[i].test_index;
-        process.pid = pid;
-        process.output_fd = pipe_fds[0];
-        strcpy(process.path, tester->compilations.items[i].path);
-        DA_APPEND(tester->running, process);
+        Test *test = tests + tester->compilations.items[i].test_index;
+
+        if (test->expect_compilation_failure) {
+          Status status = test->expect_compilation_failure ? StatusFail : StatusOk;
+          tester->statuses[tester->compilations.items[i].test_index] = status;
+
+          if (status != StatusOk)
+            INFO("%s: Unexpected compilation success\n", test->name);
+        } else {
+          Process process = {0};
+          process.test_index = tester->compilations.items[i].test_index;
+          process.pid = pid;
+          process.output_fd = pipe_fds[0];
+          strcpy(process.path, tester->compilations.items[i].path);
+          DA_APPEND(tester->running, process);
+        }
       } else {
         tester_finalize_test_on_compilation_fail(tester, tester->compilations.items[i].test_index);
       }

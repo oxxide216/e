@@ -76,13 +76,30 @@ static EType make_type_from_kind(ETypeKind kind) {
 }
 
 static void free_type_str(Str str, EType *type) {
-  if (type->kind == ETypeKindPtr || type->kind == ETypeKindArray)
+  if (type->kind == ETypeKindPtr ||
+      type->kind == ETypeKindArray ||
+      type->kind == ETypeKindStruct)
     free(str.ptr);
 }
 
 static Str get_type_str(EType *type) {
   if (type->kind == ETypeKindStruct) {
-    return type->name;
+    StringBuilder sb = {0};
+
+    sb_push_str(&sb, type->name);
+    if (type->generics.len > 0) {
+      sb_push_char(&sb, '\\');
+      for (u32 i = 0; i < type->generics.len; ++i) {
+        if (i > 0)
+          sb_push(&sb, ", ");
+        Str generic_str = get_type_str(type->generics.items + i);
+        sb_push_str(&sb, generic_str);
+        free_type_str(generic_str, type->generics.items + i);
+      }
+      sb_push_char(&sb, '/');
+    }
+
+    return sb_to_str(sb);
   } else {
     switch (type->kind) {
     case ETypeKindUnit:   return STR_LIT("unit");
@@ -1483,6 +1500,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
           goto fail;
         }
 
+        // TODO: infer generic types
         if (instr->as.call.generics.len != callee->generics.len) {
           CERRORF("Invalid amount of generic arguments for "STR_FMT": %u/%u\n",
                   STR_ARG(instr->as.call.name),
@@ -1491,11 +1509,27 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
           goto fail;
         }
 
-        if (callee->generics.len > 0)
-          if (!handle_generic_callee(callee_ir, callee_varss, arena,
-                                     callee, &instr->as.call.generics,
-                                     amounts_of_drops_for_structs))
+        if (callee->generics.len > 0) {
+          callee = handle_generic_callee(callee_ir, callee_varss, arena,
+                                         callee, &instr->as.call.generics,
+                                         amounts_of_drops_for_structs);
+          if (!callee)
             goto fail;
+
+          for (u32 i = 0; i < callee->args.len; ++i) {
+            if (!type_eq(arg_types.items[i], &callee->args.items[i].type)) {
+              Str arg0_type_str = get_type_str(arg_types.items[i]);
+              Str arg1_type_str = get_type_str(&callee->args.items[i].type);
+              CERRORF("Unexpected argument type for "STR_FMT": "STR_FMT", expected "STR_FMT"\n",
+                      STR_ARG(instr->as.call.name),
+                      STR_ARG(arg0_type_str),
+                      STR_ARG(arg1_type_str));
+              free_type_str(arg0_type_str, arg_types.items[i]);
+              free_type_str(arg1_type_str, &callee->args.items[i].type);
+              goto fail;
+            }
+          }
+        }
       }
 
       if (arg_types.items)
@@ -1537,6 +1571,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
           goto fail;
         }
 
+        // TODO: infer generic types
         if (instr->as.call_assign.generics.len !=
             instr->as.call_assign.callee->generics.len) {
           CERRORF("Invalid amount of generic arguments for "STR_FMT": %u/%u\n",
@@ -1554,6 +1589,23 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
                                   amounts_of_drops_for_structs);
           if (!instr->as.call_assign.callee)
             goto fail;
+
+          for (u32 i = 0; i < instr->as.call_assign.callee->args.len; ++i) {
+            if (!type_eq(arg_types.items[i],
+                         &instr->as.call_assign.callee->args.items[i].type)) {
+              Str arg0_type_str = get_type_str(arg_types.items[i]);
+              Str arg1_type_str =
+                get_type_str(&instr->as.call_assign.callee->args.items[i].type);
+              CERRORF("Unexpected argument type for "STR_FMT": "STR_FMT", expected "STR_FMT"\n",
+                      STR_ARG(instr->as.call.name),
+                      STR_ARG(arg0_type_str),
+                      STR_ARG(arg1_type_str));
+              free_type_str(arg0_type_str, arg_types.items[i]);
+              free_type_str(arg1_type_str,
+                            &instr->as.call_assign.callee->args.items[i].type);
+              goto fail;
+            }
+          }
         }
       }
 
