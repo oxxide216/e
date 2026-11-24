@@ -28,16 +28,7 @@ proc push\T/(self: &Vec\T/, element: T)
       self.cap = self.cap * 2 as u32
     end
 
-    let new_items = mem::alloc(self.cap as u64 * sizeof T) as &T
-    let i = 0 as u32
-    while i < self.count
-      new_items[i] = self.items[i]
-      i = i + 1 as u32
-    end
-    if self.items != null
-      mem::free(self.items as &u8)
-    end
-    self.items = new_items
+    self.items = mem::realloc(self.items as &u8, self.cap as u64 * sizeof T) as &T
   end
 
   self.items[self.count] = element

@@ -119,7 +119,43 @@ proc alloc(size: u64) -> &u8
   retval result + sizeof SegmentHeader
 end
 
+proc realloc(ptr: &u8, size: u64) -> &u8
+  let new_ptr = alloc(size)
+  if ptr != null
+    let segment = (ptr - sizeof SegmentHeader) as &SegmentHeader
+    copy(new_ptr, ptr, segment.size)
+    free(ptr)
+  end
+  retval new_ptr
+end
+
 proc free(ptr: &u8)
-  let segment = (ptr - sizeof SegmentHeader) as &SegmentHeader
-  segment.is_consumed = 0 as u64
+  if ptr != null
+    let segment = (ptr - sizeof SegmentHeader) as &SegmentHeader
+    segment.is_consumed = 0 as u64
+  end
+end
+
+proc copy(dest: &u8, src: &u8, size: u64)
+  let i = 0 as u64
+  while i < size
+    dest[i] = src[i]
+    i = i + 1 as u64
+  end
+end
+
+proc move(dest: &u8, src: &u8, size: u64)
+  if dest < src
+    let i = 0 as u64
+    while i < size
+      dest[i] = src[i]
+      i = i + 1 as u64
+    end
+  elif dest > src
+    let i = size
+    while i > 0 as u64
+      dest[i - 1 as u64] = src[i - 1 as u64]
+      i = i - 1 as u64
+    end
+  end
 end
