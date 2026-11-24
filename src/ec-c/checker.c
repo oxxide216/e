@@ -1462,27 +1462,42 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
             repeat = true;
         }
 
+        bool removed = false;
+
         EIr *callee_ir;
         Varss *callee_varss;
         EProc *callee = get_proc(ir, instr->as.call.name, &arg_types,
                                  true, false, &callee_ir, &callee_varss);
-        Var *var = varss->items[index].items + instr[-1].as.ref.src_index;
-        if (!callee || var->moved || var->returned) {
+
+        Var *var = NULL;
+        if (i > 0 && instr[-1].kind == EInstrKindRef)
+          var = varss->items[index].items + instr[-1].as.ref.src_index;
+
+        if (!callee || !var || var->moved || var->returned) {
           free(instr->as.call.arg_indices.items);
           for (u32 k = 0; k < 3; ++k)
             remove_instr(&proc->instrs, i - 2);
           i -= 3;
-        } else if (callee->generics.len > 0 && var->type.kind == ETypeKindStruct) {
-          if (var->type.generics.len != callee->generics.len) {
+
+          removed = true;
+        }
+
+        if (!removed &&
+            callee &&
+            callee->generics.len > 0 &&
+            arg_types.len > 0 &&
+            arg_types.items[0]->kind == ETypeKindPtr &&
+            arg_types.items[0]->ptr_target->kind == ETypeKindStruct) {
+          if (arg_types.items[0]->ptr_target->generics.len != callee->generics.len) {
             CERRORF("Invalid amount of generic arguments for "STR_FMT": %u/%u\n",
                     STR_ARG(instr->as.call.name),
-                    var->type.generics.len,
+                    arg_types.items[0]->ptr_target->generics.len,
                     callee->generics.len);
             goto fail;
           }
 
-          if (!handle_generic_callee(callee_ir, callee_varss, arena,
-                                     callee, &var->type.generics,
+          if (!handle_generic_callee(callee_ir, callee_varss, arena, callee,
+                                     &arg_types.items[0]->ptr_target->generics,
                                      amounts_of_drops_for_structs))
             goto fail;
         }
