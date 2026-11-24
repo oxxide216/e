@@ -16,6 +16,12 @@ end
 
 proc drop\T/(self: &Vec\T/)
   if self.items != null
+    let i = 0 as u32
+    while i < self.count
+      drop(self.items[i])
+      i = i + 1 as u32
+    end
+
     mem::free(self.items as &u8)
   end
 end
