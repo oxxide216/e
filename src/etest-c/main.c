@@ -42,6 +42,7 @@ static Test tests[] = {
   { "vec-invalid0",      true,  0,   "" },
   { "vec-invalid1",      true,  0,   "" },
   { "vec-valid",         false, 13,  "" },
+  { "nobreak",           false, 0,  "This should happen\n" },
 };
 
 typedef struct {

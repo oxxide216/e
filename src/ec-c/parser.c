@@ -2403,10 +2403,12 @@ static void parser_parse_stmt_impl(Parser *parser) {
     parser->loop_ctx = &loop_ctx;
 
     while (parser_peek_token(parser, &token) != TokenStatusEOF &&
-           token.id != TT_END) {
+           (token.id != TT_END && token.id != TT_NOBREAK)) {
       parser_parse_stmt(parser);
     }
-    parser_expect_token(parser, MASK(TT_END), "`end`");
+    parser_expect_token(parser,
+                        MASK(TT_END) | MASK(TT_NOBREAK),
+                        "`end` or `nobreak`");
 
     parser->loop_ctx = prev_loop_ctx;
 
@@ -2426,6 +2428,24 @@ static void parser_parse_stmt_impl(Parser *parser) {
     );
 
     instrs->items[jump_index].as.jump_if_not.target = instrs->len;
+
+    if (token.id == TT_NOBREAK) {
+      LoopCtx loop_ctx = {0};
+      loop_ctx.scope_begin = parser->scope_begin;
+
+      LoopCtx *prev_loop_ctx = parser->loop_ctx;
+      parser->loop_ctx = &loop_ctx;
+
+      while (parser_peek_token(parser, &token) != TokenStatusEOF &&
+             token.id != TT_END) {
+        parser_parse_stmt(parser);
+      }
+      parser_expect_token(parser, MASK(TT_END), "`end`");
+
+      parser->loop_ctx = prev_loop_ctx;
+
+      end_vars_scope(parser, prev_scope_begin, parser->scope_begin);
+    }
 
     for (u32 i = 0; i < loop_ctx.breaks.len; ++i)
       instrs->items[loop_ctx.breaks.items[i]].as.jump.target = instrs->len;

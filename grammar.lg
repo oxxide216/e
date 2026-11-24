@@ -24,6 +24,7 @@ sizeof=sizeof
 static=static
 break=break
 continue=continue
+nobreak=nobreak
 
 oparen=\(
 cparen=\)
