@@ -1592,7 +1592,22 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
   for (u32 i = 0; i < ir->procs.len; ++i) {
     Proc *proc = ir->procs.items + i;
 
-    u32 target_cap = proc->args.len;
+    bool has_nested_call = get_have_function_call(&proc->instrs);
+    bool instrs_clutter_second_return_reg = false;
+    if (proc->args.len >= 3) {
+      instrs_clutter_second_return_reg =
+        clutter_reg(&proc->instrs, clutters_second_return_reg_x86_64);
+      if (instrs_clutter_second_return_reg)
+        locs.items[2].is_arg = false;
+    }
+
+    u32 return_size_args_offset =
+      get_segments_size_x86_64(&proc->return_segments) > 16;
+    u32 return_size_vars_offset =
+      return_size_args_offset &&
+      (has_nested_call || instrs_clutter_second_return_reg);
+
+    u32 target_cap = proc->args.len + return_size_vars_offset;
     if (locs.cap < target_cap) {
       u32 new_cap = locs.cap;
       if (new_cap < target_cap)
@@ -1607,10 +1622,8 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     SpaceUsed args_space = {0};
     args_space.stack_size = ARGS_STACK_OFFSET;
-    bool has_nested_call = get_have_function_call(&proc->instrs);
 
-    if (get_segments_size_x86_64(&proc->return_segments) > 16)
-      ++args_space.regs;
+    args_space.regs += return_size_args_offset;
 
     bool has_stack_args = false;
 
@@ -1647,14 +1660,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         0, 0, 0, is_stack_only, is_arg, false, 0, false,
       };
       locs.items[j] = loc;
-    }
-
-    bool instrs_clutter_second_return_reg = false;
-    if (proc->args.len >= 3) {
-      instrs_clutter_second_return_reg =
-        clutter_reg(&proc->instrs, clutters_second_return_reg_x86_64);
-      if (instrs_clutter_second_return_reg)
-        locs.items[2].is_arg = false;
     }
 
     setup_labels(&proc->instrs);
@@ -1709,8 +1714,17 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     if (has_nested_call || instrs_clutter_second_return_reg) {
       u32 arg_reg = 0;
+
+      if (return_size_vars_offset) {
+        write_cstr(stream, "  mov ");
+        write_loc_of_size(stream, locs.items, 8);
+        write_cstr(stream, ",");
+        write_str(stream, arg_regs8[arg_reg++]);
+        write_cstr(stream, "\n");
+      }
+
       for (u32 j = 0; j < proc->args.len; ++j) {
-        VarLoc *loc = locs.items + j;
+        VarLoc *loc = locs.items + j + return_size_vars_offset;
 
         if (loc->is_arg || loc->uses == 0) {
           arg_reg++;
