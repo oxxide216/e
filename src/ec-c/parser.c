@@ -2430,19 +2430,14 @@ static void parser_parse_stmt_impl(Parser *parser) {
     instrs->items[jump_index].as.jump_if_not.target = instrs->len;
 
     if (token.id == TT_NOBREAK) {
-      LoopCtx loop_ctx = {0};
-      loop_ctx.scope_begin = parser->scope_begin;
-
-      LoopCtx *prev_loop_ctx = parser->loop_ctx;
-      parser->loop_ctx = &loop_ctx;
+      u32 prev_scope_begin = parser->scope_begin;
+      parser->scope_begin = vars->len;
 
       while (parser_peek_token(parser, &token) != TokenStatusEOF &&
              token.id != TT_END) {
         parser_parse_stmt(parser);
       }
       parser_expect_token(parser, MASK(TT_END), "`end`");
-
-      parser->loop_ctx = prev_loop_ctx;
 
       end_vars_scope(parser, prev_scope_begin, parser->scope_begin);
     }
