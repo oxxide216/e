@@ -147,6 +147,8 @@ static bool tester_step(Tester *tester) {
       }
 
       close(pipe_fds[1]);
+      i32 flags = fcntl(pipe_fds[0], F_GETFL, 0);
+      fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
 
       if (WEXITSTATUS(status) == 0) {
         Test *test = tests + tester->compilations.items[i].test_index;
