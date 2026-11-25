@@ -966,6 +966,9 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       }
 
       if (loc->size > 16) {
+        write_cstr(stream, "  cmp rdi, 0\n");
+        fprintf(stream, "  je .ret%u\n", index);
+
         u32 arg_size = 0;
         while (arg_size < loc->size) {
           u32 part_size = 8;
@@ -983,6 +986,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
           arg_size += part_size;
         }
+
+        fprintf(stream, ".ret%u:\n", index);
       }
     }
 

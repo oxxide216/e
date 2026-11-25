@@ -20,29 +20,30 @@ typedef struct {
 } Test;
 
 static Test tests[] = {
-  { "arrays",            false, 3,   "" },
-  { "asm",               false, 0,   "Hello, World!\n" },
-  { "break-continue",    false, 0,   "" },
-  { "drop-tuples",       false, 0,   "Foo drop!\nFoo drop!\nFoo drop!\n" },
-  { "explicit-copy",     false, 0,   "Foo copied!\nFoo dropped!\nFoo dropped!\n" },
-  { "hello",             false, 10,  "" },
-  { "implicit-copy",     false, 0,   "Foo dropped!\nFoo dropped!\n" },
-  { "land-lor",          false, 0,   "This should happen\ntrue\nfalse\ntrue\nThis should happen\ntrue\n" },
-  { "move",              true,  0,   "" },
-  { "nested-structs",    false, 17,  "A drop!\nB drop!\n" },
-  { "pointers",          false, 6,   "" },
-  { "scope",             true,  0,   "" },
-  { "sized-arrays",      false, 14,  "" },
-  { "sizeof",            false, 144, "" },
-  { "static",            false, 4,   "" },
-  { "struct-field-copy", false, 10,  "" },
-  { "structs",           false, 9,   "drop!\n" },
-  { "temp-ref",          false, 4,   "" },
-  { "tuples",            false, 138, "" },
-  { "vec-invalid0",      true,  0,   "" },
-  { "vec-invalid1",      true,  0,   "" },
-  { "vec-valid",         false, 13,  "" },
-  { "nobreak",           false, 0,  "This should happen\n" },
+  { "arrays",                false, 3,   "" },
+  { "asm",                   false, 0,   "Hello, World!\n" },
+  { "break-continue",        false, 0,   "" },
+  { "drop-tuples",           false, 0,   "Foo drop!\nFoo drop!\nFoo drop!\n" },
+  { "explicit-copy",         false, 0,   "Foo copied!\nFoo dropped!\nFoo dropped!\n" },
+  { "hello",                 false, 10,  "" },
+  { "implicit-copy",         false, 0,   "Foo dropped!\nFoo dropped!\n" },
+  { "land-lor",              false, 0,   "This should happen\ntrue\nfalse\ntrue\nThis should happen\ntrue\n" },
+  { "move",                  true,  0,   "" },
+  { "nested-structs",        false, 17,  "A drop!\nB drop!\n" },
+  { "pointers",              false, 6,   "" },
+  { "scope",                 true,  0,   "" },
+  { "sized-arrays",          false, 14,  "" },
+  { "sizeof",                false, 144, "" },
+  { "static",                false, 4,   "" },
+  { "struct-field-copy",     false, 10,  "" },
+  { "structs",               false, 9,   "drop!\n" },
+  { "temp-ref",              false, 4,   "" },
+  { "tuples",                false, 138, "" },
+  { "vec-invalid0",          true,  0,   "" },
+  { "vec-invalid1",          true,  0,   "" },
+  { "vec-valid",             false, 13,  "" },
+  { "nobreak",               false, 0,  "This should happen\n" },
+  { "struct-return-no-dest", false, 0,  "" },
 };
 
 typedef struct {
@@ -214,7 +215,7 @@ static void tester_print_statues(Tester *tester) {
   u32 passed = 0;
 
   for (u32 i = 0; i < ARRAY_LEN(tests); ++i) {
-    printf("%-20s  [%s]\n", tests[i].name,
+    printf("%-24s  [%s]\n", tests[i].name,
            tester->statuses[i] == StatusOk ?
            "\e[1;32m Ok \e[0m" : "\e[1;31mFail\e[0m");
 
