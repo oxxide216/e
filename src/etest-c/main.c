@@ -30,20 +30,20 @@ static Test tests[] = {
   { "land-lor",              false, 0,   "This should happen\ntrue\nfalse\ntrue\nThis should happen\ntrue\n" },
   { "move",                  true,  0,   "" },
   { "nested-structs",        false, 17,  "A drop!\nB drop!\n" },
+  { "nobreak",               false, 0,  "This should happen\n" },
   { "pointers",              false, 6,   "" },
   { "scope",                 true,  0,   "" },
   { "sized-arrays",          false, 14,  "" },
   { "sizeof",                false, 144, "" },
   { "static",                false, 4,   "" },
   { "struct-field-copy",     false, 10,  "" },
+  { "struct-return-no-dest", false, 0,  "" },
   { "structs",               false, 9,   "drop!\n" },
   { "temp-ref",              false, 4,   "" },
   { "tuples",                false, 138, "" },
   { "vec-invalid0",          true,  0,   "" },
   { "vec-invalid1",          true,  0,   "" },
   { "vec-valid",             false, 13,  "" },
-  { "nobreak",               false, 0,  "This should happen\n" },
-  { "struct-return-no-dest", false, 0,  "" },
 };
 
 typedef struct {
