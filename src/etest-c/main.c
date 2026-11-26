@@ -122,7 +122,7 @@ static void tester_finalize_test(Tester *tester, Process *process,
     if (test->expected_status != status)
       INFO("%s: Expected exit code %d, got %d\n", test->name, test->expected_status, status);
     else
-      INFO("%s: Expected output %s\ngot\n"STR_FMT"\n", test->name, test->expected_output, STR_ARG(output));
+      INFO("%s: Expected output:\n%s\nGot:\n"STR_FMT"\n", test->name, test->expected_output, STR_ARG(output));
   }
 }
 
@@ -135,22 +135,6 @@ static bool tester_step(Tester *tester) {
     i32 status;
     pid_t pid = waitpid(tester->compilations.items[i].pid, &status, WNOHANG);
     if (pid > 0) {
-      i32 pipe_fds[2];
-      pipe(pipe_fds);
-
-      pid_t pid = fork();
-      if (pid == 0) {
-        close(pipe_fds[0]);
-        dup2(pipe_fds[1], 1);
-        dup2(pipe_fds[1], 2);
-        char *args[] = { tester->compilations.items[i].path, NULL };
-        execvp(args[0], args);
-      }
-
-      close(pipe_fds[1]);
-      i32 flags = fcntl(pipe_fds[0], F_GETFL, 0);
-      fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
-
       if (WEXITSTATUS(status) == 0) {
         Test *test = tests + tester->compilations.items[i].test_index;
 
@@ -161,6 +145,24 @@ static bool tester_step(Tester *tester) {
           if (status != StatusOk)
             INFO("%s: Unexpected compilation success\n", test->name);
         } else {
+          i32 pipe_fds[2];
+          pipe(pipe_fds);
+
+          pid_t pid = fork();
+          if (pid == 0) {
+            close(pipe_fds[0]);
+            dup2(pipe_fds[1], 1);
+            dup2(pipe_fds[1], 2);
+            char *args[] = { tester->compilations.items[i].path, NULL };
+            if (execvp(args[0], args) < 0)
+              ERROR("exec failed: %s\n", strerror(errno));
+            exit(0);
+          }
+
+          close(pipe_fds[1]);
+          i32 flags = fcntl(pipe_fds[0], F_GETFL, 0);
+          fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
+
           Process process = {0};
           process.test_index = tester->compilations.items[i].test_index;
           process.pid = pid;
