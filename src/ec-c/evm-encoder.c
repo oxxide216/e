@@ -4,7 +4,7 @@
 
 extern Arch arch;
 
-u32 get_type_size(EType *type) {
+static u32 get_type_size(EType *type) {
   switch (type->kind) {
   case ETypeKindUnit: return 0;
   case ETypeKindS8:   return 1;
