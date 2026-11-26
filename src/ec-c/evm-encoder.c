@@ -511,24 +511,29 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         fwrite(&instr->as.copy_to_offset.dest_index, sizeof(instr->as.copy_to_offset.dest_index), 1, stream);
 
         Var *dest = varss->items[i].items + instr->as.copy_to_offset.dest_index;
-        if (dest->type.kind == ETypeKindStr) {
+
+        EType *dest_type = &dest->type;
+        if (dest_type->kind == ETypeKindPtr)
+          dest_type = dest_type->ptr_target;
+
+        if (dest_type->kind == ETypeKindStr) {
           i32 offset = instr->as.copy_to_offset.dest_offset;
           fwrite(&offset, sizeof(offset), 1, stream);
-        } else if (dest->type.kind == ETypeKindTuple) {
+        } else if (dest_type->kind == ETypeKindTuple) {
           StructSizeCalc ssc = ssc_make(arch);
 
           for (u32 k = 0; k < instr->as.copy_to_offset.dest_offset; ++k)
-            ssc_append_field(&ssc, get_type_size(&dest->type.tuple_types.items[k]));
+            ssc_append_field(&ssc, get_type_size(&dest_type->tuple_types.items[k]));
 
-          i32 offset = ssc_append_field(&ssc, get_type_size(&dest->type.tuple_types.items[instr->as.copy_to_offset.dest_offset]));
+          i32 offset = ssc_append_field(&ssc, get_type_size(&dest_type->tuple_types.items[instr->as.copy_to_offset.dest_offset]));
           fwrite(&offset, sizeof(offset), 1, stream);
         }
 
         fwrite(&instr->as.copy_to_offset.src_index, sizeof(instr->as.copy_to_offset.src_index), 1, stream);
 
-        bool deref = dest->type.kind == ETypeKindStr ||
-                     dest->type.kind == ETypeKindPtr ||
-                     dest->type.is_implicit_ptr;
+        bool deref = dest_type->kind == ETypeKindStr ||
+                     dest_type->kind == ETypeKindPtr ||
+                     dest_type->is_implicit_ptr;
         fwrite(&deref, 1, 1, stream);
       } break;
 
@@ -537,7 +542,12 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         fwrite(&instr->as.copy_from_offset.src_index, sizeof(instr->as.copy_from_offset.src_index), 1, stream);
 
         Var *src = varss->items[i].items + instr->as.copy_from_offset.src_index;
-        if (src->type.kind == ETypeKindStr) {
+
+        EType *src_type = &src->type;
+        if (src_type->kind == ETypeKindPtr)
+          src_type = src_type->ptr_target;
+
+        if (src_type->kind == ETypeKindStr) {
           i32 offset = instr->as.copy_from_offset.src_offset;
           fwrite(&offset, sizeof(offset), 1, stream);
           ValueKind src_target_kind = ValueKindUnsigned;
@@ -546,18 +556,18 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
           StructSizeCalc ssc = ssc_make(arch);
 
           for (u32 k = 0; k < instr->as.copy_from_offset.src_offset; ++k)
-            ssc_append_field(&ssc, get_type_size(&src->type.tuple_types.items[k]));
+            ssc_append_field(&ssc, get_type_size(&src_type->tuple_types.items[k]));
 
-          i32 offset = ssc_append_field(&ssc, get_type_size(&src->type.tuple_types.items[instr->as.copy_from_offset.src_offset]));
+          i32 offset = ssc_append_field(&ssc, get_type_size(&src_type->tuple_types.items[instr->as.copy_from_offset.src_offset]));
           fwrite(&offset, sizeof(offset), 1, stream);
 
           ValueKind src_target_kind = ValueKindUnsigned;
-          if (src->type.kind == ETypeKindStruct) {
-            EStruct *_struct = get_struct(ir, src->type.name);
+          if (src_type->kind == ETypeKindStruct) {
+            EStruct *_struct = src_type->_struct;
             EField *field = _struct->fields.items + instr->as.copy_from_offset.src_offset;
             src_target_kind = e_type_kind_to_evm_value_kind(field->type.kind);
-          } else if (src->type.kind == ETypeKindTuple) {
-            EType *field_type = src->type.tuple_types.items + instr->as.copy_from_offset.src_offset;
+          } else if (src_type->kind == ETypeKindTuple) {
+            EType *field_type = src_type->tuple_types.items + instr->as.copy_from_offset.src_offset;
             src_target_kind = e_type_kind_to_evm_value_kind(field_type->kind);
           }
 
@@ -565,9 +575,9 @@ static void encode_procs_no_len(FILE *stream, EIr *ir,
         }
 
         bool deref = instr->as.copy_from_offset.deref ||
-                     src->type.kind == ETypeKindStr ||
-                     src->type.kind == ETypeKindPtr ||
-                     src->type.is_implicit_ptr;
+                     src_type->kind == ETypeKindStr ||
+                     src_type->kind == ETypeKindPtr ||
+                     src_type->is_implicit_ptr;
         fwrite(&deref, 1, 1, stream);
 
         fwrite(&instr->as.copy_from_offset.take_ref, 1, 1, stream);
