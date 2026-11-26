@@ -39,21 +39,15 @@ typedef struct {
 
 typedef Da(StackLoc) StackLocs;
 
-typedef u32 (*AlignmentFunc)(u32 size);
-
 typedef struct {
-  SpaceUsed     space_used;
-  VarLocRefs    refs;
-  StackLocs     used_stack_locs;
-  AlignmentFunc alignment_func;
+  SpaceUsed  space_used;
+  VarLocRefs refs;
+  StackLocs  used_stack_locs;
+  Arch       arch;
 } Allocator;
 
-typedef u32 (*GetSegmentsSizeFunc)(Segments *segments);
-
-void      add_var_locs(VarLocs *locs, Proc *proc,
-                       GetSegmentsSizeFunc get_segments_size);
-SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len,
-                              AlignmentFunc alignment_func);
+void      add_var_locs(VarLocs *locs, Proc *proc);
+SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len, Arch arch);
 void      promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(Proc *proc, VarLocs *locs);
 
 void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir);

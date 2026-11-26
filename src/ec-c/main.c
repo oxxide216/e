@@ -12,6 +12,7 @@
 #ifndef NDEBUG
 #include "eir-print.h"
 #endif
+#include "evm/ir.h"
 
 #define EVM_PREFIX  "./evm -o "
 #define YASM_PREFIX "yasm -felf64 -o "
@@ -31,6 +32,8 @@ typedef struct {
   bool  print_help;
   Strs  include_paths;
 } Config;
+
+Arch arch = Arch_X86_64;
 
 static void print_usage(FILE *stream, char *program_name) {
   fprintf(stream, "Usage: %s <options...> <input file>\n\n", program_name);

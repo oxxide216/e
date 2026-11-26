@@ -1,8 +1,7 @@
 #include "codegen.h"
 #include "utils.h"
 
-static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
-                                GetSegmentsSizeFunc get_segments_size) {
+static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset) {
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
 
@@ -23,7 +22,7 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
         locs->cap = new_cap;
       }
 
-      u32 size = get_segments_size(&instr->as.alloc.segments);
+      u32 size = instr->as.alloc.size;
       bool is_stack_only = size > 8 || (size != 1 && size != 2 && size != 4 && size != 8);
       VarLoc loc = {
         0, ValueKindSigned, size,
@@ -81,10 +80,9 @@ static void add_var_locs_instrs(VarLocs *locs, Instrs *instrs, u32 offset,
   }
 }
 
-void add_var_locs(VarLocs *locs, Proc *proc,
-                  GetSegmentsSizeFunc get_segments_size) {
-  add_var_locs_instrs(locs, &proc->instrs, 0, get_segments_size);
-  add_var_locs_instrs(locs, &proc->last_instrs, proc->instrs.len, get_segments_size);
+void add_var_locs(VarLocs *locs, Proc *proc) {
+  add_var_locs_instrs(locs, &proc->instrs, 0);
+  add_var_locs_instrs(locs, &proc->last_instrs, proc->instrs.len);
 }
 
 static bool var_loc_collides_at_value(VarLocRefs *refs, VarLoc *loc, i32 value, u32 max) {
@@ -124,7 +122,7 @@ static i32 get_var_loc_stack_pos(Allocator *allocator, VarLoc *loc, u32 max) {
 
   allocator->space_used.stack_size =
     align(allocator->space_used.stack_size + loc->size,
-          allocator->alignment_func(loc->size));
+          alignment_func(allocator->arch, loc->size));
 
   StackLoc new_loc = { -allocator->space_used.stack_size, loc->size };
   DA_APPEND(allocator->used_stack_locs, new_loc);
@@ -132,10 +130,9 @@ static i32 get_var_loc_stack_pos(Allocator *allocator, VarLoc *loc, u32 max) {
   return -allocator->space_used.stack_size;
 }
 
-SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len,
-                              AlignmentFunc alignment_func) {
+SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len, Arch arch) {
   Allocator allocator = {0};
-  allocator.alignment_func = alignment_func;
+  allocator.arch = arch;
   for (u32 i = 0; i < locs->cap; ++i)
     if (locs->items[i].uses > 0 && !locs->items[i].is_arg &&
         locs->items[i].begin != (u32) -1 && locs->items[i].end != (u32) -1)

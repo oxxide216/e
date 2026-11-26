@@ -98,48 +98,6 @@ void type_free(EType *type) {
     free(type->moved_members);
 }
 
-u32 get_type_size(EType *type) {
-  switch (type->kind) {
-  case ETypeKindUnit: return 0;
-  case ETypeKindS8:   return 1;
-  case ETypeKindS16:  return 2;
-  case ETypeKindS32:  return 4;
-  case ETypeKindS64:  return 8;
-  case ETypeKindU8:   return 1;
-  case ETypeKindU16:  return 2;
-  case ETypeKindU32:  return 4;
-  case ETypeKindU64:  return 8;
-  case ETypeKindBool: return 1;
-
-  case ETypeKindStruct: {
-    u32 size = 0;
-
-    for (u32 i = 0; i < type->_struct->fields.len; ++i)
-      size += get_type_size(&type->_struct->fields.items[i].type);
-
-    return size == 0 ? 1 : size;
-  }
-
-  case ETypeKindArray: {
-    return get_type_size(type->array_element) * type->array_len;
-  }
-
-  case ETypeKindTuple: {
-    u32 size = 0;
-
-    for (u32 i = 0; i < type->tuple_types.len; ++i)
-      size += get_type_size(type->tuple_types.items + i);
-
-    return size;
-  }
-
-  case ETypeKindStr: return 8;
-  case ETypeKindPtr: return 8;
-  }
-
-  return 0;
-}
-
 EProc *get_proc(EIr *ir, Str name, ETypeRefs *arg_types,
                 bool ignore_paths, bool ignore_generics,
                 EIr **out_ir, Varss **out_varss) {

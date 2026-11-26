@@ -31,9 +31,9 @@ static void instr_print(Instr *instr, VarLocs *locs) {
   switch (instr->kind) {
   case InstrKindAlloc: {
     if (locs->items[instr->as.alloc.index].uses > 0) {
-      AlignedSegment *last_segment = instr->as.alloc.segments.items + instr->as.alloc.segments.len - 1;
-      printf("  $%u = alloc %u\n", instr->as.alloc.index,
-             last_segment->offset + last_segment->size);
+      printf("  $%u = alloc %u\n",
+             instr->as.alloc.index,
+             instr->as.alloc.size);
     }
   } break;
 
@@ -174,30 +174,25 @@ static void instr_print(Instr *instr, VarLocs *locs) {
     printf("  $%u = cast $%u -> ",
            instr->as.convert.dest_index,
            instr->as.convert.src_index);
-    Segments *segments = &instr->as.convert.dest_segments;
-    i32 size =
-      segments->items[segments->len - 1].offset +
-      segments->items[segments->len - 1].size;
-    print_value_params(instr->as.convert.dest_kind, size);
+    print_value_params(instr->as.convert.dest_kind,
+                       instr->as.convert.dest_size);
     putc('\n', stdout);
   } break;
 
   case InstrKindCopyToRefFixed: {
-    i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[instr->as.copy_to_ref_fixed.dest_segments.len - 1].offset;
     printf("  $%u[%d] := $%u\n",
            instr->as.copy_to_ref_fixed.dest_index,
-           offset,
+           instr->as.copy_to_ref_fixed.dest_offset,
            instr->as.copy_to_ref_fixed.src_index);
   } break;
 
   case InstrKindCopyFromRefFixed: {
-    i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[instr->as.copy_from_ref_fixed.src_segments.len - 1].offset;
     printf("  $%u = ", instr->as.copy_from_ref_fixed.dest_index);
     if (instr->as.copy_from_ref_fixed.take_ref)
       putc('&', stdout);
     printf("$%u[%d]\n",
            instr->as.copy_from_ref_fixed.src_index,
-           offset);
+           instr->as.copy_from_ref_fixed.src_offset);
   } break;
 
   case InstrKindRefProc: {
@@ -228,15 +223,6 @@ static void instr_print(Instr *instr, VarLocs *locs) {
     printf(")\n");
   } break;
 
-  case InstrKindSizeOf: {
-    Segments *segments = &instr->as.size_of.segments;
-    i32 size =
-      segments->items[segments->len - 1].offset +
-      segments->items[segments->len - 1].size;
-
-    printf("  $%u = %d\n", instr->as.size_of.dest_index, size);
-  } break;
-
   case InstrKindStoreUninit: {
     printf("  $%u = uninit %u\n",
            instr->as.store_uninit.index,
@@ -257,18 +243,10 @@ void proc_print(Proc *proc, VarLocs *locs) {
     if (i > 0)
       printf(", ");
     printf("$%u: ", i);
-    Segments *segments = &proc->args.items[i].segments;
-    i32 size =
-      segments->items[segments->len - 1].offset +
-      segments->items[segments->len - 1].size;
-    print_value_params(proc->args.items[i].kind, size);
+    print_value_params(proc->args.items[i].kind, proc->args.items[i].size);
   }
   printf(") -> ");
-  Segments *segments = &proc->return_segments;
-  i32 size =
-    segments->items[segments->len - 1].offset +
-    segments->items[segments->len - 1].size;
-  print_value_params(proc->return_kind, size);
+  print_value_params(proc->return_kind, proc->return_size);
   putc('\n', stdout);
 
   for (u32 i = 0; i < proc->instrs.len; ++i) {

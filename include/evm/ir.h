@@ -42,22 +42,14 @@ typedef enum {
   InstrKindRefProc,
   InstrKindCallRef,
   InstrKindCallRefAssign,
-  InstrKindSizeOf,
   InstrKindStoreUninit,
   InstrKindNot,
 } InstrKind;
 
-typedef struct {
-  i32 offset;
-  u32 size;
-} AlignedSegment;
-
-typedef Da(AlignedSegment) Segments;
-
 // TODO: specify ValueKind in alloc
 typedef struct {
-  u32      index;
-  Segments segments;
+  u32 index;
+  u32 size;
 } InstrAlloc;
 
 typedef struct {
@@ -174,13 +166,13 @@ typedef struct {
 typedef struct {
   u32       dest_index;
   ValueKind dest_kind;
-  Segments  dest_segments;
+  u32       dest_size;
   u32       src_index;
 } InstrConvert;
 
 typedef struct {
   u32      dest_index;
-  Segments dest_segments;
+  i32      dest_offset;
   u32      src_index;
   bool     deref; // Basically true for pointers and false for structures
 } InstrCopyToRefFixed;
@@ -188,7 +180,7 @@ typedef struct {
 typedef struct {
   u32       dest_index;
   u32       src_index;
-  Segments  src_segments;
+  i32       src_offset;
   ValueKind src_target_kind;
   bool      deref; // Basically true for pointers and false for structures
   bool      take_ref;
@@ -210,11 +202,6 @@ typedef struct {
   u32       index;
   Indices   arg_indices;
 } InstrCallRefAssign;
-
-typedef struct {
-  u32      dest_index;
-  Segments segments;
-} InstrSizeOf;
 
 typedef struct {
   u32 index;
@@ -248,7 +235,6 @@ typedef union {
   InstrRefProc          ref_proc;
   InstrCallRef          call_ref;
   InstrCallRefAssign    call_ref_assign;
-  InstrSizeOf           size_of;
   InstrStoreUninit      store_uninit;
   InstrNot              not;
 } InstrAs;
@@ -263,7 +249,7 @@ typedef Da(Instr) Instrs;
 
 typedef struct {
   ValueKind kind;
-  Segments  segments;
+  u32       size;
 } Arg;
 
 typedef Da(Arg) Args;
@@ -272,7 +258,7 @@ typedef struct {
   Str       name;
   Args      args;
   ValueKind return_kind;
-  Segments  return_segments;
+  u32       return_size;
   Instrs    instrs;
   Instrs    last_instrs;
 } Proc;
@@ -287,7 +273,7 @@ typedef struct {
 typedef Da(DataEntry) Data;
 
 typedef struct {
-  Segments segments;
+  u32 size;
 } Uninit;
 
 typedef Da(Uninit) Uninits;
@@ -300,5 +286,53 @@ typedef struct {
   Uninits uninits;
   Imports imports;
 } Ir;
+
+typedef enum {
+  Arch_X86_64 = 0,
+} Arch;
+
+typedef struct {
+  Arch arch;
+  u32  size;
+  u32  max_field_size;
+} StructSizeCalc;
+
+static inline u32 alignment_func(Arch arch, u32 size) {
+  switch (arch) {
+  case Arch_X86_64: {
+    if (size <= 8)
+      return size;
+    return 8;
+  }
+  }
+
+  return 0;
+}
+
+static inline i32 align(i32 value, i32 base) {
+  if (value % base == 0)
+    return value;
+  return value + base - value % base;
+}
+
+static inline StructSizeCalc ssc_make(Arch arch) {
+  StructSizeCalc result = {0};
+  result.arch = arch;
+  return result;
+}
+
+static inline u32 ssc_append_field(StructSizeCalc *ssc, u32 size) {
+  if (ssc->max_field_size < size)
+    ssc->max_field_size = size;
+
+  u32 offset = align(ssc->size, alignment_func(ssc->arch, size));
+  ssc->size = offset + size;
+
+  return offset;
+}
+
+static inline u32 ssc_get_result(StructSizeCalc *ssc) {
+  return align(ssc->size, alignment_func(ssc->arch, ssc->max_field_size));
+}
 
 #endif // EVM_IR_H

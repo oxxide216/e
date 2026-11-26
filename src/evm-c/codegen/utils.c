@@ -20,12 +20,6 @@ void write_value(FILE *stream, Value *value) {
   }
 }
 
-i32 align(i32 value, i32 base) {
-  if (value % base == 0)
-    return value;
-  return value + base - value % base;
-}
-
 bool is_jump(Instr *instr) {
   return
     instr->kind == InstrKindJump ||
@@ -97,10 +91,6 @@ u32 *get_dest(Instr *instr) {
 
   case InstrKindCallRefAssign: {
     return &instr->as.call_ref_assign.dest_index;
-  }
-
-  case InstrKindSizeOf: {
-    return &instr->as.size_of.dest_index;
   }
 
   case InstrKindStoreUninit: {
@@ -220,7 +210,6 @@ u32 *get_nth_arg(Instr *instr, u32 n) {
       return instr->as.call_ref_assign.arg_indices.items + n;
   } break;
 
-  case InstrKindSizeOf:      break;
   case InstrKindStoreUninit: break;
 
   case InstrKindNot: {
@@ -230,29 +219,6 @@ u32 *get_nth_arg(Instr *instr, u32 n) {
   }
 
   return NULL;
-}
-
-void align_fixed_offsets(Proc *proc, AlignmentFunc alignment_func) {
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
-    Instr *instr = proc->instrs.items + i;
-
-    Segments *offsets = NULL;
-    if (instr->kind == InstrKindCopyToRefFixed)
-      offsets = &instr->as.copy_to_ref_fixed.dest_segments;
-    else if (instr->kind == InstrKindCopyFromRefFixed)
-      offsets = &instr->as.copy_from_ref_fixed.src_segments;
-    else
-      continue;
-
-    i32 diff = 0;
-    for (u32 j = 0; j < offsets->len; ++j) {
-      offsets->items[j].offset += diff;
-      i32 alignment = alignment_func(offsets->items[j].size);
-      i32 aligned = align(offsets->items[j].offset, alignment);
-      diff += aligned - offsets->items[j].offset;
-      offsets->items[j].offset = aligned;
-    }
-  }
 }
 
 bool get_have_function_call(Instrs *instrs) {

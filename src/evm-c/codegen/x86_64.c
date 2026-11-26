@@ -408,32 +408,6 @@ static void write_basic_op(FILE *stream, VarLocs *locs, u32 dest_index,
   write_cstr(stream, "\n");
 }
 
-static u32 alignment_func_x86_64(u32 size) {
-  if (size <= 8)
-    return size;
-  return 8;
-}
-
-static u32 get_segments_size_x86_64(Segments *segments) {
-  if (segments->len == 0)
-    return 0;
-
-  if (segments->len == 1 && segments->items[0].size == 0)
-    return 0;
-
-  u32 max_size = 0;
-
-  for (u32 i = 0; i < segments->len; ++i)
-    if (max_size < segments->items[i].size)
-      max_size = segments->items[i].size;
-
-  u32 size =
-    segments->items[segments->len - 1].offset +
-    segments->items[segments->len - 1].size -
-    segments->items[0].offset;
-  return align(size, alignment_func_x86_64(max_size));
-}
-
 static bool clutters_first_return_reg_x86_64(Instr *instr) {
   return instr->kind == InstrKindCall || instr->kind == InstrKindCallAssign ||
          instr->kind == InstrKindCallRef || instr->kind == InstrKindCallRefAssign ||
@@ -1278,7 +1252,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   case InstrKindConvert: {
     locs->items[instr->as.convert.dest_index].kind = instr->as.convert.dest_kind;
 
-    u32 dest_size = get_segments_size_x86_64(&instr->as.convert.dest_segments);
+    u32 dest_size = instr->as.convert.dest_size;
     ValueKind src_kind = locs->items[instr->as.convert.src_index].kind;
     u32 src_size = locs->items[instr->as.convert.src_index].size;
 
@@ -1343,9 +1317,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     VarLoc *dest_loc = locs->items + instr->as.copy_to_ref_fixed.dest_index;
     VarLoc *src_loc = locs->items + instr->as.copy_to_ref_fixed.src_index;
 
-    u32 index = instr->as.copy_to_ref_fixed.dest_segments.len - 1;
-    i32 offset = instr->as.copy_to_ref_fixed.dest_segments.items[index].offset;
-
+    i32 offset = instr->as.copy_to_ref_fixed.dest_offset;
     bool deref =
       instr->as.copy_to_ref_fixed.deref ||
       offset != 0 || src_loc->size > 8;
@@ -1403,9 +1375,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
     dest_loc->kind = instr->as.copy_from_ref_fixed.src_target_kind;
 
-    u32 index = instr->as.copy_from_ref_fixed.src_segments.len - 1;
-    i32 offset = instr->as.copy_from_ref_fixed.src_segments.items[index].offset;
-
+    i32 offset = instr->as.copy_from_ref_fixed.src_offset;
     bool deref =
       instr->as.copy_from_ref_fixed.deref ||
       offset != 0 || dest_loc->size > 8;
@@ -1506,22 +1476,6 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     }
   } break;
 
-  case InstrKindSizeOf: {
-    VarLoc *dest_loc = locs->items + instr->as.size_of.dest_index;
-    u32 size = get_segments_size_x86_64(&instr->as.size_of.segments);
-
-    if (dest_loc->uses > 1) {
-      dest_loc->kind = ValueKindUnsigned;
-
-      write_cstr(stream, "  mov ");
-      write_loc(stream, dest_loc);
-      fprintf(stream, ",%u\n", size);
-    } else {
-      dest_loc->has_imm_value = true;
-      dest_loc->imm_value = size;
-    }
-  } break;
-
   case InstrKindStoreUninit: {
     locs->items[instr->as.store_uninit.index].kind = ValueKindUnsigned;
 
@@ -1601,8 +1555,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         locs.items[2].is_arg = false;
     }
 
-    u32 return_size_args_offset =
-      get_segments_size_x86_64(&proc->return_segments) > 16;
+    u32 return_size_args_offset = proc->return_size > 16;
     u32 return_size_vars_offset =
       return_size_args_offset &&
       (has_nested_call || instrs_clutter_second_return_reg);
@@ -1628,7 +1581,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     bool has_stack_args = false;
 
     for (u32 j = 0; j < proc->args.len; ++j) {
-      u32 size = get_segments_size_x86_64(&proc->args.items[j].segments);
+      u32 size = proc->args.items[j].size;
       i64 value;
       if (size <= 8) {
         if (args_space.regs < ARRAY_LEN(arg_regs8)) {
@@ -1665,8 +1618,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     setup_labels(&proc->instrs);
     setup_labels(&proc->last_instrs);
 
-    align_fixed_offsets(proc, alignment_func_x86_64);
-    add_var_locs(&locs, proc, get_segments_size_x86_64);
+    add_var_locs(&locs, proc);
 
     opt_derefs_to_copies(&proc->instrs, &locs);
     opt_copy_prop(&proc->instrs, &locs);
@@ -1677,7 +1629,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8),
-                                               alignment_func_x86_64);
+                                               Arch_X86_64);
     u32 total_space_used = DEFAULT_STACK_SIZE + space_used.regs * 8 +
                                                 space_used.stack_size;
 
@@ -1838,10 +1790,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
   if (ir->uninits.len > 0)
     write_cstr(stream, "section '.bss'\n");
 
-  for (u32 i = 0; i < ir->uninits.len; ++i) {
-    Uninit *uninit = ir->uninits.items + i;
-
-    fprintf(stream, "uninit_%u: resb %u\n", i,
-            get_segments_size_x86_64(&uninit->segments));
-  }
+  for (u32 i = 0; i < ir->uninits.len; ++i)
+    fprintf(stream, "uninit_%u: resb %u\n", i, ir->uninits.items[i].size);
 }
