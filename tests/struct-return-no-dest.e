@@ -6,6 +6,7 @@ struct Foo
 end
 
 proc main() -> s64
+  asm "mov rdi,0"
   foo()
   retval 0
 end
