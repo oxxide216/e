@@ -155,11 +155,6 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
             locs->items[prop->src].end = i;
           if (locs->items[prop->dest].uses > 0)
             --locs->items[prop->dest].uses;
-          if (locs->items[prop->dest].uses <= 1) {
-            remove_instr_props(instrs, locs, &props, prop->instr_index);
-            --instr;
-            --i;
-          }
         }
       }
     }
@@ -227,7 +222,7 @@ void opt_dce(Instrs *instrs, VarLocs *locs) {
 
     u32 *dest = get_dest(instr);
     if (dest) {
-      if (locs->items[*dest].uses == 0) {
+      if (locs->items[*dest].uses <= 1) {
         if (instr->kind == InstrKindCallAssign) {
           Instr replacement = {
             InstrKindCall,
@@ -252,7 +247,7 @@ void opt_dce(Instrs *instrs, VarLocs *locs) {
             instr->has_label,
           };
           *instr = replacement;
-        } else {
+        } else if (instr->kind != InstrKindStore) {
           remove_instr(instrs, locs, i);
           --i;
         }
