@@ -30,7 +30,7 @@ bool is_jump(Instr *instr) {
 u32 *get_dest(Instr *instr) {
   switch (instr->kind) {
   case InstrKindAlloc: {
-    return &instr->as.alloc.index;
+    return NULL;
   }
 
   case InstrKindStore: {

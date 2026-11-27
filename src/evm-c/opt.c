@@ -237,6 +237,7 @@ void opt_dce(Instrs *instrs, VarLocs *locs) {
     if (dest) {
       if (locs->items[*dest].uses <= 1) {
         if (instr->kind == InstrKindCallAssign) {
+          --locs->items[*dest].uses;
           Instr replacement = {
             InstrKindCall,
             {
@@ -249,6 +250,7 @@ void opt_dce(Instrs *instrs, VarLocs *locs) {
           };
           *instr = replacement;
         } else if (instr->kind == InstrKindCallRefAssign) {
+          --locs->items[*dest].uses;
           Instr replacement = {
             InstrKindCallRef,
             {
@@ -261,6 +263,7 @@ void opt_dce(Instrs *instrs, VarLocs *locs) {
           };
           *instr = replacement;
         } else if (instr->kind != InstrKindStore) {
+          --locs->items[*dest].uses;
           remove_instr(instrs, locs, i);
           --i;
         }

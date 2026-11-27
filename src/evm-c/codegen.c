@@ -160,8 +160,11 @@ SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len, Arch arch) {
   Allocator allocator = {0};
   allocator.arch = arch;
   for (u32 i = 0; i < locs->cap; ++i)
-    if (locs->items[i].uses > 0 && !locs->items[i].is_arg &&
-        locs->items[i].begin != (u32) -1 && locs->items[i].end != (u32) -1)
+    if (locs->items[i].uses > 0 &&
+        locs->items[i].size > 0 &&
+        !locs->items[i].is_arg &&
+        locs->items[i].begin != (u32) -1 &&
+        locs->items[i].end != (u32) -1)
       DA_APPEND(allocator.refs, locs->items + i);
 
   quick_sort_var_loc_refs(&allocator.refs, 0, allocator.refs.len - 1);
