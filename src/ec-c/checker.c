@@ -860,6 +860,7 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
       0,
       false,
     };
+    memset(var0.type.ptr_target, 0, sizeof(EType));
     *var0.type.ptr_target = type_clone(&_const->value.type);
     DA_APPEND(*vars, var0);
 
@@ -1098,6 +1099,7 @@ static void patch_statics(EIr *ir, EInstrs *instrs, Vars *vars) {
             },
             false, {}, 0, false,
           };
+          memset(var.type.ptr_target, 0, sizeof(EType));
           *var.type.ptr_target = type_clone(&static_var->type);
           DA_APPEND(*vars, var);
         }
@@ -1157,6 +1159,7 @@ static void patch_statics(EIr *ir, EInstrs *instrs, Vars *vars) {
             },
             false, {}, 0, false,
           };
+          memset(var.type.ptr_target, 0, sizeof(EType));
           *var.type.ptr_target = type_clone(&static_var->type);
           DA_APPEND(*vars, var);
         }
@@ -1765,6 +1768,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
         0,
         false,
       };
+      memset(ptr_type.ptr_target, 0, sizeof(EType));
       *ptr_type.ptr_target = type_clone(&src->type);
 
       if (dest->type.kind == ETypeKindUnit) {
@@ -1880,7 +1884,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
           instr->as.copy_from_ref.take_ref = false;
 
       if (instr->as.copy_from_ref.is_ref_explicit) {
-        EType new_type;
+        EType new_type = {0};
         new_type.kind = ETypeKindPtr;
         new_type.ptr_target = malloc(sizeof(EType));
         *new_type.ptr_target = dest->type;
@@ -2185,6 +2189,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
             0,
             false,
           };
+          memset(type.ptr_target, 0, sizeof(EType));
           *type.ptr_target = (EType) { ETypeKindU8, {}, {}, NULL, 0, false };
         } else {
           type = (EType) { ETypeKindU32, {}, {}, NULL, 0, false };
@@ -2421,7 +2426,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
       instr = proc->instrs.items + i;
       dest = varss->items[index].items + instr->as.copy_from_field.dest_index;
       if (instr->as.copy_from_field.is_ref_explicit) {
-        EType new_type;
+        EType new_type = {0};
         new_type.kind = ETypeKindPtr;
         new_type.ptr_target = malloc(sizeof(EType));
         *new_type.ptr_target = dest->type;
@@ -2594,7 +2599,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
         set_member_moved(src_type, instr->as.copy_from_offset.src_offset, true);
 
       if (instr->as.copy_from_offset.is_ref_explicit) {
-        EType new_type;
+        EType new_type = {0};
         new_type.kind = ETypeKindPtr;
         new_type.ptr_target = malloc(sizeof(EType));
         *new_type.ptr_target = dest->type;
