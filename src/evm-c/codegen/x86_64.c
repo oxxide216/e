@@ -767,7 +767,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         else
           args_space.stack_size += loc->size;
       } else {
-        args_space.stack_size += loc->size;
+        args_space.stack_size += loc->size < 4 ? 4 : loc->size;
       }
     }
 
@@ -819,14 +819,25 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           write_loc_part_of_size(stream, loc, 8, 8);
           write_cstr(stream, "\n");
         } else {
-          fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(8)[0]));
+          u32 loc_size = loc->size;
+          if (loc_size < 4)
+            loc_size = 4;
+
+          if (loc_size == loc->size)
+            write_cstr(stream, "  mov ");
+          else if (loc->kind == ValueKindSigned)
+            write_cstr(stream, "  movsx ");
+          else if (loc->kind == ValueKindUnsigned)
+            write_cstr(stream, "  movzx ");
+
+          fprintf(stream, STR_FMT",", STR_ARG(get_temp_regs(loc_size)[0]));
           write_loc_part_of_size(stream, loc, 0, 8);
           write_cstr(stream, "\n");
           write_cstr(stream, "  mov ");
           if (is_tail) {
             write_loc(stream, locs->items + i);
           } else {
-            write_str(stream, get_mem_prefix(8));
+            write_str(stream, get_mem_prefix(loc_size));
             fprintf(stream, "[rsp+%u]", size - args_space.stack_size);
           }
           write_cstr(stream, ",");
