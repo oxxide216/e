@@ -428,19 +428,13 @@ static bool is_valid_index_mul(u32 mul) {
 
 static void write_instr(FILE *stream, Instrs *instrs, u32 index,
                         VarLocs *locs, JumpOpt *jump_opt,
-                        Str proc_name, u32 total_space_used) {
+                        bool *data_uninit_opt, Str proc_name,
+                        u32 total_space_used) {
   Instr *instr = instrs->items + index;
 
   u32 *dest = get_dest(instr);
   if (dest)
     locs->items[*dest].has_imm_value = false;
-
-  if (instr->kind != InstrKindJumpIf &&
-      instr->kind != InstrKindJumpIfNot &&
-      (instr->kind != InstrKindBinOp ||
-       instr->as.bin_op.kind < BinOpKindEqInt ||
-       instr->as.bin_op.kind > BinOpKindGeInt))
-    jump_opt->applied = false;
 
   switch (instr->kind) {
   case InstrKindAlloc: break;
@@ -684,7 +678,9 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "\n");
 
       jump_opt->applied =
+        locs->items[instr->as.bin_op.dest_index].uses == 2 &&
         index + 1 < instrs->len &&
+        !instr[1].has_label &&
         ((instr[1].kind == InstrKindJumpIf &&
           instr[1].as.jump_if.cond_index == instr->as.bin_op.dest_index) ||
          (instr[1].kind == InstrKindJumpIfNot &&
@@ -1004,6 +1000,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindJumpIf: {
     if (jump_opt->applied) {
+      jump_opt->applied = false;
+
       static char *cmp_mnemonics[] = {
         "je",
         "jne",
@@ -1036,6 +1034,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
   case InstrKindJumpIfNot: {
     if (jump_opt->applied) {
+      jump_opt->applied = false;
+
       static char *cmp_mnemonics[] = {
         "jne",
         "je",
@@ -1101,7 +1101,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(index_size)[0]));
       }
     }
-    ensure_in_reg(stream, dest_loc, 0, !instr->as.copy_to_ref.deref);
+    if (!*data_uninit_opt)
+      ensure_in_reg(stream, dest_loc, 0, !instr->as.copy_to_ref.deref);
 
     if (src_loc->size <= 8) {
       ensure_in_reg(stream, src_loc, 1, false);
@@ -1109,7 +1110,14 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "  mov ");
       write_str(stream, get_mem_prefix(src_loc->size));
       write_cstr(stream, "[");
-      write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
+      if (*data_uninit_opt) {
+        if (instr[-1].kind == InstrKindStoreData)
+          fprintf(stream, "data_%u", instr[-1].as.store_data.data_index);
+        else if (instr[-1].kind == InstrKindStoreUninit)
+          fprintf(stream, "uninit_%u", instr[-1].as.store_uninit.uninit_index);
+      } else {
+        write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
+      }
       if (instr->as.copy_to_ref.dest_offset_index != (u32) -1) {
         write_cstr(stream, "+");
         if (is_valid_index_mul(src_loc->size)) {
@@ -1126,7 +1134,14 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "  lea ");
       write_str(stream, get_temp_regs(8)[0]);
       write_cstr(stream, ",[");
-      write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
+      if (*data_uninit_opt) {
+        if (instr[-1].kind == InstrKindStoreData)
+          fprintf(stream, "data_%u", instr[-1].as.store_data.data_index);
+        else if (instr[-1].kind == InstrKindStoreUninit)
+          fprintf(stream, "uninit_%u", instr[-1].as.store_uninit.uninit_index);
+      } else {
+        write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
+      }
       if (instr->as.copy_to_ref.dest_offset_index != (u32) -1) {
         write_cstr(stream, "+");
         if (is_valid_index_mul(src_loc->size)) {
@@ -1155,6 +1170,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         size += part_size;
       }
     }
+
+    *data_uninit_opt = false;
   } break;
 
   case InstrKindCopyFromRef: {
@@ -1176,7 +1193,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         fprintf(stream, "  mul "STR_FMT"\n", STR_ARG(get_temp_regs(index_size)[0]));
       }
     }
-    ensure_in_reg(stream, src_loc, 0, !instr->as.copy_from_ref.deref);
+    if (!*data_uninit_opt)
+      ensure_in_reg(stream, src_loc, 0, !instr->as.copy_from_ref.deref);
 
     if (dest_loc->size <= 8 ||
         instr->as.copy_from_ref.take_ref) {
@@ -1189,7 +1207,14 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       if (!instr->as.copy_from_ref.take_ref)
         write_str(stream, get_mem_prefix(dest_loc->size));
       write_cstr(stream, "[");
-      write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 0);
+      if (*data_uninit_opt) {
+        if (instr[-1].kind == InstrKindStoreData)
+          fprintf(stream, "data_%u", instr[-1].as.store_data.data_index);
+        else if (instr[-1].kind == InstrKindStoreUninit)
+          fprintf(stream, "uninit_%u", instr[-1].as.store_uninit.uninit_index);
+      } else {
+        write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 0);
+      }
       if (instr->as.copy_from_ref.src_offset_index != (u32) -1) {
         write_cstr(stream, "+");
         if (is_valid_index_mul(dest_loc->size)) {
@@ -1215,7 +1240,14 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
       write_cstr(stream, "  lea ");
       write_str(stream, get_temp_regs(8)[0]);
       write_cstr(stream, ",[");
-      write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 0);
+      if (*data_uninit_opt) {
+        if (instr[-1].kind == InstrKindStoreData)
+          fprintf(stream, "data_%u", instr[-1].as.store_data.data_index);
+        else if (instr[-1].kind == InstrKindStoreUninit)
+          fprintf(stream, "uninit_%u", instr[-1].as.store_uninit.uninit_index);
+      } else {
+        write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 0);
+      }
       if (instr->as.copy_from_ref.src_offset_index != (u32) -1) {
         write_cstr(stream, "+");
         if (is_valid_index_mul(dest_loc->size)) {
@@ -1245,6 +1277,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         size += part_size;
       }
     }
+
+    *data_uninit_opt = false;
   } break;
 
   case InstrKindInlineAsm: {
@@ -1263,18 +1297,36 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   case InstrKindStoreData: {
     locs->items[instr->as.store_data.index].kind = ValueKindUnsigned;
 
-    write_cstr(stream, "  lea ");
-    write_loc_ensure_in_reg(stream, locs->items + instr->as.store_data.index, 0);
-    write_cstr(stream, ",");
-    write_str(stream, get_mem_prefix(8));
-    fprintf(stream, "[data_%u]\n", instr->as.store_data.data_index);
-
-    if (locs->items[instr->as.store_data.index].value < 0) {
-      write_cstr(stream, "  mov ");
-      write_loc(stream, locs->items + instr->as.store_data.index);
+    if (locs->items[instr->as.store_data.index].uses == 2 &&
+        index + 1 < instrs->len &&
+        !instr[1].has_label &&
+        ((instr[1].kind == InstrKindCopyToRef &&
+          instr[1].as.copy_to_ref.dest_index ==
+          instr->as.store_data.index) ||
+         (instr[1].kind == InstrKindCopyFromRef &&
+          instr[1].as.copy_from_ref.src_index ==
+          instr->as.store_data.index) ||
+         (instr[1].kind == InstrKindCopyToRefFixed &&
+          instr[1].as.copy_to_ref_fixed.dest_index ==
+          instr->as.store_data.index) ||
+         (instr[1].kind == InstrKindCopyFromRefFixed &&
+          instr[1].as.copy_from_ref_fixed.src_index ==
+          instr->as.store_data.index))) {
+      *data_uninit_opt = true;
+    } else {
+      write_cstr(stream, "  lea ");
+      write_loc_ensure_in_reg(stream, locs->items + instr->as.store_data.index, 0);
       write_cstr(stream, ",");
-      write_str(stream, get_temp_regs(locs->items[instr->as.store_data.index].size)[0]);
-      write_cstr(stream, "\n");
+      write_str(stream, get_mem_prefix(8));
+      fprintf(stream, "[data_%u]\n", instr->as.store_data.data_index);
+
+      if (locs->items[instr->as.store_data.index].value < 0) {
+        write_cstr(stream, "  mov ");
+        write_loc(stream, locs->items + instr->as.store_data.index);
+        write_cstr(stream, ",");
+        write_str(stream, get_temp_regs(locs->items[instr->as.store_data.index].size)[0]);
+        write_cstr(stream, "\n");
+      }
     }
   } break;
 
@@ -1357,24 +1409,31 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     if (src_loc->size <= 8) {
       if (deref) {
         bool opt = dest_loc->value < 0 && !instr->as.copy_to_ref_fixed.deref;
-        if (!opt)
+        if (!*data_uninit_opt && !opt)
           ensure_in_reg_of_size(stream, dest_loc, 8, 0, false);
         ensure_in_reg(stream, src_loc, 1, false);
 
         write_cstr(stream, "  mov ");
         write_str(stream, get_mem_prefix(src_loc->size));
         write_cstr(stream, "[");
-        if (opt) {
-          if (dest_loc->is_arg)
-            fprintf(stream, "rbp+%d],", -dest_loc->value + offset);
-          else
-            fprintf(stream, "rbp-%d],", -dest_loc->value - offset);
+        if (*data_uninit_opt) {
+          if (instr[-1].kind == InstrKindStoreData)
+            fprintf(stream, "data_%u],", instr[-1].as.store_data.data_index);
+          else if (instr[-1].kind == InstrKindStoreUninit)
+            fprintf(stream, "uninit_%u],", instr[-1].as.store_uninit.uninit_index);
         } else {
-          write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
-          if (offset >= 0)
-            fprintf(stream, "+%d],", offset);
-          else
-            fprintf(stream, "-%d],", -offset);
+          if (opt) {
+            if (dest_loc->is_arg)
+              fprintf(stream, "rbp+%d],", -dest_loc->value + offset);
+            else
+              fprintf(stream, "rbp-%d],", -dest_loc->value - offset);
+          } else {
+            write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
+            if (offset >= 0)
+              fprintf(stream, "+%d],", offset);
+            else
+              fprintf(stream, "-%d],", -offset);
+          }
         }
         write_loc_ensure_in_reg(stream, src_loc, 1);
         write_cstr(stream, "\n");
@@ -1399,7 +1458,14 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         write_loc_part_of_size(stream, src_loc, size, part_size);
         write_cstr(stream, "\n");
         write_cstr(stream, "  mov ");
-        write_loc_part_of_size(stream, dest_loc, size + offset, part_size);
+        if (*data_uninit_opt) {
+          if (instr[-1].kind == InstrKindStoreData)
+            fprintf(stream, "[data_%u+%u]", instr[-1].as.store_data.data_index, size + offset);
+          else if (instr[-1].kind == InstrKindStoreUninit)
+            fprintf(stream, "[uninit_%u+%u]", instr[-1].as.store_uninit.uninit_index, size + offset);
+        } else {
+          write_loc_part_of_size(stream, dest_loc, size + offset, part_size);
+        }
         write_cstr(stream, ",");
         write_str(stream, get_temp_regs(part_size)[0]);
         write_cstr(stream, "\n");
@@ -1407,6 +1473,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         size += part_size;
       }
     }
+
+    *data_uninit_opt = false;
   } break;
 
   case InstrKindCopyFromRefFixed: {
@@ -1424,7 +1492,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         instr->as.copy_from_ref_fixed.take_ref) {
       if (deref) {
         bool opt = src_loc->value < 0 && !instr->as.copy_from_ref_fixed.deref;
-        if (!opt)
+        if (!*data_uninit_opt && !opt)
           ensure_in_reg_of_size(stream, src_loc, 8, 1, false);
 
         if (instr->as.copy_from_ref_fixed.take_ref)
@@ -1437,17 +1505,24 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         if (!instr->as.copy_from_ref_fixed.take_ref)
           write_str(stream, get_mem_prefix(dest_loc->size));
         write_cstr(stream, "[");
-        if (opt) {
-          if (src_loc->is_arg)
-            fprintf(stream, "rbp+%d]\n", -src_loc->value + offset);
-          else
-            fprintf(stream, "rbp-%d]\n", -src_loc->value - offset);
+        if (*data_uninit_opt) {
+          if (instr[-1].kind == InstrKindStoreData)
+            fprintf(stream, "data_%u]\n", instr[-1].as.store_data.data_index);
+          else if (instr[-1].kind == InstrKindStoreUninit)
+            fprintf(stream, "uninit_%u]\n", instr[-1].as.store_uninit.uninit_index);
         } else {
-          write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 1);
-          if (offset >= 0)
-            fprintf(stream, "+%d]\n", offset);
-          else
-            fprintf(stream, "-%d]\n", -offset);
+          if (opt) {
+            if (src_loc->is_arg)
+              fprintf(stream, "rbp+%d]\n", -src_loc->value + offset);
+            else
+              fprintf(stream, "rbp-%d]\n", -src_loc->value - offset);
+          } else {
+            write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 1);
+            if (offset >= 0)
+              fprintf(stream, "+%d]\n", offset);
+            else
+              fprintf(stream, "-%d]\n", -offset);
+          }
         }
 
         if (dest_loc->value < 0) {
@@ -1491,7 +1566,14 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           part_size = dest_loc->size - size;
 
         fprintf(stream, "  mov "STR_FMT",", STR_ARG(get_temp_regs(part_size)[0]));
-        write_loc_part_of_size(stream, src_loc, size + offset, part_size);
+        if (*data_uninit_opt) {
+          if (instr[-1].kind == InstrKindStoreData)
+            fprintf(stream, "[data_%u+%u]", instr[-1].as.store_data.data_index, size + offset);
+          else if (instr[-1].kind == InstrKindStoreUninit)
+            fprintf(stream, "[uninit_%u+%u]", instr[-1].as.store_uninit.uninit_index, size + offset);
+        } else {
+          write_loc_part_of_size(stream, src_loc, size + offset, part_size);
+        }
         write_cstr(stream, "\n");
         write_cstr(stream, "  mov ");
         write_loc_part_of_size(stream, dest_loc, size, part_size);
@@ -1502,6 +1584,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         size += part_size;
       }
     }
+
+    *data_uninit_opt = false;
   } break;
 
   case InstrKindRefProc: {
@@ -1527,18 +1611,36 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
   case InstrKindStoreUninit: {
     locs->items[instr->as.store_uninit.index].kind = ValueKindUnsigned;
 
-    write_cstr(stream, "  lea ");
-    write_loc_ensure_in_reg(stream, locs->items + instr->as.store_uninit.index, 0);
-    write_cstr(stream, ",");
-    write_str(stream, get_mem_prefix(8));
-    fprintf(stream, "[uninit_%u]\n", instr->as.store_uninit.uninit_index);
-
-    if (locs->items[instr->as.store_uninit.index].value < 0) {
-      write_cstr(stream, "  mov ");
-      write_loc(stream, locs->items + instr->as.store_uninit.index);
+    if (locs->items[instr->as.store_uninit.index].uses == 2 &&
+        index + 1 < instrs->len &&
+        !instr[1].has_label &&
+        ((instr[1].kind == InstrKindCopyToRef &&
+          instr[1].as.copy_to_ref.dest_index ==
+          instr->as.store_uninit.index) ||
+         (instr[1].kind == InstrKindCopyFromRef &&
+          instr[1].as.copy_from_ref.src_index ==
+          instr->as.store_uninit.index) ||
+         (instr[1].kind == InstrKindCopyToRefFixed &&
+          instr[1].as.copy_to_ref_fixed.dest_index ==
+          instr->as.store_uninit.index) ||
+         (instr[1].kind == InstrKindCopyFromRefFixed &&
+          instr[1].as.copy_from_ref_fixed.src_index ==
+          instr->as.store_uninit.index))) {
+      *data_uninit_opt = true;
+    } else {
+      write_cstr(stream, "  lea ");
+      write_loc_ensure_in_reg(stream, locs->items + instr->as.store_uninit.index, 0);
       write_cstr(stream, ",");
-      write_str(stream, get_temp_regs(locs->items[instr->as.store_uninit.index].size)[0]);
-      write_cstr(stream, "\n");
+      write_str(stream, get_mem_prefix(8));
+      fprintf(stream, "[uninit_%u]\n", instr->as.store_uninit.uninit_index);
+
+      if (locs->items[instr->as.store_uninit.index].value < 0) {
+        write_cstr(stream, "  mov ");
+        write_loc(stream, locs->items + instr->as.store_uninit.index);
+        write_cstr(stream, ",");
+        write_str(stream, get_temp_regs(locs->items[instr->as.store_uninit.index].size)[0]);
+        write_cstr(stream, "\n");
+      }
     }
   } break;
 
@@ -1747,6 +1849,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
     }
 
     JumpOpt jump_opt = {0};
+    bool data_uninit_opt = false;
 
     for (u32 j = 0; j < proc->instrs.len; ++j) {
       if (proc->instrs.items[j].has_label)
@@ -1757,7 +1860,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         for (u32 k = 0; k < locs.cap; ++k)
           locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->instrs, j, &locs, &jump_opt,
-                  proc->name, total_space_used);
+                  &data_uninit_opt, proc->name, total_space_used);
     }
 
     if (proc->instrs.items[proc->instrs.len].has_label)
@@ -1771,6 +1874,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       write_cstr(stream, "  push rax\n");
 
     jump_opt = (JumpOpt) {0};
+    data_uninit_opt = false;
 
     for (u32 j = 0; j < proc->last_instrs.len; ++j) {
       if (proc->last_instrs.items[j].has_label)
@@ -1781,7 +1885,7 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
         for (u32 k = 0; k < locs.cap; ++k)
           locs.items[k].has_imm_value = false;
       write_instr(stream, &proc->last_instrs, j, &locs, &jump_opt,
-                  proc->name, total_space_used);
+                  &data_uninit_opt, proc->name, total_space_used);
     }
 
     if (proc->last_instrs.items[proc->last_instrs.len].has_label)
