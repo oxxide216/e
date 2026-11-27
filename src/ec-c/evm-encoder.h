@@ -6,8 +6,9 @@
 #include "eir.h"
 #include "parser.h"
 
-void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss,
-                         EModulePath *path,
-                         bool include_deps, bool import_deps);
+void  encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss,
+                          EModulePath *path,
+                          bool include_deps, bool import_deps);
+u8   *value_to_bytes(EValue *value, u32 *len);
 
 #endif // EVM_ENCODER_H

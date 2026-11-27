@@ -2,6 +2,7 @@
 
 #include "checker.h"
 #include "shl/shl-log.h"
+#include "evm-encoder.h"
 #include "utils.h"
 
 #define CERROR(fmt)                     \
@@ -909,7 +910,8 @@ static void insert_instr(EInstrs *instrs, u32 index, EInstr instr) {
 }
 
 static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
-                       EModulePath *path, Arena *arena) {
+                       EData *data, EModulePath *path, Arena *arena,
+                       u32 *check_offset) {
   u32 len = _const->name.len;
   for (u32 i = 0; i < path->len; ++i)
     len += path->items[i].len + 2;
@@ -925,45 +927,148 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
   }
   memcpy(name + offset, _const->name.ptr, _const->name.len);
 
-  Var var = { STR(name, len), type_clone(&_const->type), false, {}, 0, false };
+  if (_const->value.type.kind == ETypeKindStruct ||
+      _const->value.type.kind == ETypeKindArray ||
+      _const->value.type.kind == ETypeKindTuple) {
+    EDataEntry entry;
+    entry.data = value_to_bytes(&_const->value, &entry.len);
+    DA_APPEND(*data, entry);
 
-  EInstr alloc = {
-    EInstrKindAlloc,
-    {
-      .alloc = {
-        var.name,
-        vars->len,
+    Var var0 = {
+      {},
+      {
+        ETypeKindPtr,
+        { .ptr_target = malloc(sizeof(EType)) },
+        {},
+        NULL,
+        0,
+        false,
       },
-    },
-    {},
-  };
-  insert_instr(instrs, 0, alloc);
+      false,
+      {},
+      0,
+      false,
+    };
+    *var0.type.ptr_target = type_clone(&_const->value.type);
+    DA_APPEND(*vars, var0);
 
-  EInstr store = {
-    EInstrKindStore,
-    {
-      .store = {
-        var.name,
-        vars->len,
-        _const->value,
-        true,
-        _const->type.kind,
+    Var var1 = {
+      STR(name, len),
+      type_clone(&_const->value.type),
+      false,
+      {},
+      0,
+      false,
+    };
+    DA_APPEND(*vars, var1);
+
+    EInstr alloc0 = {
+      EInstrKindAlloc,
+      {
+        .alloc = {
+          var0.name,
+          vars->len - 2,
+        },
       },
-    },
-    {},
-  };
-  insert_instr(instrs, 1, store);
+      {},
+    };
+    insert_instr(instrs, 0, alloc0);
+    ++*check_offset;
 
-  DA_APPEND(*vars, var);
+    EInstr alloc1 = {
+      EInstrKindAlloc,
+      {
+        .alloc = {
+          var1.name,
+          vars->len - 1,
+        },
+      },
+      {},
+    };
+    insert_instr(instrs, 0, alloc1);
+    ++*check_offset;
+
+    EInstr store_str = {
+      EInstrKindStoreStr,
+      {
+        .store_str = {
+          var0.name,
+          vars->len - 2,
+          data->len - 1,
+        },
+      },
+      {},
+    };
+    insert_instr(instrs, 0, store_str);
+    ++*check_offset;
+
+    EInstr copy_from_ref = {
+      EInstrKindCopyFromRef,
+      {
+        .copy_from_ref = {
+          var1.name,
+          vars->len - 1,
+          {},
+          vars->len - 2,
+          false,
+          {},
+          (u32) -1,
+          false,
+          false,
+        },
+      },
+      {},
+    };
+    insert_instr(instrs, 1, copy_from_ref);
+    ++*check_offset;
+  } else {
+    Var var = {
+      STR(name, len),
+      type_clone(&_const->value.type),
+      false,
+      {},
+      0,
+      false,
+    };
+    DA_APPEND(*vars, var);
+
+    EInstr alloc = {
+      EInstrKindAlloc,
+      {
+        .alloc = {
+          var.name,
+          vars->len - 1,
+        },
+      },
+      {},
+    };
+    insert_instr(instrs, 0, alloc);
+    ++*check_offset;
+
+    EInstr store = {
+      EInstrKindStore,
+      {
+        .store = {
+          var.name,
+          vars->len - 1,
+          _const->value,
+        },
+      },
+      {},
+    };
+    insert_instr(instrs, 1, store);
+    ++*check_offset;
+  }
 }
 
 static void find_and_push_const(EIr *ir, Vars *vars, EInstrs *instrs,
                                 EModulePath *path, Arena *arena,
-                                Str name, u32 *var_index) {
+                                Str name, u32 *var_index, u32 *check_offset) {
   for (u32 i = 0; i < ir->consts.len; ++i) {
     if (str_eq_str_with_path(name, ir->consts.items[i].name, path)) {
       *var_index = vars->len;
-      push_const(ir->consts.items + i, vars, instrs, path, arena);
+      push_const(ir->consts.items + i, vars, instrs,
+                 &ir->data, path, arena, check_offset);
       return;
     }
   }
@@ -972,19 +1077,23 @@ static void find_and_push_const(EIr *ir, Vars *vars, EInstrs *instrs,
     EModuleDep *dep = ir->module_deps.items + i;
 
     DA_APPEND(*path, dep->path.items[dep->path.len - 1]);
-    find_and_push_const(&dep->ir, vars, instrs, path, arena, name, var_index);
+    find_and_push_const(&dep->ir, vars, instrs, path,
+                        arena, name, var_index, check_offset);
     --path->len;
 
     for (u32 j = 0; j < dep->imports.len; ++j) {
       if (str_eq(dep->imports.items[j], name)) {
-        find_and_push_const(&dep->ir, vars, instrs, path, arena, name, var_index);
+        find_and_push_const(&dep->ir, vars, instrs, path,
+                            arena, name, var_index, check_offset);
         break;
       }
     }
   }
 }
 
-static void collect_consts(EIr *ir, EInstrs *instrs, Vars *vars, Arena *arena) {
+static void collect_consts(EIr *ir, EInstrs *instrs,
+                           Vars *vars, Arena *arena,
+                           u32 *check_offset) {
   EModulePath path = {0};
   u32 prev_vars_len = vars->len;
 
@@ -1004,7 +1113,8 @@ static void collect_consts(EIr *ir, EInstrs *instrs, Vars *vars, Arena *arena) {
           path.len = 0;
           find_and_push_const(ir, vars, instrs, &path, arena,
                               instr->as.copy.src_name,
-                              &instr->as.copy.src_index);
+                              &instr->as.copy.src_index,
+                              check_offset);
         }
       }
     }
@@ -1279,14 +1389,16 @@ static EProc *handle_generic_callee(EIr *ir, Varss *varss, Arena *arena,
 
 static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *var_substs,
                        EProc *proc, u32 index, u8 *amounts_of_drops_for_structs) {
-  collect_consts(ir, &proc->instrs, varss->items + index, arena);
+  u32 check_offset = 0;
+
+  collect_consts(ir, &proc->instrs, varss->items + index, arena, &check_offset);
   patch_statics(ir, &proc->instrs, varss->items + index);
 
   for (u32 i = 0; i < varss->items[index].len; ++i)
     if (!check_struct_existence(ir, &varss->items[index].items[i].type, NULL, NULL))
       goto fail;
 
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
+  for (u32 i = check_offset; i < proc->instrs.len; ++i) {
     EInstr *instr = proc->instrs.items + i;
 
     if (instr->kind == EInstrKindCopy &&
@@ -1313,7 +1425,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
   u8 *amounts_of_drops_for_tuples = alloca(varss->items[index].len);
   memset(amounts_of_drops_for_tuples, 0, varss->items[index].len);
 
-  for (u32 i = 0; i < proc->instrs.len; ++i) {
+  for (u32 i = check_offset; i < proc->instrs.len; ++i) {
     EInstr *instr = proc->instrs.items + i;
 
     switch (instr->kind) {
@@ -1350,17 +1462,15 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
 
       Var *var = varss->items[index].items + instr->as.store.index;
       var->moved = false;
-      EType value_type = make_type_from_kind(instr->as.store.value.kind);
-      if (instr->as.store.is_const) {
-        var->type.kind = instr->as.store.const_kind;
-      } else if (var->type.kind == ETypeKindUnit) {
-        var->type = value_type;
-      } else if (!type_eq(&value_type, &var->type)) {
-        Str value_type_str = get_type_str(&value_type);
+      EType *value_type = &instr->as.store.value.type;
+      if (var->type.kind == ETypeKindUnit) {
+        var->type = type_clone(value_type);
+      } else if (!type_eq(value_type, &var->type)) {
+        Str value_type_str = get_type_str(value_type);
         Str var_type_str = get_type_str(&var->type);
         CERRORF("Cannot assign value of type "STR_FMT" to a variable of type "STR_FMT"\n",
                 STR_ARG(value_type_str), STR_ARG(var_type_str));
-        free_type_str(value_type_str, &value_type);
+        free_type_str(value_type_str, value_type);
         free_type_str(var_type_str, &var->type);
         goto fail;
       }
@@ -2231,7 +2341,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
                   {},
                   varss->items[index].len - 1,
                   {
-                    ETypeKindU64,
+                    { ETypeKindU64 },
                     {
                       ._unsigned = 4,
                     },
@@ -2280,7 +2390,7 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
                   {},
                   varss->items[index].len - 1,
                   {
-                    ETypeKindU64,
+                    { ETypeKindU64 },
                     {
                       ._unsigned = 4,
                     },

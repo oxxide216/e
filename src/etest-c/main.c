@@ -23,6 +23,7 @@ static Test tests[] = {
   { "arrays",                false, 3,   "" },
   { "asm",                   false, 0,   "Hello, World!\n" },
   { "break-continue",        false, 0,   "" },
+  { "const-struct",          false, 6,   "" },
   { "drop-tuples",           false, 0,   "Foo drop!\nFoo drop!\nFoo drop!\n" },
   { "explicit-copy",         false, 0,   "Foo copied!\nFoo dropped!\nFoo dropped!\n" },
   { "hello",                 false, 10,  "" },

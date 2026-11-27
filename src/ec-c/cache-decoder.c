@@ -18,10 +18,10 @@
       return false;                       \
   } while (0)
 
-#define decode_value(decoder, type)        \
-  do {                                     \
-    if (!decode_value_impl(decoder, type)) \
-      return false;                        \
+#define decode_value(decoder, type, is_root)        \
+  do {                                              \
+    if (!decode_value_impl(decoder, type, is_root)) \
+      return false;                                 \
   } while (0)
 
 #define decode_procs(decoder)        \
@@ -103,14 +103,80 @@ static bool decode_type_impl(Decoder *decoder, EType *type) {
   return true;
 }
 
-static bool decode_value_impl(Decoder *decoder, EValue *value) {
-  u8 kind;
+static bool decode_value_impl(Decoder *decoder, EValue *value, bool is_root) {
+  if (is_root)
+    decode_type(decoder, &value->type);
+  switch (value->type.kind) {
+  case ETypeKindUnit: break;
 
-  *value = (EValue) {0};
+  case ETypeKindS8:
+  case ETypeKindS16:
+  case ETypeKindS32:
+  case ETypeKindS64: {
+    decode_buffer(decoder, &value->as._signed, sizeof(value->as._signed));
+  } break;
 
-  decode_buffer(decoder, &kind, 1);
-  value->kind = kind;
-  decode_buffer(decoder, &value->as, sizeof(value->as));
+  case ETypeKindU8:
+  case ETypeKindU16:
+  case ETypeKindU32:
+  case ETypeKindU64: {
+    decode_buffer(decoder, &value->as._unsigned, sizeof(value->as._unsigned));
+  } break;
+
+  case ETypeKindBool: {
+    decode_buffer(decoder, &value->as._bool, sizeof(value->as._bool));
+  } break;
+
+  case ETypeKindStruct: {
+    decode_buffer(decoder,
+                  &value->as.struct_fields.len,
+                  sizeof(value->as.struct_fields.len));
+    value->as.struct_fields.cap = value->as.struct_fields.len;
+    value->as.struct_fields.items =
+      arena_alloc(decoder->arena,
+                  value->as.struct_fields.cap *
+                  sizeof(*value->as.struct_fields.items));
+
+    for (u32 i = 0; i < value->as.struct_fields.len; ++i) {
+      value->as.struct_fields.items[i].value =
+        arena_alloc(decoder->arena,
+                    sizeof(*value->as.struct_fields.items[i].value));
+      decode_str(decoder, &value->as.struct_fields.items[i].name);
+      decode_value(decoder, value->as.struct_fields.items[i].value, false);
+    }
+  } break;
+
+  case ETypeKindArray: {
+    decode_buffer(decoder,
+                  &value->as.array_elements.len,
+                  sizeof(value->as.array_elements.len));
+    value->as.array_elements.cap = value->as.array_elements.len;
+    value->as.array_elements.items =
+      arena_alloc(decoder->arena,
+                  value->as.array_elements.cap *
+                  sizeof(*value->as.array_elements.items));
+
+    for (u32 i = 0; i < value->as.array_elements.len; ++i)
+      decode_value(decoder, value->as.array_elements.items + i, false);
+  } break;
+
+  case ETypeKindTuple: {
+    decode_buffer(decoder,
+                  &value->as.tuple_fields.len,
+                  sizeof(value->as.tuple_fields.len));
+    value->as.tuple_fields.cap = value->as.tuple_fields.len;
+    value->as.tuple_fields.items =
+      arena_alloc(decoder->arena,
+                  value->as.tuple_fields.cap *
+                  sizeof(*value->as.tuple_fields.items));
+
+    for (u32 i = 0; i < value->as.tuple_fields.len; ++i)
+      decode_value(decoder, value->as.tuple_fields.items + i, false);
+  } break;
+
+  case ETypeKindStr: break;
+  case ETypeKindPtr: break;
+  }
 
   return true;
 }
@@ -173,8 +239,7 @@ static bool decode_consts_impl(Decoder *decoder) {
     EConst _const = {0};
 
     decode_str(decoder, &_const.name);
-    decode_type(decoder, &_const.type);
-    decode_value(decoder, &_const.value);
+    decode_value(decoder, &_const.value, true);
 
     DA_APPEND(decoder->ir->consts, _const);
   }

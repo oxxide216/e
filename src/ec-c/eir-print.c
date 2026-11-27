@@ -8,7 +8,7 @@ static void var_print(u32 index, Str name) {
 }
 
 static void value_print(EValue *value) {
-  switch (value->kind) {
+  switch (value->type.kind) {
   case ETypeKindUnit: {
     printf("unit");
   } break;

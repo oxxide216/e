@@ -14,7 +14,7 @@ struct SegmentHeader
   __pad0: u64,
 end
 
-const PAGES_PER_REGION: u64 = 10
+const PAGES_PER_REGION = 10
 
 static first_region: &RegionHeader
 
@@ -87,14 +87,14 @@ proc alloc(size: u64) -> &u8
     region = region.next
   end
 
-  let region_size = PAGE_SIZE * PAGES_PER_REGION
+  let region_size = (PAGE_SIZE * PAGES_PER_REGION) as u64
   if region_size < sizeof RegionHeader + real_size
-    region_size = align(sizeof RegionHeader + real_size, PAGE_SIZE)
+    region_size = align(sizeof RegionHeader + real_size, PAGE_SIZE as u64)
   end
 
   region =
-    unix::mmap(0 as u64, region_size, PROT_READ | PROT_WRITE,
-               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0 as u64) as &RegionHeader
+    unix::mmap(0 as u64, region_size, (PROT_READ | PROT_WRITE) as u64,
+               (MAP_PRIVATE | MAP_ANONYMOUS) as u64, -1, 0 as u64) as &RegionHeader
   if region as s64 < 0
     retval null
   end

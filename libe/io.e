@@ -27,7 +27,7 @@ proc read_file(path: &u8) -> &u8
     retval null
   end
 
-  let fd = unix::open(path, O_RDONLY, 0 as s32)
+  let fd = unix::open(path, O_RDONLY as s32, 0 as s32)
   if fd < 0
     retval null
   end

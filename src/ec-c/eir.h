@@ -56,16 +56,30 @@ struct EType {
   bool         is_implicit_ptr;
 };
 
-typedef union {
-  i64  _signed;
-  u64  _unsigned;
-  bool _bool;
-} EValueAs;
+typedef struct EValue EValue;
+
+typedef Da(EValue) EValues;
 
 typedef struct {
-  ETypeKind kind;
-  EValueAs  as;
-} EValue;
+  Str     name;
+  EValue *value;
+} EValueField;
+
+typedef Da(EValueField) EValueFields;
+
+typedef union {
+  i64          _signed;
+  u64          _unsigned;
+  bool         _bool;
+  EValueFields struct_fields;
+  EValues      array_elements;
+  EValues      tuple_fields;
+} EValueAs;
+
+struct EValue {
+  EType    type;
+  EValueAs as;
+};
 
 typedef enum {
   EInstrKindAlloc = 0,
@@ -108,8 +122,6 @@ typedef struct {
   Str       name;
   u32       index;
   EValue    value;
-  bool      is_const;
-  ETypeKind const_kind;
 } EInstrStore;
 
 typedef struct {
@@ -410,7 +422,6 @@ typedef Da(EStruct) EStructs;
 
 typedef struct {
   Str    name;
-  EType  type;
   EValue value;
 } EConst;
 

@@ -34,29 +34,29 @@ struct FileStat      # Linux x86-64 ABI Layout
   __reserved: [s64;; 3]
 end
 
-const PAGE_SIZE: u64 = 4096
+const PAGE_SIZE = 4096
 
-const O_RDONLY: s32 = 0
-const O_WRONLY: s32 = 1
-const O_RDWR: s32 = 2
+const O_RDONLY = 0
+const O_WRONLY = 1
+const O_RDWR = 2
 
-const SEEK_SET: s32 = 0  # Seek from the beginning of the file
-const SEEK_CUR: s32 = 1  # Seek from the current file position
-const SEEK_END: s32 = 2  # Seek from the end of the file
+const SEEK_SET = 0  # Seek from the beginning of the file
+const SEEK_CUR = 1  # Seek from the current file position
+const SEEK_END = 2  # Seek from the end of the file
 
-const PROT_READ: u64 = 1
-const PROT_WRITE: u64 = 2
-const PROT_EXEC: u64 = 4
+const PROT_READ = 1
+const PROT_WRITE = 2
+const PROT_EXEC = 4
 
-const MAP_SHARED: u64 = 1
-const MAP_PRIVATE: u64 = 2
-const MAP_ANONYMOUS: u64 = 32
+const MAP_SHARED = 1
+const MAP_PRIVATE = 2
+const MAP_ANONYMOUS = 32
 
-const POLLIN: s16 = 1
-const POLLOUT: s16 = 4
-const POLLERR: s16 = 8
-const POLLHUP: s16 = 16
-const POLLNVAL: s16 = 32
+const POLLIN = 1
+const POLLOUT = 4
+const POLLERR = 8
+const POLLHUP = 16
+const POLLNVAL = 32
 
 struct PollFd
   fd: s32,

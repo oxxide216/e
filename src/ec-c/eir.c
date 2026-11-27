@@ -457,7 +457,7 @@ bool populate_type_struct_ptrs(EIr *ir) {
   }
 
   for (u32 i = 0; i < ir->consts.len; ++i)
-    if (!check_struct_existence(ir, &ir->consts.items[i].type, NULL, NULL))
+    if (!check_struct_existence(ir, &ir->consts.items[i].value.type, NULL, NULL))
       return false;
 
   for (u32 i = 0; i < ir->static_vars.len; ++i)
@@ -582,7 +582,9 @@ void _proc_destroy(EProc *proc) {
   for (u32 i = 0; i < proc->instrs.len; ++i) {
     EInstr *instr = proc->instrs.items + i;
 
-    if (instr->kind == EInstrKindCast) {
+    if (instr->kind == EInstrKindStore) {
+      type_free(&instr->as.store.value.type);
+    } else if (instr->kind == EInstrKindCast) {
       type_free(&instr->as.cast.dest_type);
     } else if (instr->kind == EInstrKindSizeOf) {
       type_free(&instr->as.size_of.type);
@@ -641,7 +643,7 @@ void ir_destroy(EIr *ir) {
     free(ir->structs.items);
 
   for (u32 i = 0; i < ir->consts.len; ++i)
-    type_free(&ir->consts.items[i].type);
+    type_free(&ir->consts.items[i].value.type);
   if (ir->consts.items)
     free(ir->consts.items);
 

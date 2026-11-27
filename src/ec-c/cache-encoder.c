@@ -17,9 +17,62 @@ static void encode_type(FILE *stream, EType *type) {
   }
 }
 
-static void encode_value(FILE *stream, EValue *value) {
-  fwrite(&value->kind, 1, 1, stream);
-  fwrite(&value->as, sizeof(value->as), 1, stream);
+static void encode_value(FILE *stream, EValue *value, bool is_root) {
+  if (is_root)
+    encode_type(stream, &value->type);
+  switch (value->type.kind) {
+  case ETypeKindUnit: break;
+
+  case ETypeKindS8:
+  case ETypeKindS16:
+  case ETypeKindS32:
+  case ETypeKindS64: {
+    fwrite(&value->as._signed, sizeof(value->as._signed), 1, stream);
+  } break;
+
+  case ETypeKindU8:
+  case ETypeKindU16:
+  case ETypeKindU32:
+  case ETypeKindU64: {
+    fwrite(&value->as._unsigned, sizeof(value->as._unsigned), 1, stream);
+  } break;
+
+  case ETypeKindBool: {
+    fwrite(&value->as._bool, sizeof(value->as._bool), 1, stream);
+  } break;
+
+  case ETypeKindStruct: {
+    fwrite(&value->as.struct_fields.len,
+           sizeof(value->as.struct_fields.len),
+           1, stream);
+
+    for (u32 i = 0; i < value->as.struct_fields.len; ++i) {
+      encode_str(stream, value->as.struct_fields.items[i].name);
+      encode_value(stream, value->as.struct_fields.items[i].value, false);
+    }
+  } break;
+
+  case ETypeKindArray: {
+    fwrite(&value->as.array_elements.len,
+           sizeof(value->as.array_elements.len),
+           1, stream);
+
+    for (u32 i = 0; i < value->as.array_elements.len; ++i)
+      encode_value(stream, value->as.array_elements.items + i, false);
+  } break;
+
+  case ETypeKindTuple: {
+    fwrite(&value->as.tuple_fields.len,
+           sizeof(value->as.tuple_fields.len),
+           1, stream);
+
+    for (u32 i = 0; i < value->as.tuple_fields.len; ++i)
+      encode_value(stream, value->as.tuple_fields.items + i, false);
+  } break;
+
+  case ETypeKindStr: break;
+  case ETypeKindPtr: break;
+  }
 }
 
 static void encode_procs(FILE *stream, EProcs *procs) {
@@ -63,8 +116,7 @@ static void encode_consts(FILE *stream, EConsts *consts) {
     EConst *_const = consts->items + i;
 
     encode_str(stream, _const->name);
-    encode_type(stream, &_const->type);
-    encode_value(stream, &_const->value);
+    encode_value(stream, &_const->value, true);
   }
 }
 

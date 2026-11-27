@@ -2,6 +2,8 @@
 #include "evm/ir.h"
 #include "utils.h"
 
+typedef Da(u8) Bytes;
+
 extern Arch arch;
 
 static u32 get_type_size(EType *type) {
@@ -18,7 +20,7 @@ static u32 get_type_size(EType *type) {
   case ETypeKindBool: return 1;
 
   case ETypeKindStruct: {
-    StructSizeCalc ssc =ssc_make(arch);
+    StructSizeCalc ssc = ssc_make(arch);
     for (u32 i = 0; i < type->_struct->fields.len; ++i)
       ssc_append_field(&ssc, get_type_size(&type->_struct->fields.items[i].type));
     u32 size = ssc_get_result(&ssc);
@@ -30,7 +32,7 @@ static u32 get_type_size(EType *type) {
   }
 
   case ETypeKindTuple: {
-    StructSizeCalc ssc =ssc_make(arch);
+    StructSizeCalc ssc = ssc_make(arch);
     for (u32 i = 0; i < type->tuple_types.len; ++i)
       ssc_append_field(&ssc, get_type_size(type->tuple_types.items + i));
     return ssc_get_result(&ssc);
@@ -71,7 +73,7 @@ static ValueKind e_type_kind_to_evm_value_kind(ETypeKind kind) {
 }
 
 static Value e_value_to_evm_value(EValue *value) {
-  switch (value->kind) {
+  switch (value->type.kind) {
   case ETypeKindUnit:   return (Value) {0};
   case ETypeKindS8:     return (Value) { ValueKindSigned, { ._signed = value->as._signed } };
   case ETypeKindS16:    return (Value) { ValueKindSigned, { ._signed = value->as._signed } };
@@ -81,12 +83,12 @@ static Value e_value_to_evm_value(EValue *value) {
   case ETypeKindU16:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindU32:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
   case ETypeKindU64:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
-  case ETypeKindBool:   return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
-  case ETypeKindStruct: return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
-  case ETypeKindArray:  return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
-  case ETypeKindTuple:  return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
-  case ETypeKindStr:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
-  case ETypeKindPtr:    return (Value) { ValueKindUnsigned, { ._unsigned = value->as._unsigned } };
+  case ETypeKindBool:   return (Value) { ValueKindUnsigned, { ._unsigned = value->as._bool } };
+  case ETypeKindStruct: return (Value) { ValueKindUnsigned, { ._unsigned = 0 } };
+  case ETypeKindArray:  return (Value) { ValueKindUnsigned, { ._unsigned = 0 } };
+  case ETypeKindTuple:  return (Value) { ValueKindUnsigned, { ._unsigned = 0 } };
+  case ETypeKindStr:    return (Value) { ValueKindUnsigned, { ._unsigned = 0 } };
+  case ETypeKindPtr:    return (Value) { ValueKindUnsigned, { ._unsigned = 0 } };
   }
 
   return (Value) {0};
@@ -841,4 +843,142 @@ void encode_ir_as_evm_ir(FILE *stream, EIr *ir, Varss *varss,
   fwrite(&imports_len, sizeof(imports_len), 1, stream);
   if (import_deps)
     encode_all_deps_procs_as_imports(stream, ir, path);
+}
+
+static void _value_to_bytes(Bytes *bytes, EValue *value) {
+  switch (value->type.kind) {
+  case ETypeKindUnit: break;
+
+  case ETypeKindS8: {
+    i8 s = value->as._signed;
+    DA_APPEND(*bytes, s);
+  } break;
+
+  case ETypeKindS16: {
+    i16 s = value->as._signed;
+    DA_APPEND(*bytes, ((i8 *) &s)[0]);
+    DA_APPEND(*bytes, ((i8 *) &s)[1]);
+  } break;
+
+  case ETypeKindS32: {
+    i32 s = value->as._signed;
+    DA_APPEND(*bytes, ((i8 *) &s)[0]);
+    DA_APPEND(*bytes, ((i8 *) &s)[1]);
+    DA_APPEND(*bytes, ((i8 *) &s)[2]);
+    DA_APPEND(*bytes, ((i8 *) &s)[3]);
+  } break;
+
+  case ETypeKindS64: {
+    i64 s = value->as._signed;
+    DA_APPEND(*bytes, ((i8 *) &s)[0]);
+    DA_APPEND(*bytes, ((i8 *) &s)[1]);
+    DA_APPEND(*bytes, ((i8 *) &s)[2]);
+    DA_APPEND(*bytes, ((i8 *) &s)[3]);
+    DA_APPEND(*bytes, ((i8 *) &s)[4]);
+    DA_APPEND(*bytes, ((i8 *) &s)[5]);
+    DA_APPEND(*bytes, ((i8 *) &s)[6]);
+    DA_APPEND(*bytes, ((i8 *) &s)[7]);
+  } break;
+
+  case ETypeKindU8: {
+    u8 u = value->as._unsigned;
+    DA_APPEND(*bytes, u);
+  } break;
+
+  case ETypeKindU16: {
+    u16 u = value->as._unsigned;
+    DA_APPEND(*bytes, ((u8 *) &u)[0]);
+    DA_APPEND(*bytes, ((u8 *) &u)[1]);
+  } break;
+
+  case ETypeKindU32: {
+    u32 u = value->as._unsigned;
+    DA_APPEND(*bytes, ((u8 *) &u)[0]);
+    DA_APPEND(*bytes, ((u8 *) &u)[1]);
+    DA_APPEND(*bytes, ((u8 *) &u)[2]);
+    DA_APPEND(*bytes, ((u8 *) &u)[3]);
+  } break;
+
+  case ETypeKindU64: {
+    u64 u = value->as._unsigned;
+    DA_APPEND(*bytes, ((u8 *) &u)[0]);
+    DA_APPEND(*bytes, ((u8 *) &u)[1]);
+    DA_APPEND(*bytes, ((u8 *) &u)[2]);
+    DA_APPEND(*bytes, ((u8 *) &u)[3]);
+    DA_APPEND(*bytes, ((u8 *) &u)[4]);
+    DA_APPEND(*bytes, ((u8 *) &u)[5]);
+    DA_APPEND(*bytes, ((u8 *) &u)[6]);
+    DA_APPEND(*bytes, ((u8 *) &u)[7]);
+  } break;
+
+  case ETypeKindBool: {
+    u8 b = value->as._bool;
+    DA_APPEND(*bytes, b);
+  } break;
+
+  case ETypeKindStruct: {
+    StructSizeCalc ssc = ssc_make(arch);
+    u32 len = bytes->len;
+
+    for (u32 i = 0; i < value->type._struct->fields.len; ++i) {
+      u32 size = get_type_size(&value->type._struct->fields.items[i].type);
+      u32 offset = ssc_append_field(&ssc, size);
+      for (u32 j = bytes->len; j < len + offset; ++j)
+        DA_APPEND(*bytes, 0);
+
+      EValue *field_value = NULL;
+
+      for (u32 j = 0; j < value->as.struct_fields.len; ++j) {
+        if (str_eq(value->as.struct_fields.items[j].name,
+                   value->type._struct->fields.items[i].name)) {
+          field_value = value->as.struct_fields.items[j].value;
+          break;
+        }
+      }
+
+      if (field_value)
+        _value_to_bytes(bytes, field_value);
+      else
+        for (u32 i = bytes->len; i < len + offset + size; ++i)
+          DA_APPEND(*bytes, 0);
+    }
+
+    u32 size = ssc_get_result(&ssc);
+    for (u32 i = bytes->len; i < len + size; ++i)
+      DA_APPEND(*bytes, 0);
+  } break;
+
+  case ETypeKindArray: {
+    for (u32 i = 0; i < value->as.array_elements.len; ++i)
+      _value_to_bytes(bytes, value->as.array_elements.items + i);
+  } break;
+
+  case ETypeKindTuple: {
+    StructSizeCalc ssc = ssc_make(arch);
+    u32 len = bytes->len;
+
+    for (u32 i = 0; i < value->as.tuple_fields.len; ++i) {
+      u32 size = get_type_size(&value->as.tuple_fields.items[i].type);
+      u32 offset = ssc_append_field(&ssc, size);
+      for (u32 j = bytes->len; j < len + offset; ++j)
+        DA_APPEND(*bytes, 0);
+
+      _value_to_bytes(bytes, value->as.tuple_fields.items + i);
+    }
+
+    u32 size = ssc_get_result(&ssc);
+    for (u32 i = bytes->len; i < len + size; ++i)
+      DA_APPEND(*bytes, 0);
+  } break;
+
+  case ETypeKindStr: break;
+  case ETypeKindPtr: break;
+  }
+}
+
+u8 *value_to_bytes(EValue *value, u32 *len) {
+  Bytes bytes = {0};
+  _value_to_bytes(&bytes, value);
+  *len = bytes.len;
+  return bytes.items;
 }

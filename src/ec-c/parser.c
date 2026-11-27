@@ -717,8 +717,10 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
   parser_peek_token(parser, &token);
   if (is_const)
     parser_expect_token(parser,
-                        MASK(TT_INT) | MASK(TT_BOOL),
-                        "int, float or bool");
+                        MASK(TT_INT) | MASK(TT_BOOL) |
+                        MASK(TT_OPAREN) | MASK(TT_OBRACE) |
+                        MASK(TT_IDENT),
+                        "int, bool, `(`, `[` or identifier");
   else
     parser_expect_token(parser,
                         MASK(TT_INT) | MASK(TT_BOOL) |
@@ -731,17 +733,231 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
   if (is_const) {
     switch (token.id) {
     case TT_INT: {
-      parser->last_const_value = (EValue) {
-        ETypeKindS64,
-        { ._signed = str_to_i64(token.lexeme) },
+      parser->last_const_value.type.kind = ETypeKindS64;
+      parser->last_const_value.as = (EValueAs) {
+        ._signed = str_to_i64(token.lexeme),
       };
     } break;
 
     case TT_BOOL: {
-      parser->last_const_value = (EValue) {
-        ETypeKindBool,
-        { ._bool = str_eq(token.lexeme, STR_LIT("true")) },
+      parser->last_const_value.type.kind = ETypeKindBool;
+      parser->last_const_value.as = (EValueAs) {
+        ._bool = str_eq(token.lexeme, STR_LIT("true")),
       };
+    } break;
+
+    case TT_OPAREN: {
+      EValues fields = {0};
+
+      parser_parse_primary_expr(parser, (Str) {0}, (u32) -1, true);
+
+      Token temp_token;
+      if (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+          temp_token.id != TT_CPAREN) {
+
+        DA_APPEND(fields, parser->last_const_value);
+
+        while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+               temp_token.id != TT_CPAREN) {
+          parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
+
+          parser_parse_primary_expr(parser, (Str) {0}, (u32) -1, true);
+          DA_APPEND(fields, parser->last_const_value);
+
+          if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+              temp_token.id != TT_CPAREN)
+            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
+
+        }
+      }
+
+      parser_expect_token(parser, MASK(TT_CPAREN), "`,` or `)`");
+
+      if (fields.len > 0) {
+        ETypes field_types = {0};
+
+        for (u32 i = 0; i < fields.len; ++i)
+          DA_APPEND(field_types, type_clone(&fields.items[i].type));
+
+        parser->last_const_value = (EValue) {
+          {
+            ETypeKindTuple,
+            {
+              .tuple_types = field_types,
+            },
+            {
+              token.file_path,
+              token.row,
+              token.col,
+            },
+            NULL,
+            0,
+            false,
+          },
+          {
+            .tuple_fields = fields,
+          },
+        };
+      }
+    } break;
+
+    case TT_OBRACE: {
+      parser_parse_type(parser);
+
+      EType element_type = parser->last_type;
+      EValues elements = {0};
+
+      parser_expect_token(parser, MASK(TT_SEMI), "`;`");
+
+      Token temp_token;
+      if (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+          temp_token.id == TT_SEMI) {
+        PERROR(STR_FMT":%u:%u: ", "Uninitialized constant arrays are not supported\n",
+               STR_ARG(parser->file_path), temp_token.row + 1,
+               temp_token.col + 1);
+        parser->has_error = true;
+        return;
+      } else {
+        while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+               temp_token.id != TT_CBRACE) {
+          parser_parse_primary_expr(parser, (Str) {0}, (u32) -1, true);
+          DA_APPEND(elements, parser->last_const_value);
+
+          if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+              temp_token.id != TT_CBRACE)
+            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CBRACE), "`,` or `]`");
+        }
+      }
+
+      parser_expect_token(parser, MASK(TT_CBRACE), "`,` or `]`");
+
+      parser->last_const_value = (EValue) {
+        {
+          ETypeKindArray,
+          {
+            .array_element = malloc(sizeof(EType)),
+            .array_len = elements.len,
+          },
+          {
+            token.file_path,
+            token.row,
+            token.col,
+          },
+          NULL,
+          0,
+          false,
+        },
+        {
+          .array_elements = elements,
+        },
+      };
+      *parser->last_const_value.type.array_element = element_type;
+    } break;
+
+    case TT_IDENT: {
+      Token name_token = token;
+
+      parser_peek_token(parser, &token);
+      parser_expect_token(parser,
+                          MASK(TT_COLONCOLON) | MASK(TT_COLON),
+                          "`::` or `:`");
+
+      if (token.id == TT_COLONCOLON) {
+        parse_moduled_ident(parser, name_token);
+        name_token.lexeme = parser->moduled_ident;
+
+        parser_expect_token(parser, MASK(TT_COLON), "`:`");
+
+        EValueFields fields = {0};
+
+        Token temp_token;
+        while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+               temp_token.id != TT_END) {
+          parser_peek_token(parser, &temp_token);
+          parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+          parser_expect_token(parser, MASK(TT_SET), "`=`");
+          parser_parse_primary_expr(parser, (Str) {0}, (u32) -1, true);
+
+          EValueField field = {
+            temp_token.lexeme,
+            arena_alloc(parser->lexer.arena, sizeof(EValue)),
+          };
+          *field.value = parser->last_const_value;
+          DA_APPEND(fields, field);
+
+          if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+              temp_token.id != TT_END)
+            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_END), "`,` or `end`");
+        }
+
+        parser_expect_token(parser, MASK(TT_END), "`,` or `end`");
+
+        parser->last_const_value = (EValue) {
+          {
+            ETypeKindStruct,
+            {
+              .name = name_token.lexeme,
+              .generics = {},
+            },
+            {
+              token.file_path,
+              token.row,
+              token.col,
+            },
+            NULL,
+            0,
+            false,
+          },
+          {
+            .struct_fields = fields,
+          },
+        };
+      } else if (token.id == TT_COLON) {
+        EValueFields fields = {0};
+
+        Token temp_token;
+        while (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
+               temp_token.id != TT_END) {
+          parser_peek_token(parser, &temp_token);
+          parser_expect_token(parser, MASK(TT_IDENT), "identifier");
+          parser_expect_token(parser, MASK(TT_SET), "`=`");
+          parser_parse_primary_expr(parser, (Str) {0}, (u32) -1, true);
+
+          EValueField field = {
+            temp_token.lexeme,
+            arena_alloc(parser->lexer.arena, sizeof(EValue)),
+          };
+          *field.value = parser->last_const_value;
+          DA_APPEND(fields, field);
+
+          if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
+              temp_token.id != TT_END)
+            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_END), "`,` or `end`");
+        }
+
+        parser_expect_token(parser, MASK(TT_END), "`,` or `end`");
+
+        parser->last_const_value = (EValue) {
+          {
+            ETypeKindStruct,
+            {
+              .name = name_token.lexeme,
+              .generics = {},
+            },
+            {
+              token.file_path,
+              token.row,
+              token.col,
+            },
+            NULL,
+            0,
+            false,
+          },
+          {
+            .struct_fields = fields,
+          },
+        };
+      }
     } break;
     }
   } else {
@@ -755,11 +971,9 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           dest_name,
           dest_index,
           {
-            ETypeKindS64,
+            { ETypeKindS64 },
             { ._signed = str_to_i64(token.lexeme) },
           },
-          false,
-          0,
         },
       );
     } break;
@@ -773,11 +987,9 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
           dest_name,
           dest_index,
           {
-            ETypeKindBool,
+            { ETypeKindBool },
             { ._bool = str_eq(token.lexeme, STR_LIT("true")) },
           },
-          false,
-          0,
         },
       );
     } break;
@@ -830,7 +1042,7 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
           if (parser_peek_token(parser, &temp_token) == TokenStatusEOF ||
               temp_token.id != TT_CPAREN)
-          parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
+            parser_expect_token(parser, MASK(TT_COMMA) | MASK(TT_CPAREN), "`,` or `)`");
 
         }
       }
@@ -874,34 +1086,11 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
       EType element_type = parser->last_type;
 
-      Token temp_token;
-      if (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
-          temp_token.id != TT_SEMI) {
-        parser_expect_token(parser, MASK(TT_SEMI) | MASK(TT_CBRACE), "`;` or `]`");
-
-        parser->varss->items[parser->varss->len - 1].items[dest_index].type = (EType) {
-          ETypeKindArray,
-          {
-            .array_element = malloc(sizeof(EType)),
-            .array_len = 0,
-          },
-          {
-            token.file_path,
-            token.row,
-            token.col,
-          },
-          NULL,
-          0,
-          false,
-        };
-        *parser->varss->items[parser->varss->len - 1].items[dest_index].type.array_element = element_type;
-
-        break;
-      }
-      parser_expect_token(parser, MASK(TT_SEMI) | MASK(TT_CBRACE), "`;` or `]`");
+      parser_expect_token(parser, MASK(TT_SEMI), "`;`");
 
       u32 i = 0;
 
+      Token temp_token;
       if (parser_peek_token(parser, &temp_token) != TokenStatusEOF &&
           temp_token.id == TT_SEMI) {
         parser_next_token(parser, NULL);
@@ -910,7 +1099,6 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
 
         i = str_to_u32(temp_token.lexeme);
       } else {
-
         u32 index_index = alloc_var(parser, (Str) {0}, token);
         u32 element_index = alloc_var(parser, (Str) {0}, token);
 
@@ -927,7 +1115,7 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
               {},
               index_index,
               {
-                ETypeKindU64,
+                { ETypeKindU64 },
                 { ._unsigned = i },
               },
             },
@@ -1851,7 +2039,7 @@ static void parser_parse_log_impl(Parser *parser, Str dest_name, u32 dest_index)
           {},
           temp0_index,
           {
-            ETypeKindBool,
+            { ETypeKindBool },
             { ._unsigned = 0 },
           },
         },
@@ -1893,7 +2081,7 @@ static void parser_parse_log_impl(Parser *parser, Str dest_name, u32 dest_index)
           {},
           temp0_index,
           {
-            ETypeKindBool,
+            { ETypeKindBool },
             { ._unsigned = 1 },
           },
         },
@@ -2766,13 +2954,10 @@ static void parser_parse_program(Parser *parser) {
     case TT_CONST: {
       parser_peek_token(parser, &token);
       parser_expect_token(parser, MASK(TT_IDENT), "identifier");
-      parser_expect_token(parser, MASK(TT_COLON), "`:`");
-      parser_parse_type(parser);
       parser_expect_token(parser, MASK(TT_SET), "`=`");
       parser_parse_primary_expr(parser, (Str) {0}, 0, true);
 
-      emit_const(&parser->ir->consts, token.lexeme,
-                 parser->last_type, parser->last_const_value);
+      emit_const(&parser->ir->consts, token.lexeme, parser->last_const_value);
     } break;
 
     case TT_USE: {
