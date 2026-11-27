@@ -72,8 +72,7 @@ static u32 get_prop_index_by_src(CopyProps *props, u32 src) {
   return (u32) -1;
 }
 
-static void remove_instr_props(Instrs *instrs, VarLocs *locs,
-                               CopyProps *props, u32 index) {
+static void remove_instr(Instrs *instrs, VarLocs *locs, u32 index) {
   instrs->items[index + 1].has_label |= instrs->items[index].has_label;
 
   DA_REMOVE_AT(*instrs, index);
@@ -101,6 +100,11 @@ static void remove_instr_props(Instrs *instrs, VarLocs *locs,
     if (locs->items[i].end > index)
       --locs->items[i].end;
   }
+}
+
+static void remove_instr_props(Instrs *instrs, VarLocs *locs,
+                               CopyProps *props, u32 index) {
+  remove_instr(instrs, locs, index);
 
   for (u32 i = 0; i < props->len; ++i) {
     if (props->items[i].instr_index == index) {
@@ -215,4 +219,44 @@ void opt_const_prop(Instrs *instrs, VarLocs *locs) {
 
   if (props.items)
     free(props.items);
+}
+
+void opt_dce(Instrs *instrs, VarLocs *locs) {
+  for (u32 i = 0; i < instrs->len; ++i) {
+    Instr *instr = instrs->items + i;
+
+    u32 *dest = get_dest(instr);
+    if (dest) {
+      if (locs->items[*dest].uses == 0) {
+        if (instr->kind == InstrKindCallAssign) {
+          Instr replacement = {
+            InstrKindCall,
+            {
+              .call = {
+                instr->as.call_assign.name,
+                instr->as.call_assign.arg_indices,
+              },
+            },
+            instr->has_label,
+          };
+          *instr = replacement;
+        } else if (instr->kind == InstrKindCallRefAssign) {
+          Instr replacement = {
+            InstrKindCallRef,
+            {
+              .call_ref = {
+                instr->as.call_ref_assign.index,
+                instr->as.call_ref_assign.arg_indices,
+              },
+            },
+            instr->has_label,
+          };
+          *instr = replacement;
+        } else {
+          remove_instr(instrs, locs, i);
+          --i;
+        }
+      }
+    }
+  }
 }
