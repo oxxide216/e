@@ -767,7 +767,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         else
           args_space.stack_size += loc->size;
       } else {
-        args_space.stack_size += loc->size < 4 ? 4 : loc->size;
+        args_space.stack_size += align(loc->size, 8);
       }
     }
 
@@ -793,17 +793,29 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         } else {
           ensure_in_reg(stream, loc, 0, false);
 
-          write_cstr(stream, "  mov ");
+          u32 loc_size = loc->size;
+          if (loc_size < 8)
+            loc_size = 8;
+
+          if (loc_size == loc->size)
+            write_cstr(stream, "  mov ");
+          else if (loc->size == 4 && loc->kind == ValueKindSigned)
+            write_cstr(stream, "  movsxd ");
+          else if (loc->kind == ValueKindSigned)
+            write_cstr(stream, "  movsx ");
+          else if (loc->kind == ValueKindUnsigned)
+            write_cstr(stream, "  movzx ");
+
           if (is_tail) {
-            write_loc(stream, locs->items + i);
+            write_loc_of_size(stream, locs->items + i, loc_size);
           } else {
-            write_str(stream, get_mem_prefix(loc->size));
+            write_str(stream, get_mem_prefix(loc_size));
             fprintf(stream, "[rsp+%u]", size - args_space.stack_size);
           }
           write_cstr(stream, ",");
           write_loc_ensure_in_reg(stream, loc, 0);
           write_cstr(stream, "\n");
-          args_space.stack_size -= loc->size;
+          args_space.stack_size -= align(loc->size, 8);
         }
       } else if (loc->size == 16) {
         if (args_space.regs + 1 < ARRAY_LEN(arg_regs8)) {
@@ -820,11 +832,13 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           write_cstr(stream, "\n");
         } else {
           u32 loc_size = loc->size;
-          if (loc_size < 4)
-            loc_size = 4;
+          if (loc_size < 8)
+            loc_size = 8;
 
           if (loc_size == loc->size)
             write_cstr(stream, "  mov ");
+          else if (loc->size == 4 && loc->kind == ValueKindSigned)
+            write_cstr(stream, "  movsxd ");
           else if (loc->kind == ValueKindSigned)
             write_cstr(stream, "  movsx ");
           else if (loc->kind == ValueKindUnsigned)
@@ -859,6 +873,8 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
           args_space.stack_size -= 8;
         }
       } else {
+        u32 stack_size = args_space.stack_size;
+
         u32 arg_size = 0;
         while (arg_size < loc->size) {
           u32 part_size = 8;
@@ -873,15 +889,17 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
             write_loc_part_of_size(stream, locs->items + i, arg_size, part_size);
           } else {
             write_str(stream, get_mem_prefix(part_size));
-            fprintf(stream, "[rsp+%u]", size - args_space.stack_size);
+            fprintf(stream, "[rsp+%u]", size - stack_size);
           }
           write_cstr(stream, ",");
           write_str(stream, get_temp_regs(part_size)[0]);
           write_cstr(stream, "\n");
 
-          args_space.stack_size -= part_size;
+          stack_size -= part_size;
           arg_size += part_size;
         }
+
+        args_space.stack_size -= align(args_space.stack_size - stack_size, 8);
       }
     }
 
@@ -1283,7 +1301,7 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         else if (dest_size == 8 && src_size == 2)
           write_cstr(stream, "  movsx ");
         else if (dest_size == 8 && src_size == 4)
-          write_cstr(stream, "  mov ");
+          write_cstr(stream, "  movsxd ");
         } else {
         if (dest_size == 2 && src_size == 1)
           write_cstr(stream, "  movzx ");
@@ -1306,7 +1324,10 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     if (needs_convertation ||
         locs->items[instr->as.convert.dest_index].value !=
         locs->items[instr->as.convert.src_index].value) {
-      if (!needs_convertation || (dest_size == 8 && src_size == 4))
+      if (!needs_convertation ||
+          (dest_size == 8 &&
+           src_size == 4 &&
+           instr->as.convert.dest_kind == ValueKindUnsigned))
         write_loc_of_size_ensure_in_reg(stream, locs->items + instr->as.convert.dest_index, src_size, 0);
       else
         write_loc_ensure_in_reg(stream, locs->items + instr->as.convert.dest_index, 0);
