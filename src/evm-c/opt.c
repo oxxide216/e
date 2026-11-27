@@ -135,21 +135,6 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
 
-    if (instr->has_label ||
-        instr->kind == InstrKindCopyToRef ||
-        instr->kind == InstrKindCopyToRefFixed) {
-      props.len = 0;
-    } else {
-      u32 *dest = get_dest(instr);
-      if (dest) {
-        u32 index;
-        while ((index = get_prop_index_by_dest(&props, *dest)) != (u32) -1)
-          DA_REMOVE_AT(props, index);
-        while ((index = get_prop_index_by_src(&props, *dest)) != (u32) -1)
-          DA_REMOVE_AT(props, index);
-      }
-    }
-
     if (instr->kind != InstrKindRef &&
         (instr->kind != InstrKindCopyFromRef ||
          !instr->as.copy_from_ref.take_ref) &&
@@ -169,6 +154,21 @@ void opt_copy_prop(Instrs *instrs, VarLocs *locs) {
           if (locs->items[prop->dest].uses > 0)
             --locs->items[prop->dest].uses;
         }
+      }
+    }
+
+    if (instr->has_label ||
+        instr->kind == InstrKindCopyToRef ||
+        instr->kind == InstrKindCopyToRefFixed) {
+      props.len = 0;
+    } else {
+      u32 *dest = get_dest(instr);
+      if (dest) {
+        u32 index;
+        while ((index = get_prop_index_by_dest(&props, *dest)) != (u32) -1)
+          DA_REMOVE_AT(props, index);
+        while ((index = get_prop_index_by_src(&props, *dest)) != (u32) -1)
+          DA_REMOVE_AT(props, index);
       }
     }
 
@@ -192,19 +192,6 @@ void opt_const_prop(Instrs *instrs, VarLocs *locs) {
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
 
-    if (instr->has_label ||
-        instr->kind == InstrKindCopyToRef ||
-        instr->kind == InstrKindCopyToRefFixed) {
-      props.len = 0;
-    } else {
-      u32 *dest = get_dest(instr);
-      if (dest) {
-        u32 index;
-        while ((index = get_prop_index_by_dest(&props, *dest)) != (u32) -1)
-          DA_REMOVE_AT(props, index);
-      }
-    }
-
     if (instr->kind != InstrKindJumpIfNot &&
         instr->kind != InstrKindRef) {
       u32 j = 0;
@@ -216,6 +203,19 @@ void opt_const_prop(Instrs *instrs, VarLocs *locs) {
           if (locs->items[prop->dest].uses > 0)
             --locs->items[prop->dest].uses;
         }
+      }
+    }
+
+    if (instr->has_label ||
+        instr->kind == InstrKindCopyToRef ||
+        instr->kind == InstrKindCopyToRefFixed) {
+      props.len = 0;
+    } else {
+      u32 *dest = get_dest(instr);
+      if (dest) {
+        u32 index;
+        while ((index = get_prop_index_by_dest(&props, *dest)) != (u32) -1)
+          DA_REMOVE_AT(props, index);
       }
     }
 

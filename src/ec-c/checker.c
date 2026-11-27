@@ -1322,7 +1322,9 @@ static bool check_proc(EIr *ir, Varss *varss, Arena *arena, VarSubstitutions *va
         !instr->as.copy.is_explicit &&
         instr->as.copy.src_index < varss->items[index].len) {
       Var *src = varss->items[index].items + instr->as.copy.src_index;
-      if (is_movable(ir, &src->type)) {
+      if (src->type.kind == ETypeKindStruct ||
+          src->type.kind == ETypeKindArray ||
+          src->type.kind == ETypeKindTuple) {
         VarSubstitution var_subst = {
           i,
           instr->as.copy.dest_index,
