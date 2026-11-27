@@ -159,3 +159,11 @@ proc move(dest: &u8, src: &u8, size: u64)
     end
   end
 end
+
+proc set(dest: &u8, src: u8, size: u64)
+  let i = 0 as u64
+  while i < size
+    dest[i] = src
+    i = i + 1 as u64
+  end
+end
