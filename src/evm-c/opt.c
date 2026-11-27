@@ -9,6 +9,33 @@ typedef struct {
 
 typedef Da(CopyProp) CopyProps;
 
+void opt_merge_derefs(Instrs *instrs) {
+  for (u32 i = 0; i + 1 < instrs->len; ++i) {
+    Instr *instr = instrs->items + i;
+
+    if (instr->kind == InstrKindCopyFromRefFixed &&
+        !instr->as.copy_from_ref_fixed.deref &&
+        instr->as.copy_from_ref_fixed.take_ref &&
+        !instr[1].has_label) {
+      if (instr[1].kind == InstrKindCopyToRefFixed &&
+          instr[1].as.copy_to_ref_fixed.src_index ==
+          instr->as.copy_from_ref_fixed.dest_index) {
+        instr[1].as.copy_to_ref_fixed.dest_offset +=
+          instr->as.copy_from_ref_fixed.src_offset;
+        instr[1].as.copy_to_ref_fixed.src_index =
+          instr->as.copy_from_ref_fixed.src_index;
+      } else if (instr[1].kind == InstrKindCopyFromRefFixed &&
+                 instr[1].as.copy_from_ref_fixed.src_index ==
+                 instr->as.copy_from_ref_fixed.dest_index) {
+        instr[1].as.copy_from_ref_fixed.src_offset +=
+          instr->as.copy_from_ref_fixed.src_offset;
+        instr[1].as.copy_from_ref_fixed.src_index =
+          instr->as.copy_from_ref_fixed.src_index;
+      }
+    }
+  }
+}
+
 void opt_derefs_to_copies(Instrs *instrs, VarLocs *locs) {
   for (u32 i = 0; i < instrs->len; ++i) {
     Instr *instr = instrs->items + i;
@@ -242,7 +269,13 @@ void opt_dce(Instrs *instrs, VarLocs *locs) {
   }
 }
 
-void opt_all(Proc *proc, VarLocs *locs) {
+void opt_before_var_locs(Proc *proc) {
+  opt_merge_derefs(&proc->instrs);
+
+  opt_merge_derefs(&proc->last_instrs);
+}
+
+void opt_after_var_locs(Proc *proc, VarLocs *locs) {
   opt_derefs_to_copies(&proc->instrs, locs);
   opt_copy_prop(&proc->instrs, locs);
   opt_const_prop(&proc->instrs, locs);

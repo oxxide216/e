@@ -1646,10 +1646,12 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       locs.items[j] = loc;
     }
 
+    opt_before_var_locs(proc);
+
     add_var_locs(&locs, proc);
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
 
-    opt_all(proc, &locs);
+    opt_after_var_locs(proc, &locs);
 
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8),
                                                Arch_X86_64);
