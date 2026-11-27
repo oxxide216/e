@@ -2,7 +2,8 @@
 #include "shl/shl-log.h"
 #include "io.h"
 #include "decoder.h"
-#include "codegen/codegen.h"
+#include "codegen.h"
+#include "utils.h"
 #define SHL_STR_IMPLEMENTATION
 #include "shl/shl-str.h"
 
@@ -102,6 +103,11 @@ i32 main(i32 argc, char **argv) {
   }
 
   free(content.ptr);
+
+  for (u32 i = 0; i < ir.procs.len; ++i) {
+    setup_labels(&ir.procs.items[i].instrs);
+    setup_labels(&ir.procs.items[i].last_instrs);
+  }
 
   remove(config.output_path);
   FILE *output_file = fopen(config.output_path, "wb");

@@ -1,7 +1,7 @@
 #include <assert.h>
 
-#include "codegen.h"
-#include "utils.h"
+#include "../codegen.h"
+#include "../utils.h"
 #include "../opt.h"
 #ifndef NDEBUG
 #include "../ir-print.h"
@@ -1607,7 +1607,6 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
 
     SpaceUsed args_space = {0};
     args_space.stack_size = ARGS_STACK_OFFSET;
-
     args_space.regs += return_size_args_offset;
 
     bool has_stack_args = false;
@@ -1647,22 +1646,11 @@ void write_ir_as_asm_yasm_x86_64(FILE *stream, Ir *ir) {
       locs.items[j] = loc;
     }
 
-    setup_labels(&proc->instrs);
-    setup_labels(&proc->last_instrs);
-
     add_var_locs(&locs, proc);
-
-    opt_derefs_to_copies(&proc->instrs, &locs);
-    opt_copy_prop(&proc->instrs, &locs);
-    opt_const_prop(&proc->instrs, &locs);
-    opt_dce(&proc->instrs, &locs);
-
-    opt_derefs_to_copies(&proc->last_instrs, &locs);
-    opt_copy_prop(&proc->last_instrs, &locs);
-    opt_const_prop(&proc->last_instrs, &locs);
-    opt_dce(&proc->last_instrs, &locs);
-
     promote_lifetimes_of_pre_loop_vars_to_ends_of_loops(proc, &locs);
+
+    opt_all(proc, &locs);
+
     SpaceUsed space_used = var_locs_set_values(&locs, ARRAY_LEN(scratch_regs8),
                                                Arch_X86_64);
     u32 total_space_used = DEFAULT_STACK_SIZE + space_used.regs * 8 +

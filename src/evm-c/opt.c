@@ -1,5 +1,5 @@
 #include "opt.h"
-#include "codegen/utils.h"
+#include "utils.h"
 
 typedef struct {
   u32 dest;
@@ -99,20 +99,6 @@ static void remove_instr(Instrs *instrs, VarLocs *locs, u32 index) {
       --locs->items[i].begin;
     if (locs->items[i].end > index)
       --locs->items[i].end;
-  }
-}
-
-static void remove_instr_props(Instrs *instrs, VarLocs *locs,
-                               CopyProps *props, u32 index) {
-  remove_instr(instrs, locs, index);
-
-  for (u32 i = 0; i < props->len; ++i) {
-    if (props->items[i].instr_index == index) {
-      DA_REMOVE_AT(*props, i);
-      --i;
-    } else if (props->items[i].instr_index > index) {
-      --props->items[i].instr_index;
-    }
   }
 }
 
@@ -254,4 +240,16 @@ void opt_dce(Instrs *instrs, VarLocs *locs) {
       }
     }
   }
+}
+
+void opt_all(Proc *proc, VarLocs *locs) {
+  opt_derefs_to_copies(&proc->instrs, locs);
+  opt_copy_prop(&proc->instrs, locs);
+  opt_const_prop(&proc->instrs, locs);
+  opt_dce(&proc->instrs, locs);
+
+  opt_derefs_to_copies(&proc->last_instrs, locs);
+  opt_copy_prop(&proc->last_instrs, locs);
+  opt_const_prop(&proc->last_instrs, locs);
+  opt_dce(&proc->last_instrs, locs);
 }
