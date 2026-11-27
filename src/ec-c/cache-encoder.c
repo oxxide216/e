@@ -14,6 +14,10 @@ static void encode_type(FILE *stream, EType *type) {
   } else if (type->kind == ETypeKindArray) {
     encode_type(stream, type->array_element);
     fwrite(&type->array_len, sizeof(type->array_len), 1, stream);
+  } else if (type->kind == ETypeKindTuple) {
+    fwrite(&type->tuple_types.len, sizeof(type->tuple_types.len), 1, stream);
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      encode_type(stream, type->tuple_types.items + i);
   }
 }
 

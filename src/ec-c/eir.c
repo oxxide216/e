@@ -413,6 +413,95 @@ EType type_replace_generics(EType *type, ENames *generic_names, ETypes *generics
   return result;
 }
 
+Str get_type_str(EType *type) {
+  if (type->kind == ETypeKindStruct) {
+    StringBuilder sb = {0};
+
+    sb_push_str(&sb, type->name);
+    if (type->generics.len > 0) {
+      sb_push_char(&sb, '\\');
+      for (u32 i = 0; i < type->generics.len; ++i) {
+        if (i > 0)
+          sb_push(&sb, ", ");
+        Str generic_str = get_type_str(type->generics.items + i);
+        sb_push_str(&sb, generic_str);
+        free_type_str(generic_str, type->generics.items + i);
+      }
+      sb_push_char(&sb, '/');
+    }
+
+    return sb_to_str(sb);
+  } else {
+    switch (type->kind) {
+    case ETypeKindUnit:   return STR_LIT("unit");
+    case ETypeKindS8:     return STR_LIT("s8");
+    case ETypeKindS16:    return STR_LIT("s16");
+    case ETypeKindS32:    return STR_LIT("s32");
+    case ETypeKindS64:    return STR_LIT("s64");
+    case ETypeKindU8:     return STR_LIT("u8");
+    case ETypeKindU16:    return STR_LIT("u16");
+    case ETypeKindU32:    return STR_LIT("u32");
+    case ETypeKindU64:    return STR_LIT("u64");
+    case ETypeKindBool:   return STR_LIT("bool");
+    case ETypeKindStruct: return STR_LIT("struct"); // unreachable
+
+    case ETypeKindArray: {
+      Str target_str = get_type_str(type->array_element);
+      StringBuilder sb = {0};
+      sb_push_char(&sb, '[');
+      sb_push_str(&sb, target_str);
+      sb_push(&sb, "; ");
+      sb_push_u32(&sb, type->array_len);
+      sb_push_char(&sb, ']');
+      free_type_str(target_str, type->array_element);
+      return sb_to_str(sb);
+    }
+
+    case ETypeKindTuple: {
+      StringBuilder sb = {0};
+      sb_push_char(&sb, '(');
+      for (u32 i = 0; i < type->tuple_types.len; ++i) {
+        if (i > 0)
+          sb_push(&sb, ", ");
+        Str type_str = get_type_str(type->tuple_types.items + i);
+        sb_push_str(&sb, type_str);
+        free_type_str(type_str, type->tuple_types.items + i);
+      }
+      sb_push_char(&sb, ')');
+      return sb_to_str(sb);
+    }
+
+    case ETypeKindStr: return STR_LIT("str");
+
+    case ETypeKindPtr: {
+      Str target_str;
+      if (type->ptr_target)
+        target_str = get_type_str(type->ptr_target);
+      else
+        target_str = STR_LIT("unit");
+      Str result;
+      result.len = target_str.len + 1;
+      result.ptr = malloc(result.len);
+      result.ptr[0] = '&';
+      memcpy(result.ptr + 1, target_str.ptr, target_str.len);
+      if (type->ptr_target)
+        free_type_str(target_str, type->ptr_target);
+      return result;
+    }
+    }
+  }
+
+  ERROR("Unreachable\n");
+  return (Str) {0};
+}
+
+void free_type_str(Str str, EType *type) {
+  if (type->kind == ETypeKindPtr ||
+      type->kind == ETypeKindArray ||
+      type->kind == ETypeKindStruct)
+    free(str.ptr);
+}
+
 bool check_struct_existence(EIr *ir, EType *type,
                             ENames *generic_names,
                             ETypes *generics) {
@@ -445,6 +534,68 @@ bool check_struct_existence(EIr *ir, EType *type,
   return true;
 }
 
+bool check_struct_existence_value(EIr *ir, EValue *value,
+                                  ENames *generic_names,
+                                  ETypes *generics) {
+  if (!check_struct_existence(ir, &value->type, generic_names, generics))
+    return false;
+
+  if (value->type.kind == ETypeKindStruct) {
+    for (u32 i = 0; i < value->as.struct_fields.len; ++i) {
+      EField *field = NULL;
+
+      for (u32 j = 0; j < value->type._struct->fields.len; ++j) {
+        if (str_eq(value->type._struct->fields.items[j].name,
+                   value->as.struct_fields.items[i].name)) {
+          field = value->type._struct->fields.items + j;
+          break;
+        }
+      }
+
+      if (!field) {
+        PERROR(STR_FMT":%u:%u: ", "Unexpected field "STR_FMT" in structure "STR_FMT"\n",
+               STR_ARG(value->type.loc.file_path),
+               value->type.loc.row + 1,
+               value->type.loc.col + 1,
+               STR_ARG(value->as.struct_fields.items[i].name),
+               STR_ARG(value->type.name));
+        return false;
+      } else if (!type_eq(&value->as.struct_fields.items[i].value->type,
+                          &field->type)) {
+        Str field_type_str = get_type_str(&field->type);
+        Str value_field_type_str = get_type_str(&value->as.struct_fields.items[i].value->type);
+        PERROR(STR_FMT":%u:%u: ", "Unexpected type of field "STR_FMT" in structure "STR_FMT": expected "STR_FMT", got "STR_FMT"\n",
+               STR_ARG(value->as.struct_fields.items[i].value->type.loc.file_path),
+               value->as.struct_fields.items[i].value->type.loc.row + 1,
+               value->as.struct_fields.items[i].value->type.loc.col + 1,
+               STR_ARG(value->as.struct_fields.items[i].name),
+               STR_ARG(value->type.name),
+               STR_ARG(field_type_str),
+               STR_ARG(value_field_type_str));
+        free_type_str(field_type_str, &field->type);
+        free_type_str(value_field_type_str, &value->as.struct_fields.items[i].value->type);
+        return false;
+      }
+
+      if (!check_struct_existence_value(ir, value->as.struct_fields.items[i].value,
+                                        generic_names, generics))
+        return false;
+    }
+  } else if (value->type.kind == ETypeKindArray) {
+    for (u32 i = 0; i < value->as.array_elements.len; ++i)
+      if (!check_struct_existence_value(ir, value->as.array_elements.items + i,
+                                        generic_names, generics))
+        return false;
+  } else if (value->type.kind == ETypeKindTuple) {
+    for (u32 i = 0; i < value->as.tuple_fields.len; ++i)
+      if (!check_struct_existence_value(ir, value->as.tuple_fields.items + i,
+                                        generic_names, generics))
+        return false;
+  }
+
+  return true;
+}
+
 bool populate_type_struct_ptrs(EIr *ir) {
   for (u32 i = 0; i < ir->structs.len; ++i) {
     EStruct *_struct = ir->structs.items + i;
@@ -457,7 +608,7 @@ bool populate_type_struct_ptrs(EIr *ir) {
   }
 
   for (u32 i = 0; i < ir->consts.len; ++i)
-    if (!check_struct_existence(ir, &ir->consts.items[i].value.type, NULL, NULL))
+    if (!check_struct_existence_value(ir, &ir->consts.items[i].value, NULL, NULL))
       return false;
 
   for (u32 i = 0; i < ir->static_vars.len; ++i)

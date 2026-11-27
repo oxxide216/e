@@ -946,6 +946,9 @@ static void _value_to_bytes(Bytes *bytes, EValue *value) {
     u32 size = ssc_get_result(&ssc);
     for (u32 i = bytes->len; i < len + size; ++i)
       DA_APPEND(*bytes, 0);
+
+    if (size == 0)
+      DA_APPEND(*bytes, 0);
   } break;
 
   case ETypeKindArray: {

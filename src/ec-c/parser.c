@@ -733,14 +733,18 @@ static void parser_parse_primary_expr_impl(Parser *parser, Str dest_name,
   if (is_const) {
     switch (token.id) {
     case TT_INT: {
+      ETypeLoc loc = { token.file_path, token.row, token.col };
       parser->last_const_value.type.kind = ETypeKindS64;
+      parser->last_const_value.type.loc = loc;
       parser->last_const_value.as = (EValueAs) {
         ._signed = str_to_i64(token.lexeme),
       };
     } break;
 
     case TT_BOOL: {
+      ETypeLoc loc = { token.file_path, token.row, token.col };
       parser->last_const_value.type.kind = ETypeKindBool;
+      parser->last_const_value.type.loc = loc;
       parser->last_const_value.as = (EValueAs) {
         ._bool = str_eq(token.lexeme, STR_LIT("true")),
       };

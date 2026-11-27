@@ -499,6 +499,9 @@ EStaticVar  *get_static_var(EIr *ir, Str name);
 bool  type_contains_generics(EType *type);
 EType type_replace_generics(EType *type, ENames *generic_names, ETypes *generics);
 
+Str  get_type_str(EType *type);
+void free_type_str(Str str, EType *type);
+
 bool check_struct_existence(EIr *ir, EType *type,
                             ENames *generic_names,
                             ETypes *generics);

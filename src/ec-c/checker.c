@@ -76,95 +76,6 @@ static EType make_type_from_kind(ETypeKind kind) {
   return (EType) { kind, {}, {}, NULL, 0, false };
 }
 
-static void free_type_str(Str str, EType *type) {
-  if (type->kind == ETypeKindPtr ||
-      type->kind == ETypeKindArray ||
-      type->kind == ETypeKindStruct)
-    free(str.ptr);
-}
-
-static Str get_type_str(EType *type) {
-  if (type->kind == ETypeKindStruct) {
-    StringBuilder sb = {0};
-
-    sb_push_str(&sb, type->name);
-    if (type->generics.len > 0) {
-      sb_push_char(&sb, '\\');
-      for (u32 i = 0; i < type->generics.len; ++i) {
-        if (i > 0)
-          sb_push(&sb, ", ");
-        Str generic_str = get_type_str(type->generics.items + i);
-        sb_push_str(&sb, generic_str);
-        free_type_str(generic_str, type->generics.items + i);
-      }
-      sb_push_char(&sb, '/');
-    }
-
-    return sb_to_str(sb);
-  } else {
-    switch (type->kind) {
-    case ETypeKindUnit:   return STR_LIT("unit");
-    case ETypeKindS8:     return STR_LIT("s8");
-    case ETypeKindS16:    return STR_LIT("s16");
-    case ETypeKindS32:    return STR_LIT("s32");
-    case ETypeKindS64:    return STR_LIT("s64");
-    case ETypeKindU8:     return STR_LIT("u8");
-    case ETypeKindU16:    return STR_LIT("u16");
-    case ETypeKindU32:    return STR_LIT("u32");
-    case ETypeKindU64:    return STR_LIT("u64");
-    case ETypeKindBool:   return STR_LIT("bool");
-    case ETypeKindStruct: return STR_LIT("struct"); // unreachable
-
-    case ETypeKindArray: {
-      Str target_str = get_type_str(type->array_element);
-      StringBuilder sb = {0};
-      sb_push_char(&sb, '[');
-      sb_push_str(&sb, target_str);
-      sb_push(&sb, "; ");
-      sb_push_u32(&sb, type->array_len);
-      sb_push_char(&sb, ']');
-      free_type_str(target_str, type->array_element);
-      return sb_to_str(sb);
-    }
-
-    case ETypeKindTuple: {
-      StringBuilder sb = {0};
-      sb_push_char(&sb, '(');
-      for (u32 i = 0; i < type->tuple_types.len; ++i) {
-        if (i > 0)
-          sb_push(&sb, ", ");
-        Str type_str = get_type_str(type->tuple_types.items + i);
-        sb_push_str(&sb, type_str);
-        free_type_str(type_str, type->tuple_types.items + i);
-      }
-      sb_push_char(&sb, ')');
-      return sb_to_str(sb);
-    }
-
-    case ETypeKindStr: return STR_LIT("str");
-
-    case ETypeKindPtr: {
-      Str target_str;
-      if (type->ptr_target)
-        target_str = get_type_str(type->ptr_target);
-      else
-        target_str = STR_LIT("unit");
-      Str result;
-      result.len = target_str.len + 1;
-      result.ptr = malloc(result.len);
-      result.ptr[0] = '&';
-      memcpy(result.ptr + 1, target_str.ptr, target_str.len);
-      if (type->ptr_target)
-        free_type_str(target_str, type->ptr_target);
-      return result;
-    }
-    }
-  }
-
-  ERROR("Unreachable\n");
-  return (Str) {0};
-}
-
 static char *get_bin_op_kind_cstr(EBinOpKind kind) {
   switch (kind) {
   case EBinOpKindAdd:    return "+";
@@ -911,7 +822,7 @@ static void insert_instr(EInstrs *instrs, u32 index, EInstr instr) {
 
 static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
                        EData *data, EModulePath *path, Arena *arena,
-                       u32 *check_offset) {
+                       u32 *var_index, u32 *check_offset) {
   u32 len = _const->name.len;
   for (u32 i = 0; i < path->len; ++i)
     len += path->items[i].len + 2;
@@ -952,6 +863,8 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
     *var0.type.ptr_target = type_clone(&_const->value.type);
     DA_APPEND(*vars, var0);
 
+    *var_index = vars->len;
+
     Var var1 = {
       STR(name, len),
       type_clone(&_const->value.type),
@@ -985,7 +898,7 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
       },
       {},
     };
-    insert_instr(instrs, 0, alloc1);
+    insert_instr(instrs, 1, alloc1);
     ++*check_offset;
 
     EInstr store_str = {
@@ -999,7 +912,7 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
       },
       {},
     };
-    insert_instr(instrs, 0, store_str);
+    insert_instr(instrs, 2, store_str);
     ++*check_offset;
 
     EInstr copy_from_ref = {
@@ -1019,9 +932,11 @@ static void push_const(EConst *_const, Vars *vars, EInstrs *instrs,
       },
       {},
     };
-    insert_instr(instrs, 1, copy_from_ref);
+    insert_instr(instrs, 3, copy_from_ref);
     ++*check_offset;
   } else {
+    *var_index = vars->len;
+
     Var var = {
       STR(name, len),
       type_clone(&_const->value.type),
@@ -1066,9 +981,8 @@ static void find_and_push_const(EIr *ir, Vars *vars, EInstrs *instrs,
                                 Str name, u32 *var_index, u32 *check_offset) {
   for (u32 i = 0; i < ir->consts.len; ++i) {
     if (str_eq_str_with_path(name, ir->consts.items[i].name, path)) {
-      *var_index = vars->len;
-      push_const(ir->consts.items + i, vars, instrs,
-                 &ir->data, path, arena, check_offset);
+      push_const(ir->consts.items + i, vars, instrs, &ir->data,
+                 path, arena, var_index, check_offset);
       return;
     }
   }

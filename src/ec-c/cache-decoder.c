@@ -98,6 +98,12 @@ static bool decode_type_impl(Decoder *decoder, EType *type) {
     type->array_element = malloc(sizeof(EType));
     decode_type(decoder, type->array_element);
     decode_buffer(decoder, &type->array_len, sizeof(type->array_len));
+  } else if (type->kind == ETypeKindTuple) {
+    decode_buffer(decoder, &type->tuple_types.len, sizeof(type->tuple_types.len));
+    type->tuple_types.cap = type->tuple_types.len;
+    type->tuple_types.items = malloc(type->tuple_types.cap * sizeof(EType));
+    for (u32 i = 0; i < type->tuple_types.len; ++i)
+      decode_type(decoder, type->tuple_types.items + i);
   }
 
   return true;
