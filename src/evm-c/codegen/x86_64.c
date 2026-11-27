@@ -1356,18 +1356,26 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
 
     if (src_loc->size <= 8) {
       if (deref) {
-        bool ref = !instr->as.copy_to_ref_fixed.deref && offset != 0;
-        ensure_in_reg_of_size(stream, dest_loc, 8, 0, ref);
+        bool opt = dest_loc->value < 0 && !instr->as.copy_to_ref_fixed.deref;
+        if (!opt)
+          ensure_in_reg_of_size(stream, dest_loc, 8, 0, false);
         ensure_in_reg(stream, src_loc, 1, false);
 
         write_cstr(stream, "  mov ");
         write_str(stream, get_mem_prefix(src_loc->size));
         write_cstr(stream, "[");
-        write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
-        if (offset >= 0)
-          fprintf(stream, "+%d],", offset);
-        else
-          fprintf(stream, "-%d],", -offset);
+        if (opt) {
+          if (dest_loc->is_arg)
+            fprintf(stream, "rbp+%d],", -dest_loc->value + offset);
+          else
+            fprintf(stream, "rbp-%d],", -dest_loc->value - offset);
+        } else {
+          write_loc_of_size_ensure_in_reg(stream, dest_loc, 8, 0);
+          if (offset >= 0)
+            fprintf(stream, "+%d],", offset);
+          else
+            fprintf(stream, "-%d],", -offset);
+        }
         write_loc_ensure_in_reg(stream, src_loc, 1);
         write_cstr(stream, "\n");
       } else {
@@ -1415,8 +1423,9 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
     if (dest_loc->size <= 8 ||
         instr->as.copy_from_ref_fixed.take_ref) {
       if (deref) {
-        bool ref = !instr->as.copy_from_ref_fixed.deref && offset != 0;
-        ensure_in_reg_of_size(stream, src_loc, 8, 1, ref);
+        bool opt = src_loc->value < 0 && !instr->as.copy_from_ref_fixed.deref;
+        if (!opt)
+          ensure_in_reg_of_size(stream, src_loc, 8, 1, false);
 
         if (instr->as.copy_from_ref_fixed.take_ref)
           write_cstr(stream, "  lea ");
@@ -1428,11 +1437,18 @@ static void write_instr(FILE *stream, Instrs *instrs, u32 index,
         if (!instr->as.copy_from_ref_fixed.take_ref)
           write_str(stream, get_mem_prefix(dest_loc->size));
         write_cstr(stream, "[");
-        write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 1);
-        if (offset >= 0)
-          fprintf(stream, "+%d]\n", offset);
-        else
-          fprintf(stream, "-%d]\n", -offset);
+        if (opt) {
+          if (src_loc->is_arg)
+            fprintf(stream, "rbp+%d]\n", -src_loc->value + offset);
+          else
+            fprintf(stream, "rbp-%d]\n", -src_loc->value - offset);
+        } else {
+          write_loc_of_size_ensure_in_reg(stream, src_loc, 8, 1);
+          if (offset >= 0)
+            fprintf(stream, "+%d]\n", offset);
+          else
+            fprintf(stream, "-%d]\n", -offset);
+        }
 
         if (dest_loc->value < 0) {
           write_cstr(stream, "  mov ");
