@@ -187,13 +187,11 @@ void promote_lifetimes_of_pre_loop_vars_to_ends_of_loops_instrs(Instrs *instrs, 
         target = instr->as.jump_if_not.target;
 
       // Found a loop
-      if (target < i) {
-        for (u32 j = 0; j < locs->cap; ++j) {
+      if (target < i)
+        for (u32 j = 0; j < locs->cap; ++j)
           if (locs->items[j].begin <= target &&
               locs->items[j].end < i + offset)
             locs->items[j].end = i + offset;
-        }
-      }
     }
   }
 }
