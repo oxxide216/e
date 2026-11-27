@@ -582,10 +582,26 @@ bool check_struct_existence_value(EIr *ir, EValue *value,
         return false;
     }
   } else if (value->type.kind == ETypeKindArray) {
-    for (u32 i = 0; i < value->as.array_elements.len; ++i)
+    for (u32 i = 0; i < value->as.array_elements.len; ++i) {
+      if (!type_eq(&value->as.array_elements.items[i].type,
+                   value->type.array_element)) {
+        Str element_type_str = get_type_str(value->type.array_element);
+        Str value_element_type_str = get_type_str(&value->as.array_elements.items[i].type);
+        PERROR(STR_FMT":%u:%u: ", "Unexpected type of array element: expected "STR_FMT", got "STR_FMT"\n",
+               STR_ARG(value->as.array_elements.items[i].type.loc.file_path),
+               value->as.array_elements.items[i].type.loc.row + 1,
+               value->as.array_elements.items[i].type.loc.col + 1,
+               STR_ARG(element_type_str),
+               STR_ARG(value_element_type_str));
+        free_type_str(element_type_str, value->type.array_element);
+        free_type_str(value_element_type_str, &value->as.array_elements.items[i].type);
+        return false;
+      }
+
       if (!check_struct_existence_value(ir, value->as.array_elements.items + i,
                                         generic_names, generics))
         return false;
+    }
   } else if (value->type.kind == ETypeKindTuple) {
     for (u32 i = 0; i < value->as.tuple_fields.len; ++i)
       if (!check_struct_existence_value(ir, value->as.tuple_fields.items + i,
