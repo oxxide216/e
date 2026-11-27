@@ -130,6 +130,32 @@ static i32 get_var_loc_stack_pos(Allocator *allocator, VarLoc *loc, u32 max) {
   return -allocator->space_used.stack_size;
 }
 
+static i32 partition_var_loc_refs(VarLocRefs *refs, i32 low, i32 high) {
+  VarLoc *pivot = refs->items[high];
+  i32 i = low;
+
+  for (i32 j = low; j < high; ++j) {
+    if (refs->items[j]->uses > pivot->uses) {
+      VarLoc *temp = refs->items[i];
+      refs->items[i] = refs->items[j];
+      refs->items[j] = temp;
+      ++i;
+    }
+  }
+
+  return i;
+}
+
+static void quick_sort_var_loc_refs(VarLocRefs *refs, i32 low, i32 high) {
+  if (low >= high || low < 0)
+    return;
+
+  i32 pivot = partition_var_loc_refs(refs, low, high);
+
+  quick_sort_var_loc_refs(refs, low, pivot - 1);
+  quick_sort_var_loc_refs(refs, pivot + 1, high);
+}
+
 SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len, Arch arch) {
   Allocator allocator = {0};
   allocator.arch = arch;
@@ -138,18 +164,7 @@ SpaceUsed var_locs_set_values(VarLocs *locs, u32 scratch_regs_len, Arch arch) {
         locs->items[i].begin != (u32) -1 && locs->items[i].end != (u32) -1)
       DA_APPEND(allocator.refs, locs->items + i);
 
-  for (u32 i = 0; i + 1 < allocator.refs.len; ++i) {
-    for (u32 j = i; j + 1 < allocator.refs.len; ++j) {
-      VarLoc *a = allocator.refs.items[j];
-      VarLoc *b = allocator.refs.items[j + 1];
-
-      if (a->uses < b->uses) {
-        VarLoc *temp = a;
-        allocator.refs.items[j] = allocator.refs.items[j + 1];
-        allocator.refs.items[j + 1] = temp;
-      }
-    }
-  }
+  quick_sort_var_loc_refs(&allocator.refs, 0, allocator.refs.len - 1);
 
   for (u32 i = 0; i < allocator.refs.len; ++i) {
     VarLoc *loc = allocator.refs.items[i];
