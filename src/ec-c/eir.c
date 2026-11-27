@@ -562,19 +562,25 @@ bool check_struct_existence_value(EIr *ir, EValue *value,
         return false;
       } else if (!type_eq(&value->as.struct_fields.items[i].value->type,
                           &field->type)) {
-        Str field_type_str = get_type_str(&field->type);
-        Str value_field_type_str = get_type_str(&value->as.struct_fields.items[i].value->type);
-        PERROR(STR_FMT":%u:%u: ", "Unexpected type of field "STR_FMT" in structure "STR_FMT": expected "STR_FMT", got "STR_FMT"\n",
-               STR_ARG(value->as.struct_fields.items[i].value->type.loc.file_path),
-               value->as.struct_fields.items[i].value->type.loc.row + 1,
-               value->as.struct_fields.items[i].value->type.loc.col + 1,
-               STR_ARG(value->as.struct_fields.items[i].name),
-               STR_ARG(value->type.name),
-               STR_ARG(field_type_str),
-               STR_ARG(value_field_type_str));
-        free_type_str(field_type_str, &field->type);
-        free_type_str(value_field_type_str, &value->as.struct_fields.items[i].value->type);
-        return false;
+        if (value->as.struct_fields.items[i].value->type.kind > ETypeKindS8 &&
+            value->as.struct_fields.items[i].value->type.kind <= ETypeKindU64 &&
+            field->type.kind > ETypeKindS8 && field->type.kind <= ETypeKindU64) {
+          value->as.struct_fields.items[i].value->type = field->type;
+        } else {
+          Str field_type_str = get_type_str(&field->type);
+          Str value_field_type_str = get_type_str(&value->as.struct_fields.items[i].value->type);
+          PERROR(STR_FMT":%u:%u: ", "Unexpected type of field "STR_FMT" in structure "STR_FMT": expected "STR_FMT", got "STR_FMT"\n",
+                 STR_ARG(value->as.struct_fields.items[i].value->type.loc.file_path),
+                 value->as.struct_fields.items[i].value->type.loc.row + 1,
+                 value->as.struct_fields.items[i].value->type.loc.col + 1,
+                 STR_ARG(value->as.struct_fields.items[i].name),
+                 STR_ARG(value->type.name),
+                 STR_ARG(field_type_str),
+                 STR_ARG(value_field_type_str));
+          free_type_str(field_type_str, &field->type);
+          free_type_str(value_field_type_str, &value->as.struct_fields.items[i].value->type);
+          return false;
+        }
       }
 
       if (!check_struct_existence_value(ir, value->as.struct_fields.items[i].value,
@@ -583,6 +589,12 @@ bool check_struct_existence_value(EIr *ir, EValue *value,
     }
   } else if (value->type.kind == ETypeKindArray) {
     for (u32 i = 0; i < value->as.array_elements.len; ++i) {
+      if (value->as.array_elements.items[i].type.kind > ETypeKindS8 &&
+          value->as.array_elements.items[i].type.kind <= ETypeKindU64 &&
+          value->type.array_element->kind > ETypeKindS8 &&
+          value->type.array_element->kind <= ETypeKindU64)
+        value->as.array_elements.items[i].type = *value->type.array_element;
+
       if (!type_eq(&value->as.array_elements.items[i].type,
                    value->type.array_element)) {
         Str element_type_str = get_type_str(value->type.array_element);

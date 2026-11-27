@@ -4,7 +4,7 @@ use libe::mem
 use libe::io
 
 const N = 80
-const TABLE = [s64; 0, 1, 1, 1, 0, 1, 1, 0]
+const TABLE = [u8; 0, 1, 1, 1, 0, 1, 1, 0]
 
 proc main() -> s64
   let world = [u8;; 80]
@@ -43,7 +43,7 @@ proc step(world: &u8)
   let i = 1
   while i + 1 < N
     mask = (mask << 1 as u8 | world[i + 1]) & 7 as u8
-    world[i] = TABLE[mask] as u8
+    world[i] = TABLE[mask]
 
     i = i + 1
   end
